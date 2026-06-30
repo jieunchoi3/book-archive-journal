@@ -15,6 +15,7 @@ interface BookRow {
   tags: string[]
   rating: number | null
   notes: NoteBlock[]
+  memorable_line: string | null
   added_at: string
   created_at?: string
   updated_at?: string
@@ -33,6 +34,7 @@ function rowToBook(row: BookRow): Book {
     tags: row.tags ?? [],
     rating: row.rating ?? undefined,
     notes: row.notes ?? [],
+    memorableLine: row.memorable_line ?? undefined,
     addedAt: row.added_at,
   }
 }
@@ -50,6 +52,7 @@ function bookToRow(book: Book): BookRow {
     tags: book.tags,
     rating: book.rating ?? null,
     notes: book.notes,
+    memorable_line: book.memorableLine ?? null,
     added_at: book.addedAt,
   }
 }
@@ -69,6 +72,9 @@ function partialBookToRow(updates: Partial<Book>): Partial<BookRow> {
   if (updates.tags !== undefined) row.tags = updates.tags
   if (updates.rating !== undefined) row.rating = updates.rating ?? null
   if (updates.notes !== undefined) row.notes = updates.notes
+  if (updates.memorableLine !== undefined) {
+    row.memorable_line = updates.memorableLine ?? null
+  }
   if (updates.addedAt !== undefined) row.added_at = updates.addedAt
 
   return row

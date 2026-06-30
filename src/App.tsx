@@ -4,6 +4,7 @@ import { collectAllTags } from './lib/collectAllTags'
 import { useBooks } from './hooks/useBooks'
 import { Header } from './components/Header'
 import { CurrentlyReading } from './components/CurrentlyReading'
+import { SavedLinesCanvas } from './components/SavedLinesCanvas'
 import { AllBooks } from './components/AllBooks'
 import { BookDetailPage } from './components/BookDetailPage'
 import { NoteOverlay } from './components/NoteOverlay'
@@ -129,6 +130,7 @@ function App() {
           <Header books={books} onBookSelect={openBook} />
 
           <main className="mx-auto max-w-[1400px] px-8 py-12">
+            <SavedLinesCanvas books={books} onBookClick={openBook} />
             <CurrentlyReading
               books={books}
               onBookClick={openBook}

@@ -24,6 +24,7 @@ export interface Book {
   tags: string[]
   rating?: number
   notes: NoteBlock[]
+  memorableLine?: string
   addedAt: string
 }
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ChevronLeft, Trash2 } from 'lucide-react'
 import type { Book } from '../types'
 import { BasicInfoSection } from './BasicInfoSection'
+import { MemorableLineSection } from './MemorableLineSection'
 import { NoteCanvas } from './NoteCanvas'
 
 export function createEmptyBook(): Book {
@@ -95,6 +96,13 @@ export function BookEditorForm({
           defaultCollapsed={!isNew}
           availableTags={availableTags}
         />
+
+        {!isNew && (
+          <MemorableLineSection
+            book={draft}
+            onChange={(memorableLine) => updateDraft({ memorableLine })}
+          />
+        )}
 
         {!isNew && (
           <div className="flex min-h-0 flex-1 flex-col">

@@ -14,6 +14,7 @@ create table if not exists public.books (
   tags text[] not null default '{}',
   rating smallint check (rating is null or (rating >= 1 and rating <= 5)),
   notes jsonb not null default '[]'::jsonb,
+  memorable_line text,
   added_at date not null default current_date,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -96,3 +97,6 @@ on storage.objects
 for delete
 to anon, authenticated
 using (bucket_id = 'book-covers');
+
+-- Migration: add memorable_line column to existing projects
+alter table public.books add column if not exists memorable_line text;

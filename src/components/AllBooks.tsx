@@ -1,5 +1,10 @@
 import { useEffect, useMemo } from 'react'
 import type { Book, GenreFilter } from '../types'
+import {
+  formatMonthLabel,
+  formatYearLabel,
+  groupBooksByYearMonth,
+} from '../lib/groupBooksByDate'
 import { AddBookCard } from './BookCover'
 import { BookCard } from './BookCard'
 
@@ -55,12 +60,16 @@ export function AllBooks({
       ? books
       : books.filter((b) => b.tags.includes(activeGenre))
 
-  const sorted = [...filtered].sort(
-    (a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime(),
-  )
+  const grouped = useMemo(() => groupBooksByYearMonth(filtered), [filtered])
 
   return (
     <section className="pt-12">
+      <div className="mb-10 flex items-end justify-between gap-4">
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-apple-gray-400">
+          All Books
+        </h2>
+      </div>
+
       {books.length > 0 && (
         <div className="mb-10 flex flex-wrap items-end gap-x-8 gap-y-4 border-b border-zinc-100 pb-4">
           {availableGenres.map((genre) => (
@@ -83,20 +92,50 @@ export function AllBooks({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+      <div className="mb-10 grid grid-cols-2 gap-5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
         <AddBookCard onClick={onAddBook} />
-        {sorted.map((book) => (
-          <BookCard
-            key={book.id}
-            book={book}
-            dimmed={book.currentlyReading}
-            onBookClick={onBookClick}
-            onToggleFavorite={onToggleFavorite}
-            onDelete={onDeleteBook}
-            onMarkAsFinished={onMarkAsFinished}
-          />
-        ))}
       </div>
+
+      {grouped.length === 0 ? (
+        filtered.length === 0 && books.length > 0 ? (
+          <p className="text-sm text-apple-gray-400">
+            No books match this genre.
+          </p>
+        ) : null
+      ) : (
+        <div className="space-y-14">
+          {grouped.map(({ year, months }) => (
+            <div key={year}>
+              <h3 className="mb-8 text-2xl font-semibold tracking-[-0.03em] text-black">
+                {formatYearLabel(year)}
+              </h3>
+
+              <div className="space-y-10">
+                {months.map(({ month, books: monthBooks }) => (
+                  <div key={`${year}-${month}`}>
+                    <h4 className="mb-5 text-sm font-medium tracking-[-0.01em] text-apple-gray-400">
+                      {formatMonthLabel(month)}
+                    </h4>
+                    <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                      {monthBooks.map((book) => (
+                        <BookCard
+                          key={book.id}
+                          book={book}
+                          dimmed={book.currentlyReading}
+                          onBookClick={onBookClick}
+                          onToggleFavorite={onToggleFavorite}
+                          onDelete={onDeleteBook}
+                          onMarkAsFinished={onMarkAsFinished}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   )
 }
