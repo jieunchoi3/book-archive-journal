@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import type { Book, GenreFilter } from './types'
-import { loadBooks, saveBooks } from './lib/bookStorage'
 import { collectAllTags } from './lib/collectAllTags'
+import { useBooks } from './hooks/useBooks'
 import { Header } from './components/Header'
 import { CurrentlyReading } from './components/CurrentlyReading'
 import { AllBooks } from './components/AllBooks'
@@ -12,25 +12,13 @@ import { RatingPromptModal } from './components/RatingPromptModal'
 type View = 'archive' | 'detail' | 'add'
 
 function App() {
-  const [books, setBooks] = useState<Book[]>(() => loadBooks())
+  const { books, loading, error, upsertBook, patchBook, deleteBook } = useBooks()
   const [activeGenre, setActiveGenre] = useState<GenreFilter>('All Books')
   const [view, setView] = useState<View>('archive')
   const [selectedBook, setSelectedBook] = useState<Book | null>(null)
   const [ratingPromptBook, setRatingPromptBook] = useState<Book | null>(null)
 
   const availableTags = useMemo(() => collectAllTags(books), [books])
-
-  useEffect(() => {
-    saveBooks(books)
-  }, [books])
-
-  const updateBook = useCallback((id: string, updates: Partial<Book>) => {
-    setBooks((prev) => {
-      const next = prev.map((b) => (b.id === id ? { ...b, ...updates } : b))
-      saveBooks(next)
-      return next
-    })
-  }, [])
 
   const openBook = useCallback((book: Book) => {
     setSelectedBook(book)
@@ -50,37 +38,35 @@ function App() {
     setView('archive')
   }, [])
 
-  const handleSave = useCallback((book: Book) => {
-    setBooks((prev) => {
-      const exists = prev.some((b) => b.id === book.id)
-      const next = exists
-        ? prev.map((b) => (b.id === book.id ? book : b))
-        : [book, ...prev]
-      saveBooks(next)
-      return next
-    })
-  }, [])
+  const handleSave = useCallback(
+    async (book: Book) => {
+      await upsertBook(book)
+      closeDetail()
+      closeAddOverlay()
+    },
+    [upsertBook, closeDetail, closeAddOverlay],
+  )
 
-  const handleDelete = useCallback((id: string) => {
-    setBooks((prev) => {
-      const next = prev.filter((b) => b.id !== id)
-      saveBooks(next)
-      return next
-    })
-  }, [])
+  const handleDelete = useCallback(
+    async (id: string) => {
+      await deleteBook(id)
+      closeDetail()
+    },
+    [deleteBook, closeDetail],
+  )
 
   const handleDeleteBook = useCallback(
     (book: Book) => {
-      handleDelete(book.id)
+      void handleDelete(book.id)
     },
     [handleDelete],
   )
 
   const handleToggleFavorite = useCallback(
     (book: Book) => {
-      updateBook(book.id, { favorite: !book.favorite })
+      void patchBook(book.id, { favorite: !book.favorite })
     },
-    [updateBook],
+    [patchBook],
   )
 
   const handleMarkAsFinished = useCallback(
@@ -90,23 +76,51 @@ function App() {
         endDate: new Date().toISOString().split('T')[0],
       }
 
-      updateBook(book.id, finishedUpdates)
+      void patchBook(book.id, finishedUpdates)
 
       if (!book.rating || book.rating === 0) {
         setRatingPromptBook({ ...book, ...finishedUpdates })
       }
     },
-    [updateBook],
+    [patchBook],
   )
 
   const handleRatingPromptSave = useCallback(
     (rating: number) => {
       if (!ratingPromptBook) return
-      updateBook(ratingPromptBook.id, { rating })
+      void patchBook(ratingPromptBook.id, { rating })
       setRatingPromptBook(null)
     },
-    [ratingPromptBook, updateBook],
+    [ratingPromptBook, patchBook],
   )
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-white">
+        <p className="text-sm text-apple-gray-400">Loading your library…</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-white px-8">
+        <div className="max-w-md text-center">
+          <p className="text-sm font-medium text-black">Unable to connect to Supabase</p>
+          <p className="mt-2 text-sm text-apple-gray-400">{error}</p>
+          <p className="mt-4 text-xs text-apple-gray-400">
+            Add your credentials to <code>.env.local</code> and run the SQL schema in
+            Supabase.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  const detailBook =
+    selectedBook && view === 'detail'
+      ? books.find((b) => b.id === selectedBook.id) ?? selectedBook
+      : null
 
   return (
     <div className="min-h-screen bg-white">
@@ -136,9 +150,9 @@ function App() {
         </>
       )}
 
-      {view === 'detail' && selectedBook && (
+      {view === 'detail' && detailBook && (
         <BookDetailPage
-          book={selectedBook}
+          book={detailBook}
           availableTags={availableTags}
           onClose={closeDetail}
           onSave={handleSave}
