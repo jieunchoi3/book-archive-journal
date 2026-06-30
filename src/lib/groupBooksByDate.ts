@@ -56,3 +56,43 @@ export function formatYearLabel(year: number): string {
 export function formatMonthLabel(month: number): string {
   return `${month}월`
 }
+
+export function getBookYear(book: Book): number {
+  return new Date(`${getBookArchiveDate(book)}T00:00:00`).getFullYear()
+}
+
+export function getBookMonth(book: Book): number {
+  return new Date(`${getBookArchiveDate(book)}T00:00:00`).getMonth() + 1
+}
+
+export function getAvailableYears(books: Book[]): number[] {
+  const years = new Set(books.map(getBookYear))
+  return [...years].sort((a, b) => b - a)
+}
+
+export function getAvailableMonths(books: Book[], year: number): number[] {
+  const months = new Set(
+    books.filter((book) => getBookYear(book) === year).map(getBookMonth),
+  )
+  return [...months].sort((a, b) => b - a)
+}
+
+export function sortBooksByArchiveDate(books: Book[]): Book[] {
+  return [...books].sort(
+    (a, b) =>
+      new Date(getBookArchiveDate(b)).getTime() -
+      new Date(getBookArchiveDate(a)).getTime(),
+  )
+}
+
+export function filterBooksByDate(
+  books: Book[],
+  year: number | null,
+  month: number | null,
+): Book[] {
+  return books.filter((book) => {
+    if (year !== null && getBookYear(book) !== year) return false
+    if (month !== null && getBookMonth(book) !== month) return false
+    return true
+  })
+}

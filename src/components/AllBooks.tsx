@@ -1,9 +1,13 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { ChevronDown } from 'lucide-react'
 import type { Book, GenreFilter } from '../types'
 import {
+  filterBooksByDate,
   formatMonthLabel,
   formatYearLabel,
-  groupBooksByYearMonth,
+  getAvailableMonths,
+  getAvailableYears,
+  sortBooksByArchiveDate,
 } from '../lib/groupBooksByDate'
 import { AddBookCard } from './BookCover'
 import { BookCard } from './BookCard'
@@ -47,6 +51,9 @@ export function AllBooks({
   onDeleteBook,
   onMarkAsFinished,
 }: AllBooksProps) {
+  const [activeYear, setActiveYear] = useState<number | null>(null)
+  const [activeMonth, setActiveMonth] = useState<number | null>(null)
+
   const availableGenres = useMemo(() => getAvailableGenres(books), [books])
 
   useEffect(() => {
@@ -55,23 +62,59 @@ export function AllBooks({
     }
   }, [activeGenre, availableGenres, onGenreChange])
 
-  const filtered =
-    activeGenre === 'All Books'
-      ? books
-      : books.filter((b) => b.tags.includes(activeGenre))
+  const genreFiltered = useMemo(
+    () =>
+      activeGenre === 'All Books'
+        ? books
+        : books.filter((b) => b.tags.includes(activeGenre)),
+    [books, activeGenre],
+  )
 
-  const grouped = useMemo(() => groupBooksByYearMonth(filtered), [filtered])
+  const availableYears = useMemo(
+    () => getAvailableYears(genreFiltered),
+    [genreFiltered],
+  )
+
+  const availableMonths = useMemo(
+    () => (activeYear !== null ? getAvailableMonths(genreFiltered, activeYear) : []),
+    [genreFiltered, activeYear],
+  )
+
+  useEffect(() => {
+    if (activeYear !== null && !availableYears.includes(activeYear)) {
+      setActiveYear(null)
+      setActiveMonth(null)
+    }
+  }, [activeYear, availableYears])
+
+  useEffect(() => {
+    if (
+      activeMonth !== null &&
+      (activeYear === null || !availableMonths.includes(activeMonth))
+    ) {
+      setActiveMonth(null)
+    }
+  }, [activeMonth, activeYear, availableMonths])
+
+  const dateFiltered = useMemo(
+    () => filterBooksByDate(genreFiltered, activeYear, activeMonth),
+    [genreFiltered, activeYear, activeMonth],
+  )
+
+  const sorted = useMemo(
+    () => sortBooksByArchiveDate(dateFiltered),
+    [dateFiltered],
+  )
+
+  const handleYearChange = (year: number | null) => {
+    setActiveYear(year)
+    setActiveMonth(null)
+  }
 
   return (
     <section className="pt-12">
-      <div className="mb-10 flex items-end justify-between gap-4">
-        <h2 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-apple-gray-400">
-          All Books
-        </h2>
-      </div>
-
       {books.length > 0 && (
-        <div className="mb-10 flex flex-wrap items-end gap-x-8 gap-y-4 border-b border-zinc-100 pb-4">
+        <div className="mb-8 flex flex-wrap items-end gap-x-8 gap-y-4 border-b border-zinc-100 pb-4">
           {availableGenres.map((genre) => (
             <button
               key={genre}
@@ -92,50 +135,84 @@ export function AllBooks({
         </div>
       )}
 
-      <div className="mb-10 grid grid-cols-2 gap-5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-        <AddBookCard onClick={onAddBook} />
-      </div>
-
-      {grouped.length === 0 ? (
-        filtered.length === 0 && books.length > 0 ? (
-          <p className="text-sm text-apple-gray-400">
-            No books match this genre.
-          </p>
-        ) : null
-      ) : (
-        <div className="space-y-14">
-          {grouped.map(({ year, months }) => (
-            <div key={year}>
-              <h3 className="mb-8 text-2xl font-semibold tracking-[-0.03em] text-black">
+      {books.length > 0 && availableYears.length > 0 && (
+        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+          <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <button
+              type="button"
+              onClick={() => handleYearChange(null)}
+              className={`shrink-0 rounded-full px-4 py-2 text-xs font-medium tracking-[-0.01em] transition-colors ${
+                activeYear === null
+                  ? 'bg-black text-white'
+                  : 'bg-apple-gray-50 text-apple-gray-400 hover:text-black'
+              }`}
+            >
+              전체
+            </button>
+            {availableYears.map((year) => (
+              <button
+                key={year}
+                type="button"
+                onClick={() => handleYearChange(year)}
+                className={`shrink-0 rounded-full px-4 py-2 text-xs font-medium tracking-[-0.01em] transition-colors ${
+                  activeYear === year
+                    ? 'bg-black text-white'
+                    : 'bg-apple-gray-50 text-apple-gray-400 hover:text-black'
+                }`}
+              >
                 {formatYearLabel(year)}
-              </h3>
+              </button>
+            ))}
+          </div>
 
-              <div className="space-y-10">
-                {months.map(({ month, books: monthBooks }) => (
-                  <div key={`${year}-${month}`}>
-                    <h4 className="mb-5 text-sm font-medium tracking-[-0.01em] text-apple-gray-400">
-                      {formatMonthLabel(month)}
-                    </h4>
-                    <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-                      {monthBooks.map((book) => (
-                        <BookCard
-                          key={book.id}
-                          book={book}
-                          dimmed={book.currentlyReading}
-                          onBookClick={onBookClick}
-                          onToggleFavorite={onToggleFavorite}
-                          onDelete={onDeleteBook}
-                          onMarkAsFinished={onMarkAsFinished}
-                        />
-                      ))}
-                    </div>
-                  </div>
+          {activeYear !== null && availableMonths.length > 0 && (
+            <div className="relative shrink-0">
+              <select
+                value={activeMonth ?? ''}
+                onChange={(e) => {
+                  const value = e.target.value
+                  setActiveMonth(value ? Number(value) : null)
+                }}
+                className="appearance-none rounded-full border border-apple-gray-100 bg-white py-2 pr-9 pl-4 text-xs font-medium tracking-[-0.01em] text-black transition-colors hover:border-apple-gray-400 focus:border-black focus:outline-none"
+                aria-label="월별 필터"
+              >
+                <option value="">전체 월</option>
+                {availableMonths.map((month) => (
+                  <option key={month} value={month}>
+                    {formatMonthLabel(month)}
+                  </option>
                 ))}
-              </div>
+              </select>
+              <ChevronDown
+                size={14}
+                strokeWidth={1.5}
+                className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-apple-gray-400"
+              />
             </div>
-          ))}
+          )}
         </div>
       )}
+
+      {sorted.length === 0 && books.length > 0 ? (
+        <p className="mb-8 text-sm text-apple-gray-400">
+          선택한 필터에 맞는 책이 없습니다.
+        </p>
+      ) : null}
+
+      <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+        <AddBookCard onClick={onAddBook} />
+        {sorted.map((book) => (
+          <BookCard
+            key={book.id}
+            book={book}
+            dimmed={book.currentlyReading}
+            onBookClick={onBookClick}
+            onToggleFavorite={onToggleFavorite}
+            onDelete={onDeleteBook}
+            onMarkAsFinished={onMarkAsFinished}
+          />
+        ))}
+      </div>
     </section>
   )
 }
