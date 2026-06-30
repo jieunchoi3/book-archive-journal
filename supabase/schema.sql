@@ -66,3 +66,33 @@ using (true);
 
 -- Enable realtime sync across devices
 alter publication supabase_realtime add table public.books;
+
+-- Book cover images (Storage bucket: book-covers, public)
+insert into storage.buckets (id, name, public)
+values ('book-covers', 'book-covers', true)
+on conflict (id) do update set public = true;
+
+create policy "Public read book covers"
+on storage.objects
+for select
+to anon, authenticated
+using (bucket_id = 'book-covers');
+
+create policy "Public upload book covers"
+on storage.objects
+for insert
+to anon, authenticated
+with check (bucket_id = 'book-covers');
+
+create policy "Public update book covers"
+on storage.objects
+for update
+to anon, authenticated
+using (bucket_id = 'book-covers')
+with check (bucket_id = 'book-covers');
+
+create policy "Public delete book covers"
+on storage.objects
+for delete
+to anon, authenticated
+using (bucket_id = 'book-covers');

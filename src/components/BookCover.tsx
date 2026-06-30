@@ -1,5 +1,7 @@
-import { Camera, Star } from 'lucide-react'
+import { useState } from 'react'
+import { Camera, Loader2, Star } from 'lucide-react'
 import type { Book } from '../types'
+import { uploadBookCover } from '../lib/uploadBookCover'
 
 interface BookCoverProps {
   book?: Book
@@ -102,45 +104,84 @@ export function AddBookCard({ onClick }: { onClick: () => void }) {
 }
 
 export function CoverUploadPlaceholder({
+  bookId,
   coverUrl,
   onUpload,
 }: {
+  bookId: string
   coverUrl?: string
   onUpload: (url: string) => void
 }) {
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+
+  const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) {
-      onUpload(URL.createObjectURL(file))
+    e.target.value = ''
+    if (!file) return
+
+    setUploading(true)
+    setUploadError(null)
+
+    try {
+      const publicUrl = await uploadBookCover(bookId, file)
+      onUpload(publicUrl)
+    } catch (err) {
+      setUploadError(
+        err instanceof Error ? err.message : 'Failed to upload cover image',
+      )
+    } finally {
+      setUploading(false)
     }
   }
 
   return (
-    <label className="group relative flex aspect-[2/3] w-full max-w-[160px] cursor-pointer flex-col items-center justify-center overflow-hidden rounded-xl border border-dashed border-apple-gray-100 bg-apple-gray-50/50 transition-all hover:border-apple-gray-400 hover:bg-apple-gray-50">
-      <input
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={handleChange}
-      />
-      {coverUrl ? (
-        <img
-          src={coverUrl}
-          alt="Book cover"
-          className="h-full w-full object-cover"
+    <div>
+      <label
+        className={`group relative flex aspect-[2/3] w-full max-w-[160px] flex-col items-center justify-center overflow-hidden rounded-xl border border-dashed border-apple-gray-100 bg-apple-gray-50/50 transition-all ${
+          uploading
+            ? 'cursor-wait opacity-70'
+            : 'cursor-pointer hover:border-apple-gray-400 hover:bg-apple-gray-50'
+        }`}
+      >
+        <input
+          type="file"
+          accept="image/*"
+          className="hidden"
+          disabled={uploading}
+          onChange={handleChange}
         />
-      ) : (
-        <>
-          <Camera
-            size={20}
-            strokeWidth={1.5}
-            className="text-apple-gray-400 transition-colors group-hover:text-black"
+        {uploading ? (
+          <div className="flex flex-col items-center gap-2">
+            <Loader2 size={20} className="animate-spin text-apple-gray-400" />
+            <span className="px-2 text-center text-[10px] font-medium uppercase tracking-[0.12em] text-apple-gray-400">
+              Uploading...
+            </span>
+          </div>
+        ) : coverUrl ? (
+          <img
+            src={coverUrl}
+            alt="Book cover"
+            className="h-full w-full object-cover"
           />
-          <span className="mt-2 px-2 text-center text-[10px] font-medium uppercase tracking-[0.12em] text-apple-gray-400 transition-colors group-hover:text-black">
-            Upload Cover
-          </span>
-        </>
+        ) : (
+          <>
+            <Camera
+              size={20}
+              strokeWidth={1.5}
+              className="text-apple-gray-400 transition-colors group-hover:text-black"
+            />
+            <span className="mt-2 px-2 text-center text-[10px] font-medium uppercase tracking-[0.12em] text-apple-gray-400 transition-colors group-hover:text-black">
+              Upload Cover
+            </span>
+          </>
+        )}
+      </label>
+      {uploadError && (
+        <p className="mt-2 max-w-[160px] text-center text-[10px] leading-snug text-red-500">
+          {uploadError}
+        </p>
       )}
-    </label>
+    </div>
   )
 }

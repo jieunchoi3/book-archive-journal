@@ -82,6 +82,7 @@ export function BasicInfoSection({
           <div className="flex flex-col gap-8 sm:flex-row">
             <div className="shrink-0">
               <CoverUploadPlaceholder
+                bookId={book.id}
                 coverUrl={book.coverUrl}
                 onUpload={(url) => onChange({ coverUrl: url })}
               />
