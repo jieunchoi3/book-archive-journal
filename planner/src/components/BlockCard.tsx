@@ -33,7 +33,7 @@ export function BlockCard({
 }: BlockCardProps) {
   const [showAddTask, setShowAddTask] = useState(false)
   const [newTaskLabel, setNewTaskLabel] = useState('')
-  const [repeatWeekly, setRepeatWeekly] = useState(true)
+  const [repeatWeekly, setRepeatWeekly] = useState(false)
 
   const style = CATEGORY_STYLES[block.category]
   const doneCount = tasks.filter((t) => t.done).length
@@ -45,7 +45,7 @@ export function BlockCard({
     onAddTask(label, repeatWeekly)
     setNewTaskLabel('')
     setShowAddTask(false)
-    setRepeatWeekly(true)
+    setRepeatWeekly(false)
   }
 
   return (

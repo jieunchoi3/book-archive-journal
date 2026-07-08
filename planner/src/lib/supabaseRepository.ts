@@ -7,6 +7,48 @@ import type { ItemsStore } from '../lib/itemStorageLegacy'
 import { SEED_TEMPLATE } from '../data/seedTemplate'
 import { supabase } from './supabase'
 import { emptyWeeklyLog } from './storageUtils'
+import { getDateKeyForDay } from './weekUtils'
+
+/** Temporary debug — remove after confirming save/load round-trip */
+function logWeeklyLogSnapshot(tag: 'SAVE' | 'LOAD', weekStart: string, log: WeeklyLog): void {
+  const checked: { dateKey: string; taskId: string; blockId: string }[] = []
+  for (const [dayKey, blockMap] of Object.entries(log.days)) {
+    if (!blockMap) continue
+    const dateKey = getDateKeyForDay(weekStart, dayKey as DayKey)
+    for (const [blockId, blockLog] of Object.entries(blockMap)) {
+      for (const [taskId, done] of Object.entries(blockLog.taskCompletion)) {
+        if (done) checked.push({ dateKey, taskId, blockId })
+      }
+    }
+  }
+  const oneOff: { dateKey: string; taskId: string; label: string; done: boolean; blockId: string }[] =
+    []
+  for (const [dateKey, blockMap] of Object.entries(log.oneOffByDate)) {
+    for (const [blockId, tasks] of Object.entries(blockMap)) {
+      for (const task of tasks) {
+        oneOff.push({ dateKey, taskId: task.id, label: task.label, done: task.done, blockId })
+      }
+    }
+  }
+  console.log(`[planner] ${tag} week=${weekStart}`, { checked, oneOff })
+}
+
+function logTemplateSnapshot(tag: 'SAVE' | 'LOAD', template: WeekTemplate): void {
+  const recurring: { dayKey: string; blockId: string; taskId: string; label: string }[] = []
+  for (const day of template.days) {
+    for (const block of day.blocks) {
+      for (const task of block.tasks) {
+        recurring.push({
+          dayKey: day.key,
+          blockId: block.id,
+          taskId: task.id,
+          label: task.label,
+        })
+      }
+    }
+  }
+  console.log(`[planner] ${tag} template`, { recurringCount: recurring.length, recurring })
+}
 
 export async function fetchTemplate(userId: string): Promise<WeekTemplate | null> {
   const [daysRes, blocksRes, tasksRes] = await Promise.all([
@@ -35,7 +77,7 @@ export async function fetchTemplate(userId: string): Promise<WeekTemplate | null
 
   const dayMap = new Map((daysRes.data ?? []).map((d) => [d.day_key, d]))
 
-  return {
+  const result = {
     days: DAY_KEYS.map((key) => {
       const dayMeta = dayMap.get(key)
       return {
@@ -60,9 +102,12 @@ export async function fetchTemplate(userId: string): Promise<WeekTemplate | null
       }
     }),
   }
+  logTemplateSnapshot('LOAD', result)
+  return result
 }
 
 export async function syncTemplate(userId: string, template: WeekTemplate): Promise<void> {
+  logTemplateSnapshot('SAVE', template)
   const dayRows = template.days.map((d) => ({
     user_id: userId,
     day_key: d.key,
@@ -193,6 +238,7 @@ export async function fetchWeeklyLog(userId: string, weekStart: string): Promise
     })
   }
 
+  logWeeklyLogSnapshot('LOAD', weekStart, log)
   return log
 }
 
@@ -200,22 +246,27 @@ export async function syncWeeklyLog(userId: string, log: WeeklyLog): Promise<voi
   const weekStart = log.weekStart
   const weekEnd = addDays(weekStart, 6)
 
-  await supabase
+  const delBlockLogs = await supabase
     .from('block_week_logs')
     .delete()
     .eq('user_id', userId)
     .eq('week_start', weekStart)
-  await supabase
+  if (delBlockLogs.error) throw delBlockLogs.error
+
+  const delCompletions = await supabase
     .from('task_completions')
     .delete()
     .eq('user_id', userId)
     .eq('week_start', weekStart)
-  await supabase
+  if (delCompletions.error) throw delCompletions.error
+
+  const delOneOff = await supabase
     .from('one_off_tasks')
     .delete()
     .eq('user_id', userId)
     .gte('task_date', weekStart)
     .lte('task_date', weekEnd)
+  if (delOneOff.error) throw delOneOff.error
 
   const blockLogRows: Record<string, unknown>[] = []
   const completionRows: Record<string, unknown>[] = []
@@ -240,6 +291,7 @@ export async function syncWeeklyLog(userId: string, log: WeeklyLog): Promise<voi
         })
       }
       for (const [taskId, done] of Object.entries(blockLog.taskCompletion)) {
+        if (!done) continue
         completionRows.push({
           user_id: userId,
           week_start: weekStart,
@@ -266,6 +318,8 @@ export async function syncWeeklyLog(userId: string, log: WeeklyLog): Promise<voi
       }
     }
   }
+
+  logWeeklyLogSnapshot('SAVE', weekStart, log)
 
   if (blockLogRows.length) {
     const { error } = await supabase.from('block_week_logs').insert(blockLogRows)

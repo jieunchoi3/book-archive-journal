@@ -170,27 +170,99 @@ export function PlannerDataProvider({
 
   const templateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const logTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const templateSyncQueue = useRef<Promise<void>>(Promise.resolve())
+  const logSyncQueue = useRef<Promise<void>>(Promise.resolve())
   const itemsTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const appsTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const templateRef = useRef(template)
+  const weeklyLogRef = useRef(weeklyLog)
+  const weekStartRef = useRef(weekStart)
 
-  const persistTemplate = useCallback(
-    (t: WeekTemplate) => {
-      if (templateTimer.current) clearTimeout(templateTimer.current)
-      templateTimer.current = setTimeout(() => {
-        syncTemplate(userId, t).catch((e) => logError('syncTemplate', e))
-      }, 400)
+  useEffect(() => {
+    templateRef.current = template
+  }, [template])
+
+  useEffect(() => {
+    weeklyLogRef.current = weeklyLog
+  }, [weeklyLog])
+
+  useEffect(() => {
+    weekStartRef.current = weekStart
+  }, [weekStart])
+
+  /** Serialize template writes (recurring task adds, block edits). */
+  const enqueueTemplateSync = useCallback(
+    (tmpl: WeekTemplate): Promise<void> => {
+      if (templateTimer.current) {
+        clearTimeout(templateTimer.current)
+        templateTimer.current = null
+      }
+      templateRef.current = tmpl
+
+      const job = templateSyncQueue.current.then(() => syncTemplate(userId, tmpl))
+      templateSyncQueue.current = job.catch((e) => logError('syncTemplate', e))
+      return templateSyncQueue.current
     },
     [userId],
   )
 
-  const persistWeeklyLog = useCallback(
-    (log: WeeklyLog) => {
-      if (logTimer.current) clearTimeout(logTimer.current)
-      logTimer.current = setTimeout(() => {
-        syncWeeklyLog(userId, log).catch((e) => logError('syncWeeklyLog', e))
-      }, 300)
+  const awaitTemplateSync = useCallback(async (): Promise<void> => {
+    if (templateTimer.current) {
+      clearTimeout(templateTimer.current)
+      templateTimer.current = null
+      enqueueTemplateSync(templateRef.current)
+    }
+    await templateSyncQueue.current
+  }, [enqueueTemplateSync])
+
+  /** Serialize weekly-log writes so concurrent delete+insert syncs cannot clobber each other. */
+  const enqueueWeeklyLogSync = useCallback(
+    (log: WeeklyLog): Promise<void> => {
+      if (logTimer.current) {
+        clearTimeout(logTimer.current)
+        logTimer.current = null
+      }
+      const stamped = { ...log, weekStart: weekStartRef.current }
+      weeklyLogRef.current = stamped
+
+      const job = logSyncQueue.current.then(() => syncWeeklyLog(userId, stamped))
+      logSyncQueue.current = job.catch((e) => logError('syncWeeklyLog', e))
+      return logSyncQueue.current
     },
     [userId],
+  )
+
+  const awaitWeeklyLogSync = useCallback(async (): Promise<void> => {
+    if (logTimer.current) {
+      clearTimeout(logTimer.current)
+      logTimer.current = null
+      enqueueWeeklyLogSync(weeklyLogRef.current)
+    }
+    await logSyncQueue.current
+  }, [enqueueWeeklyLogSync])
+
+  const persistTemplate = useCallback(
+    (t: WeekTemplate) => {
+      templateRef.current = t
+      if (templateTimer.current) clearTimeout(templateTimer.current)
+      templateTimer.current = setTimeout(() => {
+        templateTimer.current = null
+        void enqueueTemplateSync(templateRef.current)
+      }, 400)
+    },
+    [enqueueTemplateSync],
+  )
+
+  const persistWeeklyLog = useCallback(
+    (log: WeeklyLog) => {
+      weeklyLogRef.current = { ...log, weekStart: weekStartRef.current }
+      if (logTimer.current) clearTimeout(logTimer.current)
+      logTimer.current = setTimeout(() => {
+        logTimer.current = null
+        void enqueueWeeklyLogSync(weeklyLogRef.current)
+      }, 300)
+    },
+    [enqueueWeeklyLogSync],
   )
 
   const persistItems = useCallback(
@@ -276,16 +348,21 @@ export function PlannerDataProvider({
 
   const goToWeek = useCallback(
     async (newWeekStart: string) => {
+      await Promise.all([awaitWeeklyLogSync(), awaitTemplateSync()])
       setWeekStart(newWeekStart)
       try {
-        const log = await fetchWeeklyLog(userId, newWeekStart)
+        const [log, tmpl] = await Promise.all([
+          fetchWeeklyLog(userId, newWeekStart),
+          fetchTemplate(userId),
+        ])
         setWeeklyLog(log)
+        if (tmpl) setTemplate(tmpl)
       } catch (e) {
-        logError('fetchWeeklyLog', e)
+        logError('goToWeek', e)
         setWeeklyLog(emptyWeeklyLog(newWeekStart))
       }
     },
-    [userId],
+    [userId, awaitWeeklyLogSync, awaitTemplateSync],
   )
 
   const getBlockLog = useCallback(
@@ -339,7 +416,11 @@ export function PlannerDataProvider({
   const updateWeeklyLog = useCallback(
     (updater: (prev: WeeklyLog) => WeeklyLog) => {
       setWeeklyLog((prev) => {
-        const next = updater(prev)
+        const next = {
+          ...updater({ ...prev, weekStart: weekStartRef.current }),
+          weekStart: weekStartRef.current,
+        }
+        weeklyLogRef.current = next
         persistWeeklyLog(next)
         return next
       })
@@ -350,14 +431,15 @@ export function PlannerDataProvider({
   const toggleTask = useCallback(
     (dayKey: DayKey, blockId: string, taskId: string, kind: 'recurring' | 'one-off') => {
       if (kind === 'one-off') {
-        const dateKey = getDateKeyForDay(weekStart, dayKey)
-        updateWeeklyLog((prev) => {
-          const dateMap = prev.oneOffByDate[dateKey] ?? {}
+        const dateKey = getDateKeyForDay(weekStartRef.current, dayKey)
+        setWeeklyLog((prev) => {
+          const base = { ...prev, weekStart: weekStartRef.current }
+          const dateMap = base.oneOffByDate[dateKey] ?? {}
           const tasks = dateMap[blockId] ?? []
-          return {
-            ...prev,
+          const next: WeeklyLog = {
+            ...base,
             oneOffByDate: {
-              ...prev.oneOffByDate,
+              ...base.oneOffByDate,
               [dateKey]: {
                 ...dateMap,
                 [blockId]: tasks.map((t) =>
@@ -366,17 +448,21 @@ export function PlannerDataProvider({
               },
             },
           }
+          void enqueueWeeklyLogSync(next)
+          return next
         })
         return
       }
-      updateWeeklyLog((prev) => {
-        const dayLog = prev.days[dayKey] ?? {}
+
+      setWeeklyLog((prev) => {
+        const base = { ...prev, weekStart: weekStartRef.current }
+        const dayLog = base.days[dayKey] ?? {}
         const blockLog = dayLog[blockId] ?? emptyBlockLog()
         const current = blockLog.taskCompletion[taskId] ?? false
-        return {
-          ...prev,
+        const next: WeeklyLog = {
+          ...base,
           days: {
-            ...prev.days,
+            ...base.days,
             [dayKey]: {
               ...dayLog,
               [blockId]: {
@@ -386,32 +472,37 @@ export function PlannerDataProvider({
             },
           },
         }
+        void enqueueWeeklyLogSync(next)
+        return next
       })
     },
-    [weekStart, updateWeeklyLog],
+    [enqueueWeeklyLogSync],
   )
 
   const toggleHideTask = useCallback(
     (dayKey: DayKey, blockId: string, taskId: string, _kind: 'recurring' | 'one-off') => {
-      updateWeeklyLog((prev) => {
-        const dayLog = prev.days[dayKey] ?? {}
+      setWeeklyLog((prev) => {
+        const base = { ...prev, weekStart: weekStartRef.current }
+        const dayLog = base.days[dayKey] ?? {}
         const blockLog = dayLog[blockId] ?? emptyBlockLog()
         const hidden = new Set(blockLog.hiddenTasks ?? [])
         if (hidden.has(taskId)) hidden.delete(taskId)
         else hidden.add(taskId)
-        return {
-          ...prev,
+        const next: WeeklyLog = {
+          ...base,
           days: {
-            ...prev.days,
+            ...base.days,
             [dayKey]: {
               ...dayLog,
               [blockId]: { ...blockLog, hiddenTasks: [...hidden] },
             },
           },
         }
+        void enqueueWeeklyLogSync(next)
+        return next
       })
     },
-    [updateWeeklyLog],
+    [enqueueWeeklyLogSync],
   )
 
   const setFlexibleNote = useCallback(
@@ -435,35 +526,45 @@ export function PlannerDataProvider({
     (dayKey: DayKey, blockId: string, label: string, recurring: boolean) => {
       if (recurring) {
         const task: TaskTemplate = { id: generateId(), label }
-        updateTemplate((prev) => ({
-          days: prev.days.map((d) =>
-            d.key === dayKey
-              ? {
-                  ...d,
-                  blocks: d.blocks.map((b) =>
-                    b.id === blockId ? { ...b, tasks: [...b.tasks, task] } : b,
-                  ),
-                }
-              : d,
-          ),
-        }))
+        setTemplate((prev) => {
+          const next: WeekTemplate = {
+            days: prev.days.map((d) =>
+              d.key === dayKey
+                ? {
+                    ...d,
+                    blocks: d.blocks.map((b) =>
+                      b.id === blockId ? { ...b, tasks: [...b.tasks, task] } : b,
+                    ),
+                  }
+                : d,
+            ),
+          }
+          if (templateTimer.current) clearTimeout(templateTimer.current)
+          templateTimer.current = null
+          void enqueueTemplateSync(next)
+          return next
+        })
         return
       }
-      const dateKey = getDateKeyForDay(weekStart, dayKey)
+
+      const dateKey = getDateKeyForDay(weekStartRef.current, dayKey)
       const task: OneOffTask = { id: generateId(), label, done: false }
-      updateWeeklyLog((prev) => {
-        const dateMap = prev.oneOffByDate[dateKey] ?? {}
+      setWeeklyLog((prev) => {
+        const base = { ...prev, weekStart: weekStartRef.current }
+        const dateMap = base.oneOffByDate[dateKey] ?? {}
         const existing = dateMap[blockId] ?? []
-        return {
-          ...prev,
+        const next: WeeklyLog = {
+          ...base,
           oneOffByDate: {
-            ...prev.oneOffByDate,
+            ...base.oneOffByDate,
             [dateKey]: { ...dateMap, [blockId]: [...existing, task] },
           },
         }
+        void enqueueWeeklyLogSync(next)
+        return next
       })
     },
-    [weekStart, updateTemplate, updateWeeklyLog],
+    [enqueueTemplateSync, enqueueWeeklyLogSync],
   )
 
   const deleteRecurringTask = useCallback(
