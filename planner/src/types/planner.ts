@@ -53,6 +53,8 @@ export interface BlockDayLog {
   taskCompletion: Record<string, boolean>
   /** Recurring task IDs hidden for this week only (delete-this-week) */
   hiddenRecurringTasks?: string[]
+  /** Task IDs hidden for this calendar date only (eye icon skip) */
+  hiddenTasks?: string[]
   flexibleNote?: string
 }
 

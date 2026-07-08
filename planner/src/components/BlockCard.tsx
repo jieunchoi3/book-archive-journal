@@ -14,6 +14,7 @@ interface BlockCardProps {
   tasks: RenderTask[]
   onEdit: () => void
   onToggleTask: (taskId: string, kind: 'recurring' | 'one-off') => void
+  onHideTask?: (taskId: string, kind: 'recurring' | 'one-off') => void
   onAddTask: (label: string, recurring: boolean) => void
   onFlexibleNoteChange: (note: string) => void
   isDragging?: boolean
@@ -25,6 +26,7 @@ export function BlockCard({
   tasks,
   onEdit,
   onToggleTask,
+  onHideTask,
   onAddTask,
   onFlexibleNoteChange,
   isDragging,
@@ -139,6 +141,9 @@ export function BlockCard({
               checked={task.done}
               oneOff={task.kind === 'one-off'}
               onChange={() => onToggleTask(task.id, task.kind)}
+              onHide={
+                onHideTask ? () => onHideTask(task.id, task.kind) : undefined
+              }
             />
           ))}
         </div>

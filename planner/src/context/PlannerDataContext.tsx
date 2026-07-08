@@ -52,6 +52,11 @@ import {
 } from '../lib/localStorageLegacy'
 import { emptyWeeklyLog } from '../lib/storageUtils'
 import { logError } from '../lib/formatError'
+import {
+  getHiddenBlockTasks,
+  getVisibleBlockTasks,
+  isBlockCompleteForDay as isBlockComplete,
+} from '../lib/blockTasks'
 import { generateId, getCurrentWeekStart, getDateKeyForDay } from '../lib/weekUtils'
 import { SEED_TEMPLATE } from '../data/seedTemplate'
 
@@ -82,6 +87,14 @@ interface PlannerDataContextValue {
     taskId: string,
     kind: 'recurring' | 'one-off',
   ) => void
+  toggleHideTask: (
+    dayKey: DayKey,
+    blockId: string,
+    taskId: string,
+    kind: 'recurring' | 'one-off',
+  ) => void
+  isBlockCompleteForDay: (dayKey: DayKey, block: Block) => boolean
+  getHiddenBlockTasks: (dayKey: DayKey, block: Block) => RenderTask[]
   setFlexibleNote: (dayKey: DayKey, blockId: string, note: string) => void
   addTask: (dayKey: DayKey, blockId: string, label: string, recurring: boolean) => void
   deleteRecurringTask: (
@@ -291,22 +304,23 @@ export function PlannerDataProvider({
   const getBlockTasks = useCallback(
     (dayKey: DayKey, block: Block): RenderTask[] => {
       const blockLog = getBlockLog(dayKey, block.id)
-      const hidden = new Set(blockLog.hiddenRecurringTasks ?? [])
-      const recurring = block.tasks
-        .filter((t) => !hidden.has(t.id))
-        .map((t) => ({
-          id: t.id,
-          label: t.label,
-          kind: 'recurring' as const,
-          done: !!blockLog.taskCompletion[t.id],
-        }))
-      const oneOff = getOneOffTasks(dayKey, block.id).map((t) => ({
-        id: t.id,
-        label: t.label,
-        kind: 'one-off' as const,
-        done: t.done,
-      }))
-      return [...recurring, ...oneOff]
+      return getVisibleBlockTasks(block, blockLog, getOneOffTasks(dayKey, block.id))
+    },
+    [getBlockLog, getOneOffTasks],
+  )
+
+  const getHiddenBlockTasksForBlock = useCallback(
+    (dayKey: DayKey, block: Block): RenderTask[] => {
+      const blockLog = getBlockLog(dayKey, block.id)
+      return getHiddenBlockTasks(block, blockLog, getOneOffTasks(dayKey, block.id))
+    },
+    [getBlockLog, getOneOffTasks],
+  )
+
+  const isBlockCompleteForDayFn = useCallback(
+    (dayKey: DayKey, block: Block): boolean => {
+      const blockLog = getBlockLog(dayKey, block.id)
+      return isBlockComplete(block, blockLog, getOneOffTasks(dayKey, block.id))
     },
     [getBlockLog, getOneOffTasks],
   )
@@ -375,6 +389,29 @@ export function PlannerDataProvider({
       })
     },
     [weekStart, updateWeeklyLog],
+  )
+
+  const toggleHideTask = useCallback(
+    (dayKey: DayKey, blockId: string, taskId: string, _kind: 'recurring' | 'one-off') => {
+      updateWeeklyLog((prev) => {
+        const dayLog = prev.days[dayKey] ?? {}
+        const blockLog = dayLog[blockId] ?? emptyBlockLog()
+        const hidden = new Set(blockLog.hiddenTasks ?? [])
+        if (hidden.has(taskId)) hidden.delete(taskId)
+        else hidden.add(taskId)
+        return {
+          ...prev,
+          days: {
+            ...prev.days,
+            [dayKey]: {
+              ...dayLog,
+              [blockId]: { ...blockLog, hiddenTasks: [...hidden] },
+            },
+          },
+        }
+      })
+    },
+    [updateWeeklyLog],
   )
 
   const setFlexibleNote = useCallback(
@@ -614,6 +651,9 @@ export function PlannerDataProvider({
     getBlockTasks,
     getOneOffTasks,
     toggleTask,
+    toggleHideTask,
+    isBlockCompleteForDay: isBlockCompleteForDayFn,
+    getHiddenBlockTasks: getHiddenBlockTasksForBlock,
     setFlexibleNote,
     addTask,
     deleteRecurringTask,
@@ -821,6 +861,9 @@ export type PlannerActions = Pick<
   | 'getBlockTasks'
   | 'getOneOffTasks'
   | 'toggleTask'
+  | 'toggleHideTask'
+  | 'isBlockCompleteForDay'
+  | 'getHiddenBlockTasks'
   | 'setFlexibleNote'
   | 'addTask'
   | 'deleteRecurringTask'

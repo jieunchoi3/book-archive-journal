@@ -169,6 +169,7 @@ export async function fetchWeeklyLog(userId: string, weekStart: string): Promise
       taskCompletion: {},
       flexibleNote: row.flexible_note ?? undefined,
       hiddenRecurringTasks: (row.hidden_recurring_tasks as string[]) ?? [],
+      hiddenTasks: (row.hidden_tasks as string[]) ?? [],
     }
   }
 
@@ -225,7 +226,8 @@ export async function syncWeeklyLog(userId: string, log: WeeklyLog): Promise<voi
     for (const [blockId, blockLog] of Object.entries(blockMap)) {
       if (
         blockLog.flexibleNote ||
-        (blockLog.hiddenRecurringTasks && blockLog.hiddenRecurringTasks.length > 0)
+        (blockLog.hiddenRecurringTasks && blockLog.hiddenRecurringTasks.length > 0) ||
+        (blockLog.hiddenTasks && blockLog.hiddenTasks.length > 0)
       ) {
         blockLogRows.push({
           user_id: userId,
@@ -234,6 +236,7 @@ export async function syncWeeklyLog(userId: string, log: WeeklyLog): Promise<voi
           block_id: blockId,
           flexible_note: blockLog.flexibleNote ?? null,
           hidden_recurring_tasks: blockLog.hiddenRecurringTasks ?? [],
+          hidden_tasks: blockLog.hiddenTasks ?? [],
         })
       }
       for (const [taskId, done] of Object.entries(blockLog.taskCompletion)) {

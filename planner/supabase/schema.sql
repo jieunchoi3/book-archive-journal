@@ -40,7 +40,7 @@ create table if not exists planner.recurring_tasks (
 
 create index if not exists recurring_tasks_block_idx on planner.recurring_tasks (block_id);
 
--- Per-week block state (flexible notes, hidden recurring tasks)
+-- Per-week block state (flexible notes, hidden recurring tasks, per-date hidden tasks)
 create table if not exists planner.block_week_logs (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -49,6 +49,7 @@ create table if not exists planner.block_week_logs (
   block_id text not null references planner.blocks(id) on delete cascade,
   flexible_note text,
   hidden_recurring_tasks jsonb not null default '[]'::jsonb,
+  hidden_tasks jsonb not null default '[]'::jsonb,
   unique (user_id, week_start, day_key, block_id)
 );
 
@@ -153,6 +154,9 @@ create policy "tags_own" on planner.tags for all using (auth.uid() = user_id) wi
 create policy "items_own" on planner.items for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "item_tags_own" on planner.item_tags for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "linked_apps_own" on planner.linked_apps for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- Migration for existing projects:
+-- alter table planner.block_week_logs add column if not exists hidden_tasks jsonb not null default '[]'::jsonb;
 
 -- API access for Supabase roles
 grant usage on schema planner to anon, authenticated, service_role;
