@@ -247,6 +247,24 @@ export function PlannerDataProvider({
     [userId],
   )
 
+  /** Wait for pending debounced writes and all queued weekly-log saves before reading. */
+  const awaitWeeklyLogSync = useCallback(async (): Promise<void> => {
+    if (logTimer.current) {
+      clearTimeout(logTimer.current)
+      logTimer.current = null
+      enqueueWeeklyLogSync({ ...weeklyLogRef.current, weekStart: weekStartRef.current })
+    }
+    await logSyncQueue.current
+  }, [enqueueWeeklyLogSync])
+
+  const loadWeeklyLog = useCallback(
+    async (targetWeekStart: string): Promise<WeeklyLog> => {
+      await awaitWeeklyLogSync()
+      return fetchWeeklyLog(userId, targetWeekStart)
+    },
+    [userId, awaitWeeklyLogSync],
+  )
+
   const persistTemplate = useCallback(
     (t: WeekTemplate) => {
       templateRef.current = t
@@ -298,7 +316,7 @@ export function PlannerDataProvider({
         setLoading(true)
         const [tmpl, log, store, apps] = await Promise.all([
           fetchTemplate(userId),
-          fetchWeeklyLog(userId, getCurrentWeekStart()),
+          loadWeeklyLog(getCurrentWeekStart()),
           fetchItemsStore(userId),
           fetchLinkedApps(userId),
         ])
@@ -322,7 +340,7 @@ export function PlannerDataProvider({
     return () => {
       cancelled = true
     }
-  }, [userId])
+  }, [userId, loadWeeklyLog])
 
   const importLocalData = useCallback(async () => {
     setImporting(true)
@@ -343,14 +361,14 @@ export function PlannerDataProvider({
       if (tmpl) setTemplate(tmpl)
       setItemsStore(store)
       setLinkedApps(apps)
-      setWeeklyLog(await fetchWeeklyLog(userId, weekStart))
+      setWeeklyLog(await loadWeeklyLog(weekStart))
       setShowImportBanner(false)
     } catch (e) {
       logError('importLocalData', e)
     } finally {
       setImporting(false)
     }
-  }, [userId, weekStart])
+  }, [userId, weekStart, loadWeeklyLog])
 
   const goToWeek = useCallback(
     async (newWeekStart: string) => {
@@ -364,18 +382,20 @@ export function PlannerDataProvider({
         logTimer.current = null
       }
 
-      // Update UI immediately — don't block on Supabase flush/fetch of the previous week.
+      // Queue save for the week we're leaving before switching context.
+      void enqueueWeeklyLogSync(logToFlush)
+
+      // Optimistic UI — week label updates immediately; load waits for sync queue.
       weekStartRef.current = newWeekStart
       setWeekStart(newWeekStart)
       const placeholder = emptyWeeklyLog(newWeekStart)
       weeklyLogRef.current = placeholder
       setWeeklyLog(placeholder)
 
-      void enqueueWeeklyLogSync(logToFlush)
       void awaitTemplateSync()
 
       try {
-        const log = await fetchWeeklyLog(userId, newWeekStart)
+        const log = await loadWeeklyLog(newWeekStart)
         if (weekStartRef.current !== newWeekStart) return
         weeklyLogRef.current = log
         setWeeklyLog(log)
@@ -386,7 +406,7 @@ export function PlannerDataProvider({
         }
       }
     },
-    [userId, enqueueWeeklyLogSync, awaitTemplateSync],
+    [enqueueWeeklyLogSync, awaitTemplateSync, loadWeeklyLog],
   )
 
   const getBlockLog = useCallback(
