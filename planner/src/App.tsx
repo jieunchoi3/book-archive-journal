@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { AuthProvider } from './components/AuthProvider'
 import { useAuth } from './hooks/useAuth'
 import { PlannerDataProvider } from './context/PlannerDataContext'
 import { usePlanner } from './hooks/usePlanner'
@@ -34,31 +35,21 @@ function AppContent() {
   )
 }
 
-function App() {
-  const { session, loading, error } = useAuth()
-
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#fafafa]">
-        <p className="text-sm text-muted">Loading…</p>
-      </div>
-    )
-  }
-
-  if (error || !session) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#fafafa] px-6">
-        <p className="max-w-sm text-center text-[13px] text-red-600">
-          {error ?? 'Could not start the planner.'}
-        </p>
-      </div>
-    )
-  }
+function PlannerRoot() {
+  const { user } = useAuth()
 
   return (
-    <PlannerDataProvider user={session.user} onSignOut={() => {}}>
+    <PlannerDataProvider user={user} onSignOut={() => {}}>
       <AppContent />
     </PlannerDataProvider>
+  )
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <PlannerRoot />
+    </AuthProvider>
   )
 }
 

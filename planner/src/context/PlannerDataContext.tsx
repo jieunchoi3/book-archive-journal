@@ -51,6 +51,7 @@ import {
   markLocalImportDone,
 } from '../lib/localStorageLegacy'
 import { emptyWeeklyLog } from '../lib/storageUtils'
+import { logError } from '../lib/formatError'
 import { generateId, getCurrentWeekStart, getDateKeyForDay } from '../lib/weekUtils'
 import { SEED_TEMPLATE } from '../data/seedTemplate'
 
@@ -65,7 +66,6 @@ function emptyBlockLog(): BlockDayLog {
 interface PlannerDataContextValue {
   user: User
   loading: boolean
-  error: string | null
   showImportBanner: boolean
   importing: boolean
   importLocalData: () => Promise<void>
@@ -142,7 +142,6 @@ export function PlannerDataProvider({
 }) {
   const userId = user.id
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
   const [showImportBanner, setShowImportBanner] = useState(false)
 
@@ -165,7 +164,7 @@ export function PlannerDataProvider({
     (t: WeekTemplate) => {
       if (templateTimer.current) clearTimeout(templateTimer.current)
       templateTimer.current = setTimeout(() => {
-        syncTemplate(userId, t).catch((e) => setError(String(e)))
+        syncTemplate(userId, t).catch((e) => logError('syncTemplate', e))
       }, 400)
     },
     [userId],
@@ -175,7 +174,7 @@ export function PlannerDataProvider({
     (log: WeeklyLog) => {
       if (logTimer.current) clearTimeout(logTimer.current)
       logTimer.current = setTimeout(() => {
-        syncWeeklyLog(userId, log).catch((e) => setError(String(e)))
+        syncWeeklyLog(userId, log).catch((e) => logError('syncWeeklyLog', e))
       }, 300)
     },
     [userId],
@@ -185,7 +184,7 @@ export function PlannerDataProvider({
     (store: typeof itemsStore) => {
       if (itemsTimer.current) clearTimeout(itemsTimer.current)
       itemsTimer.current = setTimeout(() => {
-        syncItemsStore(userId, store).catch((e) => setError(String(e)))
+        syncItemsStore(userId, store).catch((e) => logError('syncItemsStore', e))
       }, 400)
     },
     [userId],
@@ -195,7 +194,7 @@ export function PlannerDataProvider({
     (apps: LinkedApp[]) => {
       if (appsTimer.current) clearTimeout(appsTimer.current)
       appsTimer.current = setTimeout(() => {
-        syncLinkedApps(userId, apps).catch((e) => setError(String(e)))
+        syncLinkedApps(userId, apps).catch((e) => logError('syncLinkedApps', e))
       }, 400)
     },
     [userId],
@@ -224,7 +223,7 @@ export function PlannerDataProvider({
         setLinkedApps(apps)
         setShowImportBanner(hasLocalPlannerData() && !isLocalImportDone())
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e))
+        if (!cancelled) logError('loadPlannerData', e)
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -236,7 +235,6 @@ export function PlannerDataProvider({
 
   const importLocalData = useCallback(async () => {
     setImporting(true)
-    setError(null)
     try {
       await importAllFromLocal(userId, {
         template: loadTemplateLegacy(),
@@ -257,7 +255,7 @@ export function PlannerDataProvider({
       setWeeklyLog(await fetchWeeklyLog(userId, weekStart))
       setShowImportBanner(false)
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      logError('importLocalData', e)
     } finally {
       setImporting(false)
     }
@@ -270,7 +268,7 @@ export function PlannerDataProvider({
         const log = await fetchWeeklyLog(userId, newWeekStart)
         setWeeklyLog(log)
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e))
+        logError('fetchWeeklyLog', e)
         setWeeklyLog(emptyWeeklyLog(newWeekStart))
       }
     },
@@ -605,7 +603,6 @@ export function PlannerDataProvider({
   const value: PlannerDataContextValue = {
     user,
     loading,
-    error,
     showImportBanner,
     importing,
     importLocalData,
@@ -796,22 +793,15 @@ export function PlannerDataProvider({
     },
   }
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#fafafa]">
-        <p className="text-sm text-muted">Loading your planner…</p>
-      </div>
-    )
-  }
-
   return (
     <PlannerDataContext.Provider value={value}>
-      {error && (
-        <div className="border-b border-red-200 bg-red-50 px-4 py-2 text-center text-[12px] text-red-700">
-          {error}
+      {loading ? (
+        <div className="flex min-h-screen items-center justify-center bg-[#fafafa]">
+          <p className="text-sm text-muted">Loading your planner…</p>
         </div>
+      ) : (
+        children
       )}
-      {children}
     </PlannerDataContext.Provider>
   )
 }
