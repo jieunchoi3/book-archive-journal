@@ -194,6 +194,7 @@ export function PlannerDataProvider({
   const weeklyLogRef = useRef(weeklyLog)
   const weekStartRef = useRef(weekStart)
   const weekLoadGeneration = useRef(0)
+  const weekCacheRef = useRef(new Map<string, WeeklyLog>())
   const pendingBlockLogWrite = useRef<{
     dayKey: DayKey
     blockId: string
@@ -273,6 +274,10 @@ export function PlannerDataProvider({
     [userId],
   )
 
+  const putWeekCache = useCallback((log: WeeklyLog) => {
+    weekCacheRef.current.set(log.weekStart, log)
+  }, [])
+
   const persistTemplate = useCallback(
     (t: WeekTemplate) => {
       templateRef.current = t
@@ -322,6 +327,7 @@ export function PlannerDataProvider({
           finalTemplate = await seedDefaultTemplate(userId)
         }
         setTemplate(finalTemplate)
+        putWeekCache(log)
         setWeeklyLog(log)
         setWeekStart(getCurrentWeekStart())
         setItemsStore(store)
@@ -336,7 +342,7 @@ export function PlannerDataProvider({
     return () => {
       cancelled = true
     }
-  }, [userId, loadWeeklyLog])
+  }, [userId, loadWeeklyLog, putWeekCache])
 
   const importLocalData = useCallback(async () => {
     setImporting(true)
@@ -357,36 +363,66 @@ export function PlannerDataProvider({
       if (tmpl) setTemplate(tmpl)
       setItemsStore(store)
       setLinkedApps(apps)
-      setWeeklyLog(await loadWeeklyLog(weekStart))
+      const log = await loadWeeklyLog(weekStart)
+      putWeekCache(log)
+      setWeeklyLog(log)
       setShowImportBanner(false)
     } catch (e) {
       logError('importLocalData', e)
     } finally {
       setImporting(false)
     }
-  }, [userId, weekStart, loadWeeklyLog])
+  }, [userId, weekStart, loadWeeklyLog, putWeekCache])
 
   const goToWeek = useCallback(
     async (newWeekStart: string) => {
       if (newWeekStart === weekStartRef.current) return
 
       const loadId = ++weekLoadGeneration.current
-      setLoadingWeek(true)
 
       flushBlockLogWrite()
 
-      // Optimistic UI — week label updates immediately; per-row upserts need no flush queue.
+      const leavingWeek = weekStartRef.current
+      putWeekCache({ ...weeklyLogRef.current, weekStart: leavingWeek })
+
+      void awaitTemplateSync()
+
       weekStartRef.current = newWeekStart
       setWeekStart(newWeekStart)
+
+      const cached = weekCacheRef.current.get(newWeekStart)
+      if (cached) {
+        weeklyLogRef.current = cached
+        setWeeklyLog(cached)
+
+        void (async () => {
+          try {
+            console.log(`[planner] revalidate week=${newWeekStart}`)
+            const fresh = await loadWeeklyLog(newWeekStart)
+            putWeekCache(fresh)
+            if (weekStartRef.current !== newWeekStart || loadId !== weekLoadGeneration.current) {
+              return
+            }
+            weeklyLogRef.current = fresh
+            setWeeklyLog(fresh)
+          } catch (e) {
+            logError('goToWeek revalidate', e)
+          }
+        })()
+        return
+      }
+
+      setLoadingWeek(true)
       const placeholder = emptyWeeklyLog(newWeekStart)
       weeklyLogRef.current = placeholder
       setWeeklyLog(placeholder)
 
-      void awaitTemplateSync()
-
       try {
         const log = await loadWeeklyLog(newWeekStart)
-        if (weekStartRef.current !== newWeekStart) return
+        if (weekStartRef.current !== newWeekStart || loadId !== weekLoadGeneration.current) {
+          return
+        }
+        putWeekCache(log)
         weeklyLogRef.current = log
         setWeeklyLog(log)
       } catch (e) {
@@ -400,7 +436,7 @@ export function PlannerDataProvider({
         }
       }
     },
-    [flushBlockLogWrite, awaitTemplateSync, loadWeeklyLog],
+    [flushBlockLogWrite, awaitTemplateSync, loadWeeklyLog, putWeekCache],
   )
 
   const getBlockLog = useCallback(
@@ -466,11 +502,12 @@ export function PlannerDataProvider({
           },
         }
         weeklyLogRef.current = next
+        putWeekCache(next)
         persistBlockWeekLogDebounced(dayKey, blockId, nextBlockLog)
         return next
       })
     },
-    [persistBlockWeekLogDebounced],
+    [persistBlockWeekLogDebounced, putWeekCache],
   )
 
   const toggleTask = useCallback(
@@ -498,6 +535,7 @@ export function PlannerDataProvider({
             },
           }
           weeklyLogRef.current = next
+          putWeekCache(next)
           return next
         })
         void upsertOneOffTask(userId, { ...task, done }, dateKey, blockId).catch((e) =>
@@ -526,13 +564,14 @@ export function PlannerDataProvider({
           },
         }
         weeklyLogRef.current = next
+        putWeekCache(next)
         return next
       })
       void upsertTaskCompletion(userId, week, dayKey, blockId, taskId, done).catch((e) =>
         logError('upsertTaskCompletion', e),
       )
     },
-    [userId],
+    [userId, putWeekCache],
   )
 
   const toggleHideTask = useCallback(
@@ -555,13 +594,14 @@ export function PlannerDataProvider({
           },
         }
         weeklyLogRef.current = next
+        putWeekCache(next)
         return next
       })
       void upsertBlockWeekLog(userId, week, dayKey, blockId, nextBlockLog).catch((e) =>
         logError('upsertBlockWeekLog', e),
       )
     },
-    [userId],
+    [userId, putWeekCache],
   )
 
   const addTask = useCallback(
@@ -603,13 +643,14 @@ export function PlannerDataProvider({
           },
         }
         weeklyLogRef.current = next
+        putWeekCache(next)
         return next
       })
       void upsertOneOffTask(userId, task, dateKey, blockId).catch((e) =>
         logError('upsertOneOffTask', e),
       )
     },
-    [enqueueTemplateSync, userId],
+    [enqueueTemplateSync, userId, putWeekCache],
   )
 
   const deleteRecurringTask = useCallback(
@@ -652,13 +693,14 @@ export function PlannerDataProvider({
           },
         }
         weeklyLogRef.current = next
+        putWeekCache(next)
         return next
       })
       void upsertBlockWeekLog(userId, week, dayKey, blockId, nextBlockLog).catch((e) =>
         logError('upsertBlockWeekLog', e),
       )
     },
-    [enqueueTemplateSync, userId],
+    [enqueueTemplateSync, userId, putWeekCache],
   )
 
   const deleteOneOffTask = useCallback(
@@ -676,11 +718,12 @@ export function PlannerDataProvider({
           },
         }
         weeklyLogRef.current = next
+        putWeekCache(next)
         return next
       })
       void deleteOneOffTaskRow(userId, taskId).catch((e) => logError('deleteOneOffTaskRow', e))
     },
-    [userId],
+    [userId, putWeekCache],
   )
 
   const renameOneOffTask = useCallback(
@@ -708,13 +751,14 @@ export function PlannerDataProvider({
           },
         }
         weeklyLogRef.current = next
+        putWeekCache(next)
         return next
       })
       void upsertOneOffTask(userId, updated, dateKey, blockId).catch((e) =>
         logError('upsertOneOffTask', e),
       )
     },
-    [userId],
+    [userId, putWeekCache],
   )
 
   const renameRecurringTask = useCallback(
