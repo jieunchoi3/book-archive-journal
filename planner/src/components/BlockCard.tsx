@@ -149,14 +149,12 @@ export function BlockCard({
                 onHideTask ? () => onHideTask(task.id, task.kind) : undefined
               }
               onRename={
-                task.kind === 'one-off' && onRenameTask
+                onRenameTask
                   ? (label) => onRenameTask(task.id, task.kind, label)
                   : undefined
               }
               onDelete={
-                task.kind === 'one-off' && onDeleteTask
-                  ? () => onDeleteTask(task.id, task.kind)
-                  : undefined
+                onDeleteTask ? () => onDeleteTask(task.id, task.kind) : undefined
               }
             />
           ))}

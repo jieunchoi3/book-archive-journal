@@ -128,11 +128,15 @@ export function DayColumn({ day, weekStart, planner, items }: DayColumnProps) {
     onRenameTask: (taskId: string, kind: 'recurring' | 'one-off', label: string) => {
       if (kind === 'one-off') {
         planner.renameOneOffTask(day.key, blockId, taskId, label)
+      } else {
+        planner.renameRecurringTask(day.key, blockId, taskId, label)
       }
     },
     onDeleteTask: (taskId: string, kind: 'recurring' | 'one-off') => {
       if (kind === 'one-off') {
         planner.deleteOneOffTask(day.key, blockId, taskId)
+      } else {
+        planner.deleteRecurringTask(day.key, blockId, taskId, 'template')
       }
     },
   })
