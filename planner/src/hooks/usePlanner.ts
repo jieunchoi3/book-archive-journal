@@ -8,6 +8,7 @@ export function usePlanner(): PlannerActions {
     template: data.template,
     weekStart: data.weekStart,
     weeklyLog: data.weeklyLog,
+    loadingWeek: data.loadingWeek,
     getBlockLog: data.getBlockLog,
     getBlockTasks: data.getBlockTasks,
     getOneOffTasks: data.getOneOffTasks,

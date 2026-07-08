@@ -1,4 +1,4 @@
-import type { DayKey, WeekTemplate, WeeklyLog } from '../types/planner'
+import type { BlockDayLog, DayKey, OneOffTask, WeekTemplate, WeeklyLog } from '../types/planner'
 import { DAY_KEYS } from '../types/planner'
 import type { Category, Item, Tag } from '../types/item'
 import type { LinkedApp } from '../types/linkedApp'
@@ -242,31 +242,88 @@ export async function fetchWeeklyLog(userId: string, weekStart: string): Promise
   return log
 }
 
-export async function syncWeeklyLog(userId: string, log: WeeklyLog): Promise<void> {
-  const weekStart = log.weekStart
-  const weekEnd = addDays(weekStart, 6)
+function logRowUpsert(table: string, row: Record<string, unknown>): void {
+  console.log(`[planner] UPSERT ${table}`, row)
+}
 
-  const delBlockLogs = await supabase
-    .from('block_week_logs')
-    .delete()
-    .eq('user_id', userId)
-    .eq('week_start', weekStart)
-  if (delBlockLogs.error) throw delBlockLogs.error
-
-  const delCompletions = await supabase
+export async function upsertTaskCompletion(
+  userId: string,
+  weekStart: string,
+  dayKey: DayKey,
+  blockId: string,
+  taskId: string,
+  done: boolean,
+): Promise<void> {
+  const row = {
+    user_id: userId,
+    week_start: weekStart,
+    day_key: dayKey,
+    block_id: blockId,
+    task_id: taskId,
+    done,
+  }
+  logRowUpsert('task_completions', row)
+  const { error } = await supabase
     .from('task_completions')
-    .delete()
-    .eq('user_id', userId)
-    .eq('week_start', weekStart)
-  if (delCompletions.error) throw delCompletions.error
+    .upsert(row, { onConflict: 'user_id,week_start,day_key,block_id,task_id' })
+  if (error) throw error
+}
 
-  const delOneOff = await supabase
+export async function upsertBlockWeekLog(
+  userId: string,
+  weekStart: string,
+  dayKey: DayKey,
+  blockId: string,
+  blockLog: BlockDayLog,
+): Promise<void> {
+  const row = {
+    user_id: userId,
+    week_start: weekStart,
+    day_key: dayKey,
+    block_id: blockId,
+    flexible_note: blockLog.flexibleNote ?? null,
+    hidden_recurring_tasks: blockLog.hiddenRecurringTasks ?? [],
+    hidden_tasks: blockLog.hiddenTasks ?? [],
+  }
+  logRowUpsert('block_week_logs', row)
+  const { error } = await supabase
+    .from('block_week_logs')
+    .upsert(row, { onConflict: 'user_id,week_start,day_key,block_id' })
+  if (error) throw error
+}
+
+export async function upsertOneOffTask(
+  userId: string,
+  task: OneOffTask,
+  taskDate: string,
+  blockId: string,
+): Promise<void> {
+  const row = {
+    id: task.id,
+    user_id: userId,
+    task_date: taskDate,
+    block_id: blockId,
+    label: task.label,
+    done: task.done,
+  }
+  logRowUpsert('one_off_tasks', row)
+  const { error } = await supabase.from('one_off_tasks').upsert(row, { onConflict: 'id' })
+  if (error) throw error
+}
+
+export async function deleteOneOffTaskRow(userId: string, taskId: string): Promise<void> {
+  console.log(`[planner] DELETE one_off_tasks`, { userId, taskId })
+  const { error } = await supabase
     .from('one_off_tasks')
     .delete()
     .eq('user_id', userId)
-    .gte('task_date', weekStart)
-    .lte('task_date', weekEnd)
-  if (delOneOff.error) throw delOneOff.error
+    .eq('id', taskId)
+  if (error) throw error
+}
+
+/** Bulk upsert for local import — no week-wide delete. */
+export async function syncWeeklyLog(userId: string, log: WeeklyLog): Promise<void> {
+  const weekStart = log.weekStart
 
   const blockLogRows: Record<string, unknown>[] = []
   const completionRows: Record<string, unknown>[] = []
@@ -291,7 +348,6 @@ export async function syncWeeklyLog(userId: string, log: WeeklyLog): Promise<voi
         })
       }
       for (const [taskId, done] of Object.entries(blockLog.taskCompletion)) {
-        if (!done) continue
         completionRows.push({
           user_id: userId,
           week_start: weekStart,
@@ -322,15 +378,19 @@ export async function syncWeeklyLog(userId: string, log: WeeklyLog): Promise<voi
   logWeeklyLogSnapshot('SAVE', weekStart, log)
 
   if (blockLogRows.length) {
-    const { error } = await supabase.from('block_week_logs').insert(blockLogRows)
+    const { error } = await supabase
+      .from('block_week_logs')
+      .upsert(blockLogRows, { onConflict: 'user_id,week_start,day_key,block_id' })
     if (error) throw error
   }
   if (completionRows.length) {
-    const { error } = await supabase.from('task_completions').insert(completionRows)
+    const { error } = await supabase
+      .from('task_completions')
+      .upsert(completionRows, { onConflict: 'user_id,week_start,day_key,block_id,task_id' })
     if (error) throw error
   }
   if (oneOffRows.length) {
-    const { error } = await supabase.from('one_off_tasks').insert(oneOffRows)
+    const { error } = await supabase.from('one_off_tasks').upsert(oneOffRows, { onConflict: 'id' })
     if (error) throw error
   }
 }

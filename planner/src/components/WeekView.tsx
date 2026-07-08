@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import type { WeekTemplate } from '../types/planner'
 import type { PlannerActions } from '../hooks/usePlanner'
 import type { ItemsActions } from '../hooks/useItems'
@@ -35,6 +35,7 @@ export function WeekView({ template, weekStart, planner, items, linkedApps }: We
   }
 
   const isCurrentWeek = weekStart === getWeekStartDate()
+  const loadingWeek = planner.loadingWeek
 
   return (
     <div className="flex min-h-screen gap-6 p-6 pb-24">
@@ -83,22 +84,44 @@ export function WeekView({ template, weekStart, planner, items, linkedApps }: We
           </div>
         </header>
 
-        <WeekSummary
-          dayCompletion={planner.dayCompletion}
-          weekCompletionPercent={planner.weekCompletionPercent}
-          days={template.days.map((d) => ({ key: d.key, dayName: d.dayName }))}
-        />
-
-        <div className="flex gap-2 overflow-x-auto pb-4">
-          {template.days.map((day) => (
-            <DayColumn
-              key={`${weekStart}-${day.key}`}
-              day={day}
-              weekStart={weekStart}
-              planner={planner}
-              items={items}
+        <div className="relative min-h-[320px]">
+          <div
+            className={`transition-all duration-200 ${
+              loadingWeek ? 'pointer-events-none opacity-50 blur-[2px]' : ''
+            }`}
+            aria-busy={loadingWeek}
+          >
+            <WeekSummary
+              dayCompletion={planner.dayCompletion}
+              weekCompletionPercent={planner.weekCompletionPercent}
+              days={template.days.map((d) => ({ key: d.key, dayName: d.dayName }))}
             />
-          ))}
+
+            <div className="flex gap-2 overflow-x-auto pb-4">
+              {template.days.map((day) => (
+                <DayColumn
+                  key={`${weekStart}-${day.key}`}
+                  day={day}
+                  weekStart={weekStart}
+                  planner={planner}
+                  items={items}
+                />
+              ))}
+            </div>
+          </div>
+
+          {loadingWeek && (
+            <div
+              className="absolute inset-0 flex items-center justify-center"
+              aria-live="polite"
+              aria-label="주간 데이터 불러오는 중"
+            >
+              <div className="flex items-center gap-2 rounded-full bg-white/95 px-4 py-2 shadow-md ring-1 ring-black/5 backdrop-blur-sm">
+                <Loader2 size={16} className="animate-spin text-[#007AFF]" aria-hidden />
+                <span className="text-[12px] font-medium text-[#636366]">불러오는 중…</span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
