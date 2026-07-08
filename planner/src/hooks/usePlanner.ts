@@ -19,6 +19,8 @@ export function usePlanner(): PlannerActions {
     addTask: data.addTask,
     deleteRecurringTask: data.deleteRecurringTask,
     deleteOneOffTask: data.deleteOneOffTask,
+    renameOneOffTask: data.renameOneOffTask,
+    renameRecurringTask: data.renameRecurringTask,
     updateBlock: data.updateBlock,
     deleteBlock: data.deleteBlock,
     addBlock: data.addBlock,

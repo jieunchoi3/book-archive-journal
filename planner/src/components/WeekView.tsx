@@ -23,15 +23,15 @@ interface WeekViewProps {
 
 export function WeekView({ template, weekStart, planner, items, linkedApps }: WeekViewProps) {
   const goPrev = () => {
-    planner.goToWeek(shiftWeekStart(weekStart, -1))
+    void planner.goToWeek(shiftWeekStart(weekStart, -1))
   }
 
   const goNext = () => {
-    planner.goToWeek(shiftWeekStart(weekStart, 1))
+    void planner.goToWeek(shiftWeekStart(weekStart, 1))
   }
 
   const goToday = () => {
-    planner.goToWeek(getWeekStartDate())
+    void planner.goToWeek(getWeekStartDate())
   }
 
   const isCurrentWeek = weekStart === getWeekStartDate()
@@ -49,7 +49,9 @@ export function WeekView({ template, weekStart, planner, items, linkedApps }: We
             <MonthCalendarTrigger
               weekStart={weekStart}
               label={formatWeekRange(weekStart)}
-              onSelectWeek={planner.goToWeek}
+              onSelectWeek={(targetWeek) => {
+                void planner.goToWeek(targetWeek)
+              }}
             />
           </div>
           <div className="flex items-center gap-1">

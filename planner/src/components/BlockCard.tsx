@@ -16,6 +16,8 @@ interface BlockCardProps {
   onToggleTask: (taskId: string, kind: 'recurring' | 'one-off') => void
   onHideTask?: (taskId: string, kind: 'recurring' | 'one-off') => void
   onAddTask: (label: string, recurring: boolean) => void
+  onRenameTask?: (taskId: string, kind: 'recurring' | 'one-off', label: string) => void
+  onDeleteTask?: (taskId: string, kind: 'recurring' | 'one-off') => void
   onFlexibleNoteChange: (note: string) => void
   isDragging?: boolean
 }
@@ -28,6 +30,8 @@ export function BlockCard({
   onToggleTask,
   onHideTask,
   onAddTask,
+  onRenameTask,
+  onDeleteTask,
   onFlexibleNoteChange,
   isDragging,
 }: BlockCardProps) {
@@ -143,6 +147,16 @@ export function BlockCard({
               onChange={() => onToggleTask(task.id, task.kind)}
               onHide={
                 onHideTask ? () => onHideTask(task.id, task.kind) : undefined
+              }
+              onRename={
+                task.kind === 'one-off' && onRenameTask
+                  ? (label) => onRenameTask(task.id, task.kind, label)
+                  : undefined
+              }
+              onDelete={
+                task.kind === 'one-off' && onDeleteTask
+                  ? () => onDeleteTask(task.id, task.kind)
+                  : undefined
               }
             />
           ))}

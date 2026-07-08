@@ -13,6 +13,7 @@ interface BlockEditModalProps {
   onAddTask: (label: string, recurring: boolean) => void
   onDeleteRecurringTask: (taskId: string, scope: 'week' | 'template') => void
   onDeleteOneOffTask: (taskId: string) => void
+  onRenameOneOffTask: (taskId: string, label: string) => void
 }
 
 export function BlockEditModal({
@@ -24,6 +25,7 @@ export function BlockEditModal({
   onAddTask,
   onDeleteRecurringTask,
   onDeleteOneOffTask,
+  onRenameOneOffTask,
 }: BlockEditModalProps) {
   const [draft, setDraft] = useState<Block>({ ...block })
   const [newTaskLabel, setNewTaskLabel] = useState('')
@@ -312,10 +314,18 @@ export function BlockEditModal({
                 <div className="space-y-1">
                   {oneOffTasks.map((task) => (
                     <div key={task.id} className="flex items-center gap-1">
-                      <span className="flex-1 rounded-lg border border-dashed border-hairline px-3 py-1.5 text-[13px] text-[#636366]">
-                        {task.label}
-                        <span className="ml-1.5 text-[9px] text-muted">오늘만</span>
-                      </span>
+                      <input
+                        type="text"
+                        defaultValue={task.label}
+                        onBlur={(e) => {
+                          const trimmed = e.target.value.trim()
+                          if (trimmed && trimmed !== task.label) {
+                            onRenameOneOffTask(task.id, trimmed)
+                          }
+                        }}
+                        className="flex-1 rounded-lg border border-dashed border-hairline px-3 py-1.5 text-[13px] text-[#636366] focus:border-[#007AFF]/40 focus:outline-none focus:ring-1 focus:ring-[#007AFF]/20"
+                      />
+                      <span className="shrink-0 text-[9px] text-muted">오늘만</span>
                       <button
                         type="button"
                         onClick={() => onDeleteOneOffTask(task.id)}

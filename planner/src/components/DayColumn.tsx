@@ -124,6 +124,19 @@ export function DayColumn({ day, weekStart, planner, items }: DayColumnProps) {
     planner.reorderBlocks(day.key, [...next, ...completedIds])
   }
 
+  const taskHandlersForBlock = (blockId: string) => ({
+    onRenameTask: (taskId: string, kind: 'recurring' | 'one-off', label: string) => {
+      if (kind === 'one-off') {
+        planner.renameOneOffTask(day.key, blockId, taskId, label)
+      }
+    },
+    onDeleteTask: (taskId: string, kind: 'recurring' | 'one-off') => {
+      if (kind === 'one-off') {
+        planner.deleteOneOffTask(day.key, blockId, taskId)
+      }
+    },
+  })
+
   const renderBlockCard = (block: Block) => (
     <BlockCard
       key={block.id}
@@ -136,6 +149,7 @@ export function DayColumn({ day, weekStart, planner, items }: DayColumnProps) {
       onHideTask={(taskId, kind) => planner.toggleHideTask(day.key, block.id, taskId, kind)}
       onAddTask={(label, recurring) => planner.addTask(day.key, block.id, label, recurring)}
       onFlexibleNoteChange={(note) => planner.setFlexibleNote(day.key, block.id, note)}
+      {...taskHandlersForBlock(block.id)}
     />
   )
 
@@ -198,6 +212,7 @@ export function DayColumn({ day, weekStart, planner, items }: DayColumnProps) {
                 onFlexibleNoteChange={(note) =>
                   planner.setFlexibleNote(day.key, block.id, note)
                 }
+                {...taskHandlersForBlock(block.id)}
               />
             ))}
           </SortableContext>
@@ -267,6 +282,9 @@ export function DayColumn({ day, weekStart, planner, items }: DayColumnProps) {
           }
           onDeleteOneOffTask={(taskId) =>
             planner.deleteOneOffTask(day.key, editingBlock.id, taskId)
+          }
+          onRenameOneOffTask={(taskId, label) =>
+            planner.renameOneOffTask(day.key, editingBlock.id, taskId, label)
           }
         />
       )}

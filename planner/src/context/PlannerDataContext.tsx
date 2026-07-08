@@ -104,6 +104,18 @@ interface PlannerDataContextValue {
     scope: 'week' | 'template',
   ) => void
   deleteOneOffTask: (dayKey: DayKey, blockId: string, taskId: string) => void
+  renameOneOffTask: (
+    dayKey: DayKey,
+    blockId: string,
+    taskId: string,
+    label: string,
+  ) => void
+  renameRecurringTask: (
+    dayKey: DayKey,
+    blockId: string,
+    taskId: string,
+    label: string,
+  ) => void
   updateBlock: (dayKey: DayKey, updated: Block) => void
   deleteBlock: (dayKey: DayKey, blockId: string) => void
   addBlock: (dayKey: DayKey) => string
@@ -222,8 +234,11 @@ export function PlannerDataProvider({
         clearTimeout(logTimer.current)
         logTimer.current = null
       }
-      const stamped = { ...log, weekStart: weekStartRef.current }
-      weeklyLogRef.current = stamped
+      const stamped = { ...log, weekStart: log.weekStart }
+
+      if (stamped.weekStart === weekStartRef.current) {
+        weeklyLogRef.current = stamped
+      }
 
       const job = logSyncQueue.current.then(() => syncWeeklyLog(userId, stamped))
       logSyncQueue.current = job.catch((e) => logError('syncWeeklyLog', e))
@@ -231,15 +246,6 @@ export function PlannerDataProvider({
     },
     [userId],
   )
-
-  const awaitWeeklyLogSync = useCallback(async (): Promise<void> => {
-    if (logTimer.current) {
-      clearTimeout(logTimer.current)
-      logTimer.current = null
-      enqueueWeeklyLogSync(weeklyLogRef.current)
-    }
-    await logSyncQueue.current
-  }, [enqueueWeeklyLogSync])
 
   const persistTemplate = useCallback(
     (t: WeekTemplate) => {
@@ -348,21 +354,39 @@ export function PlannerDataProvider({
 
   const goToWeek = useCallback(
     async (newWeekStart: string) => {
-      await Promise.all([awaitWeeklyLogSync(), awaitTemplateSync()])
+      if (newWeekStart === weekStartRef.current) return
+
+      const leavingWeekStart = weekStartRef.current
+      const logToFlush = { ...weeklyLogRef.current, weekStart: leavingWeekStart }
+
+      if (logTimer.current) {
+        clearTimeout(logTimer.current)
+        logTimer.current = null
+      }
+
+      // Update UI immediately — don't block on Supabase flush/fetch of the previous week.
+      weekStartRef.current = newWeekStart
       setWeekStart(newWeekStart)
+      const placeholder = emptyWeeklyLog(newWeekStart)
+      weeklyLogRef.current = placeholder
+      setWeeklyLog(placeholder)
+
+      void enqueueWeeklyLogSync(logToFlush)
+      void awaitTemplateSync()
+
       try {
-        const [log, tmpl] = await Promise.all([
-          fetchWeeklyLog(userId, newWeekStart),
-          fetchTemplate(userId),
-        ])
+        const log = await fetchWeeklyLog(userId, newWeekStart)
+        if (weekStartRef.current !== newWeekStart) return
+        weeklyLogRef.current = log
         setWeeklyLog(log)
-        if (tmpl) setTemplate(tmpl)
       } catch (e) {
         logError('goToWeek', e)
-        setWeeklyLog(emptyWeeklyLog(newWeekStart))
+        if (weekStartRef.current === newWeekStart) {
+          setWeeklyLog(emptyWeeklyLog(newWeekStart))
+        }
       }
     },
-    [userId, awaitWeeklyLogSync, awaitTemplateSync],
+    [userId, enqueueWeeklyLogSync, awaitTemplateSync],
   )
 
   const getBlockLog = useCallback(
@@ -570,58 +594,125 @@ export function PlannerDataProvider({
   const deleteRecurringTask = useCallback(
     (dayKey: DayKey, blockId: string, taskId: string, scope: 'week' | 'template') => {
       if (scope === 'template') {
-        updateTemplate((prev) => ({
-          days: prev.days.map((d) =>
-            d.key === dayKey
-              ? {
-                  ...d,
-                  blocks: d.blocks.map((b) =>
-                    b.id === blockId
-                      ? { ...b, tasks: b.tasks.filter((t) => t.id !== taskId) }
-                      : b,
-                  ),
-                }
-              : d,
-          ),
-        }))
+        setTemplate((prev) => {
+          const next: WeekTemplate = {
+            days: prev.days.map((d) =>
+              d.key === dayKey
+                ? {
+                    ...d,
+                    blocks: d.blocks.map((b) =>
+                      b.id === blockId
+                        ? { ...b, tasks: b.tasks.filter((t) => t.id !== taskId) }
+                        : b,
+                    ),
+                  }
+                : d,
+            ),
+          }
+          void enqueueTemplateSync(next)
+          return next
+        })
         return
       }
-      updateWeeklyLog((prev) => {
-        const dayLog = prev.days[dayKey] ?? {}
+      setWeeklyLog((prev) => {
+        const base = { ...prev, weekStart: weekStartRef.current }
+        const dayLog = base.days[dayKey] ?? {}
         const blockLog = dayLog[blockId] ?? emptyBlockLog()
         const hidden = blockLog.hiddenRecurringTasks ?? []
         if (hidden.includes(taskId)) return prev
-        return {
-          ...prev,
+        const next: WeeklyLog = {
+          ...base,
           days: {
-            ...prev.days,
+            ...base.days,
             [dayKey]: {
               ...dayLog,
               [blockId]: { ...blockLog, hiddenRecurringTasks: [...hidden, taskId] },
             },
           },
         }
+        void enqueueWeeklyLogSync(next)
+        return next
       })
     },
-    [updateTemplate, updateWeeklyLog],
+    [enqueueTemplateSync, enqueueWeeklyLogSync],
   )
 
   const deleteOneOffTask = useCallback(
     (dayKey: DayKey, blockId: string, taskId: string) => {
-      const dateKey = getDateKeyForDay(weekStart, dayKey)
-      updateWeeklyLog((prev) => {
-        const dateMap = prev.oneOffByDate[dateKey] ?? {}
+      const dateKey = getDateKeyForDay(weekStartRef.current, dayKey)
+      setWeeklyLog((prev) => {
+        const base = { ...prev, weekStart: weekStartRef.current }
+        const dateMap = base.oneOffByDate[dateKey] ?? {}
         const tasks = dateMap[blockId] ?? []
-        return {
-          ...prev,
+        const next: WeeklyLog = {
+          ...base,
           oneOffByDate: {
-            ...prev.oneOffByDate,
+            ...base.oneOffByDate,
             [dateKey]: { ...dateMap, [blockId]: tasks.filter((t) => t.id !== taskId) },
           },
         }
+        void enqueueWeeklyLogSync(next)
+        return next
       })
     },
-    [weekStart, updateWeeklyLog],
+    [enqueueWeeklyLogSync],
+  )
+
+  const renameOneOffTask = useCallback(
+    (dayKey: DayKey, blockId: string, taskId: string, label: string) => {
+      const trimmed = label.trim()
+      if (!trimmed) return
+      const dateKey = getDateKeyForDay(weekStartRef.current, dayKey)
+      setWeeklyLog((prev) => {
+        const base = { ...prev, weekStart: weekStartRef.current }
+        const dateMap = base.oneOffByDate[dateKey] ?? {}
+        const tasks = dateMap[blockId] ?? []
+        const next: WeeklyLog = {
+          ...base,
+          oneOffByDate: {
+            ...base.oneOffByDate,
+            [dateKey]: {
+              ...dateMap,
+              [blockId]: tasks.map((t) => (t.id === taskId ? { ...t, label: trimmed } : t)),
+            },
+          },
+        }
+        void enqueueWeeklyLogSync(next)
+        return next
+      })
+    },
+    [enqueueWeeklyLogSync],
+  )
+
+  const renameRecurringTask = useCallback(
+    (dayKey: DayKey, blockId: string, taskId: string, label: string) => {
+      const trimmed = label.trim()
+      if (!trimmed) return
+      setTemplate((prev) => {
+        const next: WeekTemplate = {
+          days: prev.days.map((d) =>
+            d.key === dayKey
+              ? {
+                  ...d,
+                  blocks: d.blocks.map((b) =>
+                    b.id === blockId
+                      ? {
+                          ...b,
+                          tasks: b.tasks.map((t) =>
+                            t.id === taskId ? { ...t, label: trimmed } : t,
+                          ),
+                        }
+                      : b,
+                  ),
+                }
+              : d,
+          ),
+        }
+        void enqueueTemplateSync(next)
+        return next
+      })
+    },
+    [enqueueTemplateSync],
   )
 
   const updateBlock = useCallback(
@@ -759,6 +850,8 @@ export function PlannerDataProvider({
     addTask,
     deleteRecurringTask,
     deleteOneOffTask,
+    renameOneOffTask,
+    renameRecurringTask,
     updateBlock,
     deleteBlock,
     addBlock,
@@ -969,6 +1062,8 @@ export type PlannerActions = Pick<
   | 'addTask'
   | 'deleteRecurringTask'
   | 'deleteOneOffTask'
+  | 'renameOneOffTask'
+  | 'renameRecurringTask'
   | 'updateBlock'
   | 'deleteBlock'
   | 'addBlock'
