@@ -185,11 +185,6 @@ export function TaskCheckbox({
               >
                 {label}
               </span>
-              {oneOff && (
-                <span className="shrink-0 rounded px-1 py-px text-[9px] font-medium text-[#8E8E93] ring-1 ring-[#D1D1D6]">
-                  오늘만
-                </span>
-              )}
             </button>
           ) : (
             <span className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -200,11 +195,6 @@ export function TaskCheckbox({
               >
                 {label}
               </span>
-              {oneOff && (
-                <span className="shrink-0 rounded px-1 py-px text-[9px] font-medium text-[#8E8E93] ring-1 ring-[#D1D1D6]">
-                  오늘만
-                </span>
-              )}
             </span>
           )}
         </div>
@@ -215,11 +205,6 @@ export function TaskCheckbox({
           <span className="text-[13px] leading-snug text-muted line-through opacity-60">
             {label}
           </span>
-          {oneOff && (
-            <span className="shrink-0 rounded px-1 py-px text-[9px] font-medium text-[#8E8E93] ring-1 ring-[#D1D1D6]">
-              오늘만
-            </span>
-          )}
         </span>
       )}
 
