@@ -80,6 +80,14 @@ export function getDateKeyForDay(
   return formatDateKey(getDateForDayKey(weekStart, dayKey))
 }
 
+export function formatShortDateForDay(
+  weekStart: string,
+  dayKey: import('../types/planner').DayKey,
+): string {
+  const d = getDateForDayKey(weekStart, dayKey)
+  return `${d.getMonth() + 1}/${d.getDate()}`
+}
+
 /** weekStart is always a Monday; shift by whole weeks */
 export function shiftWeekStart(weekStart: string, weeks: number): string {
   const d = parseDateKey(weekStart)

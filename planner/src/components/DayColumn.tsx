@@ -1,22 +1,10 @@
 import { useMemo, useState } from 'react'
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core'
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable'
+import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import type { Block, DayTemplate } from '../types/planner'
 import type { PlannerActions } from '../hooks/usePlanner'
-import { isToday } from '../lib/weekUtils'
+import { blockDragId } from '../lib/taskDnd'
+import { formatShortDateForDay, isToday } from '../lib/weekUtils'
 import { BlockCard, SortableBlockCard } from './BlockCard'
 import { BlockEditModal } from './BlockEditModal'
 import { DayItemsSection } from './DayItemsSection'
@@ -72,11 +60,6 @@ export function DayColumn({ day, weekStart, planner, items }: DayColumnProps) {
   const [showHidden, setShowHidden] = useState(false)
   const today = isToday(day.key, weekStart)
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  )
-
   const sortedBlocks = useMemo(
     () => [...day.blocks].sort((a, b) => a.order - b.order),
     [day.blocks],
@@ -108,21 +91,8 @@ export function DayColumn({ day, weekStart, planner, items }: DayColumnProps) {
     return { activeBlocks: active, completedBlocks: completed, hiddenEntries: hidden }
   }, [sortedBlocks, day.key, planner])
 
-  const activeBlockIds = activeBlocks.map((b) => b.id)
+  const activeBlockSortableIds = activeBlocks.map((b) => blockDragId(day.key, b.id))
   const editingBlock = sortedBlocks.find((b) => b.id === editingBlockId)
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-    const oldIndex = activeBlockIds.indexOf(String(active.id))
-    const newIndex = activeBlockIds.indexOf(String(over.id))
-    if (oldIndex === -1 || newIndex === -1) return
-    const next = [...activeBlockIds]
-    const [moved] = next.splice(oldIndex, 1)
-    next.splice(newIndex, 0, moved)
-    const completedIds = completedBlocks.map((b) => b.id)
-    planner.reorderBlocks(day.key, [...next, ...completedIds])
-  }
 
   const taskHandlersForBlock = (blockId: string) => ({
     onRenameTask: (taskId: string, kind: 'recurring' | 'one-off', label: string) => {
@@ -159,15 +129,34 @@ export function DayColumn({ day, weekStart, planner, items }: DayColumnProps) {
 
   return (
     <div
-      className={`flex min-w-[168px] flex-1 flex-col rounded-xl border bg-white ${
-        today ? 'border-[#007AFF]/40 ring-1 ring-[#007AFF]/15' : 'border-hairline'
+      className={`relative flex min-w-[168px] flex-1 flex-col overflow-hidden rounded-xl border ${
+        today
+          ? 'border-[#007AFF] bg-gradient-to-b from-[#007AFF]/10 via-[#007AFF]/[0.03] to-white shadow-lg shadow-[#007AFF]/20 ring-2 ring-[#007AFF]/25'
+          : 'border-hairline bg-white'
       }`}
     >
-      <header className="border-b border-hairline px-3 py-3">
-        <div className="flex items-baseline justify-between">
-          <span className="text-[15px] font-semibold text-[#1C1C1E]">{day.dayName}</span>
+      {today && (
+        <div
+          className="absolute inset-y-0 left-0 w-1 bg-[#007AFF]"
+          aria-hidden
+        />
+      )}
+      <header
+        className={`border-b px-3 py-3 ${today ? 'border-[#007AFF]/25 bg-[#007AFF]/[0.08]' : 'border-hairline'}`}
+      >
+        <div className="flex items-baseline justify-between gap-1">
+          <span
+            className={`text-[15px] font-semibold ${today ? 'text-[#007AFF]' : 'text-[#1C1C1E]'}`}
+          >
+            {day.dayName}
+            <span
+              className={`ml-1 text-[13px] font-normal ${today ? 'text-[#007AFF]/75' : 'text-muted'}`}
+            >
+              {formatShortDateForDay(weekStart, day.key)}
+            </span>
+          </span>
           {today && (
-            <span className="rounded-full bg-[#007AFF] px-1.5 py-0.5 text-[9px] font-semibold text-white">
+            <span className="shrink-0 rounded-full bg-[#007AFF] px-2 py-0.5 text-[10px] font-bold tracking-wide text-white shadow-md shadow-[#007AFF]/40">
               Today
             </span>
           )}
@@ -189,38 +178,32 @@ export function DayColumn({ day, weekStart, planner, items }: DayColumnProps) {
       />
 
       <div className="flex flex-1 flex-col gap-2 p-2">
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext items={activeBlockIds} strategy={verticalListSortingStrategy}>
-            {activeBlocks.map((block) => (
-              <SortableBlockCard
-                key={block.id}
-                id={block.id}
-                block={block}
-                dayKey={day.key}
-                blockLog={planner.getBlockLog(day.key, block.id)}
-                tasks={planner.getBlockTasks(day.key, block)}
-                onEdit={() => setEditingBlockId(block.id)}
-                onToggleTask={(taskId, kind) =>
-                  planner.toggleTask(day.key, block.id, taskId, kind)
-                }
-                onHideTask={(taskId, kind) =>
-                  planner.toggleHideTask(day.key, block.id, taskId, kind)
-                }
-                onAddTask={(label, recurring) =>
-                  planner.addTask(day.key, block.id, label, recurring)
-                }
-                onFlexibleNoteChange={(note) =>
-                  planner.setFlexibleNote(day.key, block.id, note)
-                }
-                {...taskHandlersForBlock(block.id)}
-              />
-            ))}
-          </SortableContext>
-        </DndContext>
+        <SortableContext items={activeBlockSortableIds} strategy={verticalListSortingStrategy}>
+          {activeBlocks.map((block) => (
+            <SortableBlockCard
+              key={block.id}
+              sortableId={blockDragId(day.key, block.id)}
+              block={block}
+              dayKey={day.key}
+              blockLog={planner.getBlockLog(day.key, block.id)}
+              tasks={planner.getBlockTasks(day.key, block)}
+              onEdit={() => setEditingBlockId(block.id)}
+              onToggleTask={(taskId, kind) =>
+                planner.toggleTask(day.key, block.id, taskId, kind)
+              }
+              onHideTask={(taskId, kind) =>
+                planner.toggleHideTask(day.key, block.id, taskId, kind)
+              }
+              onAddTask={(label, recurring) =>
+                planner.addTask(day.key, block.id, label, recurring)
+              }
+              onFlexibleNoteChange={(note) =>
+                planner.setFlexibleNote(day.key, block.id, note)
+              }
+              {...taskHandlersForBlock(block.id)}
+            />
+          ))}
+        </SortableContext>
 
         <CollapsibleSection
           label="완료됨"

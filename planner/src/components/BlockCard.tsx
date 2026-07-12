@@ -1,11 +1,13 @@
 import { useState } from 'react'
+import { useDroppable } from '@dnd-kit/core'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { GripVertical, Plus } from 'lucide-react'
 import { CATEGORY_STYLES } from '../lib/categories'
+import { blockDropId } from '../lib/taskDnd'
 import type { Block, BlockDayLog, DayKey, RenderTask } from '../types/planner'
 import { FLEXIBLE_TAGS } from '../types/planner'
-import { TaskCheckbox } from './TaskCheckbox'
+import { DraggableTaskCheckbox } from './DraggableTaskCheckbox'
 
 interface BlockCardProps {
   block: Block
@@ -24,6 +26,7 @@ interface BlockCardProps {
 
 export function BlockCard({
   block,
+  dayKey,
   blockLog,
   tasks,
   onEdit,
@@ -38,6 +41,11 @@ export function BlockCard({
   const [showAddTask, setShowAddTask] = useState(false)
   const [newTaskLabel, setNewTaskLabel] = useState('')
   const [repeatWeekly, setRepeatWeekly] = useState(false)
+
+  const { setNodeRef: setDropRef, isOver } = useDroppable({
+    id: blockDropId(dayKey, block.id),
+    data: { type: 'block-drop', dayKey, blockId: block.id },
+  })
 
   const style = CATEGORY_STYLES[block.category]
   const doneCount = tasks.filter((t) => t.done).length
@@ -54,12 +62,13 @@ export function BlockCard({
 
   return (
     <div
+      ref={setDropRef}
       className={`group/card relative rounded-xl border px-3 py-2.5 transition-shadow duration-150 ${
         isDragging ? 'shadow-lg ring-2 ring-[#007AFF]/20' : 'shadow-sm hover:shadow-md'
-      }`}
+      } ${isOver ? 'ring-2 ring-[#007AFF]/35' : ''}`}
       style={{
         backgroundColor: style.bg,
-        borderColor: style.border,
+        borderColor: isOver ? '#007AFF' : style.border,
       }}
     >
       <button type="button" onClick={onEdit} className="w-full text-left">
@@ -139,11 +148,14 @@ export function BlockCard({
       {tasks.length > 0 && (
         <div className="mt-2 space-y-0.5 border-t border-white/50 pt-2 pl-0.5">
           {tasks.map((task) => (
-            <TaskCheckbox
+            <DraggableTaskCheckbox
               key={task.id}
+              dayKey={dayKey}
+              blockId={block.id}
+              taskId={task.id}
+              kind={task.kind}
               label={task.label}
               checked={task.done}
-              oneOff={task.kind === 'one-off'}
               onChange={() => onToggleTask(task.id, task.kind)}
               onHide={
                 onHideTask ? () => onHideTask(task.id, task.kind) : undefined
@@ -224,12 +236,15 @@ export function BlockCard({
 }
 
 interface SortableBlockCardProps extends BlockCardProps {
-  id: string
+  sortableId: string
 }
 
 export function SortableBlockCard(props: SortableBlockCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: props.id })
+    useSortable({
+      id: props.sortableId,
+      data: { type: 'block', dayKey: props.dayKey, blockId: props.block.id },
+    })
 
   const dragStyle = {
     transform: CSS.Transform.toString(transform),

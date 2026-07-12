@@ -1,15 +1,18 @@
 import type { DayKey } from '../types/planner'
 import type { PlannerActions } from '../hooks/usePlanner'
+import { formatShortDateForDay, isToday } from '../lib/weekUtils'
 
 interface WeekSummaryProps {
   dayCompletion: PlannerActions['dayCompletion']
   weekCompletionPercent: number
+  weekStart: string
   days: { key: DayKey; dayName: string }[]
 }
 
 export function WeekSummary({
   dayCompletion,
   weekCompletionPercent,
+  weekStart,
   days,
 }: WeekSummaryProps) {
   return (
@@ -25,9 +28,22 @@ export function WeekSummary({
           const stats = dayCompletion[day.key]
           const pct =
             stats.total === 0 ? 0 : Math.round((stats.done / stats.total) * 100)
+          const today = isToday(day.key, weekStart)
           return (
-            <div key={day.key} className="flex-1 text-center">
-              <div className="mb-1 text-[11px] font-medium text-muted">{day.dayName}</div>
+            <div
+              key={day.key}
+              className={`flex-1 rounded-lg px-1 py-1 text-center ${
+                today ? 'bg-[#007AFF]/10 ring-1 ring-[#007AFF]/30' : ''
+              }`}
+            >
+              <div
+                className={`mb-1 text-[11px] font-medium ${today ? 'font-semibold text-[#007AFF]' : 'text-muted'}`}
+              >
+                {day.dayName}{' '}
+                <span className={today ? 'text-[#007AFF]/75' : ''}>
+                  {formatShortDateForDay(weekStart, day.key)}
+                </span>
+              </div>
               <div className="mx-auto h-1.5 w-full max-w-[48px] overflow-hidden rounded-full bg-[#F2F2F7]">
                 <div
                   className="h-full rounded-full bg-[#007AFF] transition-all duration-300"

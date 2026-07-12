@@ -1,7 +1,25 @@
+import { useCallback, useState } from 'react'
+import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core'
+import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import type { WeekTemplate } from '../types/planner'
 import type { PlannerActions } from '../hooks/usePlanner'
 import type { ItemsActions } from '../hooks/useItems'
+import {
+  parseBlockDragId,
+  type BlockDropData,
+  type TaskDragData,
+} from '../lib/taskDnd'
 import {
   formatWeekRange,
   getWeekStartDate,
@@ -22,6 +40,85 @@ interface WeekViewProps {
 }
 
 export function WeekView({ template, weekStart, planner, items, linkedApps }: WeekViewProps) {
+  const [activeTaskDrag, setActiveTaskDrag] = useState<TaskDragData | null>(null)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    const data = event.active.data.current
+    if (data?.type === 'task') {
+      setActiveTaskDrag(data as TaskDragData)
+    }
+  }, [])
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      setActiveTaskDrag(null)
+      const { active, over } = event
+      if (!over) return
+
+      const activeData = active.data.current
+      const overData = over.data.current
+      if (!activeData) return
+
+      if (activeData.type === 'task') {
+        const taskData = activeData as TaskDragData
+        if (overData?.type !== 'block-drop') return
+        const dropData = overData as BlockDropData
+        if (
+          taskData.dayKey === dropData.dayKey &&
+          taskData.blockId === dropData.blockId
+        ) {
+          return
+        }
+        planner.moveTask(
+          taskData.dayKey,
+          taskData.blockId,
+          dropData.dayKey,
+          dropData.blockId,
+          taskData.taskId,
+          taskData.kind,
+        )
+        return
+      }
+
+      if (activeData.type === 'block') {
+        const activeBlock = parseBlockDragId(String(active.id))
+        const overBlock = parseBlockDragId(String(over.id))
+        if (!activeBlock || !overBlock || activeBlock.dayKey !== overBlock.dayKey) return
+        if (activeBlock.blockId === overBlock.blockId) return
+
+        const day = template.days.find((d) => d.key === activeBlock.dayKey)
+        if (!day) return
+
+        const sortedBlocks = [...day.blocks].sort((a, b) => a.order - b.order)
+        const activeBlocks = sortedBlocks.filter(
+          (b) => !planner.isBlockCompleteForDay(activeBlock.dayKey, b),
+        )
+        const completedBlocks = sortedBlocks.filter((b) =>
+          planner.isBlockCompleteForDay(activeBlock.dayKey, b),
+        )
+
+        const activeIds = activeBlocks.map((b) => b.id)
+        const oldIndex = activeIds.indexOf(activeBlock.blockId)
+        const newIndex = activeIds.indexOf(overBlock.blockId)
+        if (oldIndex === -1 || newIndex === -1) return
+
+        const next = [...activeIds]
+        const [moved] = next.splice(oldIndex, 1)
+        next.splice(newIndex, 0, moved)
+        planner.reorderBlocks(activeBlock.dayKey, [
+          ...next,
+          ...completedBlocks.map((b) => b.id),
+        ])
+      }
+    },
+    [planner, template.days],
+  )
+
   const goPrev = () => {
     void planner.goToWeek(shiftWeekStart(weekStart, -1))
   }
@@ -94,20 +191,36 @@ export function WeekView({ template, weekStart, planner, items, linkedApps }: We
             <WeekSummary
               dayCompletion={planner.dayCompletion}
               weekCompletionPercent={planner.weekCompletionPercent}
+              weekStart={weekStart}
               days={template.days.map((d) => ({ key: d.key, dayName: d.dayName }))}
             />
 
-            <div className="flex gap-2 overflow-x-auto pb-4">
-              {template.days.map((day) => (
-                <DayColumn
-                  key={`${weekStart}-${day.key}`}
-                  day={day}
-                  weekStart={weekStart}
-                  planner={planner}
-                  items={items}
-                />
-              ))}
-            </div>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+            >
+              <div className="flex gap-2 overflow-x-auto pb-4">
+                {template.days.map((day) => (
+                  <DayColumn
+                    key={`${weekStart}-${day.key}`}
+                    day={day}
+                    weekStart={weekStart}
+                    planner={planner}
+                    items={items}
+                  />
+                ))}
+              </div>
+
+              <DragOverlay dropAnimation={null}>
+                {activeTaskDrag ? (
+                  <div className="rounded-lg bg-white px-3 py-2 text-[13px] shadow-lg ring-1 ring-[#007AFF]/30">
+                    {activeTaskDrag.label}
+                  </div>
+                ) : null}
+              </DragOverlay>
+            </DndContext>
           </div>
 
           {loadingWeek && (

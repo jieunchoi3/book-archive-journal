@@ -71,6 +71,21 @@ function emptyBlockLog(): BlockDayLog {
   return { taskCompletion: {} }
 }
 
+function withoutHiddenTask(blockLog: BlockDayLog, taskId: string): BlockDayLog {
+  if (!blockLog.hiddenTasks?.includes(taskId)) return blockLog
+  const hiddenTasks = blockLog.hiddenTasks.filter((id) => id !== taskId)
+  return {
+    ...blockLog,
+    hiddenTasks: hiddenTasks.length ? hiddenTasks : undefined,
+  }
+}
+
+function withoutTaskCompletion(blockLog: BlockDayLog, taskId: string): BlockDayLog {
+  if (!(taskId in blockLog.taskCompletion)) return blockLog
+  const { [taskId]: _removed, ...taskCompletion } = blockLog.taskCompletion
+  return { ...blockLog, taskCompletion }
+}
+
 interface PlannerDataContextValue {
   user: User
   loading: boolean
@@ -119,6 +134,14 @@ interface PlannerDataContextValue {
     blockId: string,
     taskId: string,
     label: string,
+  ) => void
+  moveTask: (
+    fromDayKey: DayKey,
+    fromBlockId: string,
+    toDayKey: DayKey,
+    toBlockId: string,
+    taskId: string,
+    kind: 'recurring' | 'one-off',
   ) => void
   updateBlock: (dayKey: DayKey, updated: Block) => void
   deleteBlock: (dayKey: DayKey, blockId: string) => void
@@ -761,6 +784,178 @@ export function PlannerDataProvider({
     [userId, putWeekCache],
   )
 
+  const moveTask = useCallback(
+    (
+      fromDayKey: DayKey,
+      fromBlockId: string,
+      toDayKey: DayKey,
+      toBlockId: string,
+      taskId: string,
+      kind: 'recurring' | 'one-off',
+    ) => {
+      if (fromDayKey === toDayKey && fromBlockId === toBlockId) return
+
+      const week = weekStartRef.current
+
+      if (kind === 'one-off') {
+        const fromDateKey = getDateKeyForDay(week, fromDayKey)
+        const toDateKey = getDateKeyForDay(week, toDayKey)
+        const task = weeklyLogRef.current.oneOffByDate[fromDateKey]?.[fromBlockId]?.find(
+          (t) => t.id === taskId,
+        )
+        if (!task) return
+
+        const sourceHadHidden = (
+          weeklyLogRef.current.days[fromDayKey]?.[fromBlockId]?.hiddenTasks ?? []
+        ).includes(taskId)
+
+        setWeeklyLog((prev) => {
+          const base = { ...prev, weekStart: week }
+          const fromDateMap = { ...(base.oneOffByDate[fromDateKey] ?? {}) }
+          const fromTasks = (fromDateMap[fromBlockId] ?? []).filter((t) => t.id !== taskId)
+          if (fromTasks.length) fromDateMap[fromBlockId] = fromTasks
+          else delete fromDateMap[fromBlockId]
+
+          const toDateMap = { ...(base.oneOffByDate[toDateKey] ?? {}) }
+          toDateMap[toBlockId] = [...(toDateMap[toBlockId] ?? []), task]
+
+          const oneOffByDate = { ...base.oneOffByDate, [toDateKey]: toDateMap }
+          if (Object.keys(fromDateMap).length) oneOffByDate[fromDateKey] = fromDateMap
+          else delete oneOffByDate[fromDateKey]
+
+          const fromDayLog = base.days[fromDayKey] ?? {}
+          const fromBlockLog = withoutHiddenTask(
+            fromDayLog[fromBlockId] ?? emptyBlockLog(),
+            taskId,
+          )
+          const nextDays = { ...base.days, [fromDayKey]: { ...fromDayLog, [fromBlockId]: fromBlockLog } }
+
+          const next: WeeklyLog = { ...base, oneOffByDate, days: nextDays }
+          weeklyLogRef.current = next
+          putWeekCache(next)
+          return next
+        })
+
+        void upsertOneOffTask(userId, task, toDateKey, toBlockId).catch((e) =>
+          logError('upsertOneOffTask', e),
+        )
+        if (sourceHadHidden) {
+          const cleanedLog = withoutHiddenTask(
+            weeklyLogRef.current.days[fromDayKey]?.[fromBlockId] ?? emptyBlockLog(),
+            taskId,
+          )
+          void upsertBlockWeekLog(userId, week, fromDayKey, fromBlockId, cleanedLog).catch((e) =>
+            logError('upsertBlockWeekLog', e),
+          )
+        }
+        return
+      }
+
+      const sourceDay = templateRef.current.days.find((d) => d.key === fromDayKey)
+      const taskTemplate = sourceDay?.blocks
+        .find((b) => b.id === fromBlockId)
+        ?.tasks.find((t) => t.id === taskId)
+      if (!taskTemplate) return
+
+      const sourceBlockLog =
+        weeklyLogRef.current.days[fromDayKey]?.[fromBlockId] ?? emptyBlockLog()
+      const done = sourceBlockLog.taskCompletion[taskId] ?? false
+
+      if (fromDayKey === toDayKey) {
+        setTemplate((prev) => {
+          const next: WeekTemplate = {
+            days: prev.days.map((d) => {
+              if (d.key !== fromDayKey) return d
+              return {
+                ...d,
+                blocks: d.blocks.map((b) => {
+                  if (b.id === fromBlockId) {
+                    return { ...b, tasks: b.tasks.filter((t) => t.id !== taskId) }
+                  }
+                  if (b.id === toBlockId) {
+                    return { ...b, tasks: [...b.tasks, taskTemplate] }
+                  }
+                  return b
+                }),
+              }
+            }),
+          }
+          void enqueueTemplateSync(next)
+          return next
+        })
+
+        setWeeklyLog((prev) => {
+          const base = { ...prev, weekStart: week }
+          const dayLog = { ...(base.days[fromDayKey] ?? {}) }
+          const fromLog = withoutTaskCompletion(
+            withoutHiddenTask(dayLog[fromBlockId] ?? emptyBlockLog(), taskId),
+            taskId,
+          )
+          const toLog = dayLog[toBlockId] ?? emptyBlockLog()
+          const nextTargetLog: BlockDayLog = {
+            ...toLog,
+            taskCompletion: { ...toLog.taskCompletion, [taskId]: done },
+          }
+          dayLog[fromBlockId] = fromLog
+          dayLog[toBlockId] = nextTargetLog
+
+          const next: WeeklyLog = { ...base, days: { ...base.days, [fromDayKey]: dayLog } }
+          weeklyLogRef.current = next
+          putWeekCache(next)
+          return next
+        })
+
+        void upsertTaskCompletion(userId, week, fromDayKey, toBlockId, taskId, done).catch((e) =>
+          logError('upsertTaskCompletion', e),
+        )
+        void upsertTaskCompletion(userId, week, fromDayKey, fromBlockId, taskId, false).catch(
+          (e) => logError('upsertTaskCompletion', e),
+        )
+        return
+      }
+
+      const hiddenSourceLog: BlockDayLog = {
+        ...withoutTaskCompletion(sourceBlockLog, taskId),
+        hiddenTasks: [...new Set([...(sourceBlockLog.hiddenTasks ?? []), taskId])],
+      }
+      const toDateKey = getDateKeyForDay(week, toDayKey)
+      const deferredTask: OneOffTask = {
+        id: generateId(),
+        label: taskTemplate.label,
+        done,
+      }
+
+      setWeeklyLog((prev) => {
+        const base = { ...prev, weekStart: week }
+        const fromDayLog = { ...(base.days[fromDayKey] ?? {}) }
+        fromDayLog[fromBlockId] = hiddenSourceLog
+
+        const toDateMap = { ...(base.oneOffByDate[toDateKey] ?? {}) }
+        toDateMap[toBlockId] = [...(toDateMap[toBlockId] ?? []), deferredTask]
+
+        const next: WeeklyLog = {
+          ...base,
+          days: { ...base.days, [fromDayKey]: fromDayLog },
+          oneOffByDate: { ...base.oneOffByDate, [toDateKey]: toDateMap },
+        }
+        weeklyLogRef.current = next
+        putWeekCache(next)
+        return next
+      })
+
+      void upsertBlockWeekLog(userId, week, fromDayKey, fromBlockId, hiddenSourceLog).catch((e) =>
+        logError('upsertBlockWeekLog', e),
+      )
+      void upsertOneOffTask(userId, deferredTask, toDateKey, toBlockId).catch((e) =>
+        logError('upsertOneOffTask', e),
+      )
+      void upsertTaskCompletion(userId, week, fromDayKey, fromBlockId, taskId, false).catch((e) =>
+        logError('upsertTaskCompletion', e),
+      )
+    },
+    [userId, putWeekCache, enqueueTemplateSync],
+  )
+
   const renameRecurringTask = useCallback(
     (dayKey: DayKey, blockId: string, taskId: string, label: string) => {
       const trimmed = label.trim()
@@ -930,6 +1125,7 @@ export function PlannerDataProvider({
     deleteOneOffTask,
     renameOneOffTask,
     renameRecurringTask,
+    moveTask,
     updateBlock,
     deleteBlock,
     addBlock,
@@ -1143,6 +1339,7 @@ export type PlannerActions = Pick<
   | 'deleteOneOffTask'
   | 'renameOneOffTask'
   | 'renameRecurringTask'
+  | 'moveTask'
   | 'updateBlock'
   | 'deleteBlock'
   | 'addBlock'
