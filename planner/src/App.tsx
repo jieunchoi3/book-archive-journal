@@ -7,7 +7,7 @@ import { useItems } from './hooks/useItems'
 import { useLinkedApps } from './hooks/useLinkedApps'
 import { ImportLocalDataBanner } from './components/ImportLocalDataBanner'
 import { WeekView } from './components/WeekView'
-import { TasksBoardView } from './components/TasksBoardView'
+import { MonthCalendarView } from './components/MonthCalendarView'
 import { BottomNav, type AppView } from './components/BottomNav'
 
 function AppContent() {
@@ -28,7 +28,12 @@ function AppContent() {
           linkedApps={linkedApps}
         />
       ) : (
-        <TasksBoardView items={items} linkedApps={linkedApps} />
+        <MonthCalendarView
+          items={items}
+          planner={planner}
+          linkedApps={linkedApps}
+          onOpenWeekly={() => setView('weekly')}
+        />
       )}
       <BottomNav active={view} onChange={setView} />
     </>

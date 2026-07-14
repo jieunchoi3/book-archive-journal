@@ -64,9 +64,16 @@ export function buildRRule(recurrence: Recurrence, anchorDate: string): RRule {
 
 export function getOccurrenceDates(item: Item, weekStart: string): string[] {
   const endKey = weekEndKey(weekStart)
+  return getOccurrenceDatesInRange(item, weekStart, endKey)
+}
 
+export function getOccurrenceDatesInRange(
+  item: Item,
+  startKey: string,
+  endKey: string,
+): string[] {
   if (!isRecurringItem(item)) {
-    if (item.dueDate && item.dueDate >= weekStart && item.dueDate <= endKey) {
+    if (item.dueDate && item.dueDate >= startKey && item.dueDate <= endKey) {
       return [item.dueDate]
     }
     return []
@@ -75,10 +82,38 @@ export function getOccurrenceDates(item: Item, weekStart: string): string[] {
   if (!item.dueDate) return []
 
   const rule = buildRRule(item.recurrence!, item.dueDate)
-  const rangeStart = parseDateKey(weekStart)
+  const rangeStart = parseDateKey(startKey)
   rangeStart.setHours(0, 0, 0, 0)
 
   return rule.between(rangeStart, endOfDay(endKey), true).map(formatDateKey)
+}
+
+export function expandItemsForMonth(
+  items: Item[],
+  year: number,
+  month: number,
+): Record<string, ItemOccurrence[]> {
+  const startKey = formatDateKey(new Date(year, month, 1))
+  const endKey = formatDateKey(new Date(year, month + 1, 0))
+  const byDate: Record<string, ItemOccurrence[]> = {}
+
+  for (const item of items) {
+    const dates = getOccurrenceDatesInRange(item, startKey, endKey)
+    for (const dateKey of dates) {
+      if (!byDate[dateKey]) byDate[dateKey] = []
+      byDate[dateKey].push({
+        item,
+        dateKey,
+        done: getItemDone(item, dateKey),
+      })
+    }
+  }
+
+  for (const key of Object.keys(byDate)) {
+    byDate[key].sort((a, b) => a.item.title.localeCompare(b.item.title, 'ko'))
+  }
+
+  return byDate
 }
 
 export function expandItemsForWeek(

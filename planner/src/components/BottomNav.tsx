@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
-import { CalendarDays, CheckSquare } from 'lucide-react'
+import { Calendar, CalendarDays } from 'lucide-react'
 
-export type AppView = 'tasks' | 'weekly'
+export type AppView = 'monthly' | 'weekly'
 
 interface BottomNavProps {
   active: AppView
@@ -13,10 +13,10 @@ export function BottomNav({ active, onChange }: BottomNavProps) {
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-hairline bg-white/95 backdrop-blur-md">
       <div className="mx-auto flex max-w-lg justify-around px-4 py-2">
         <NavButton
-          label="Tasks"
-          icon={<CheckSquare size={20} />}
-          active={active === 'tasks'}
-          onClick={() => onChange('tasks')}
+          label="Monthly"
+          icon={<Calendar size={20} />}
+          active={active === 'monthly'}
+          onClick={() => onChange('monthly')}
         />
         <NavButton
           label="Weekly"
