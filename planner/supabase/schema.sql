@@ -130,6 +130,13 @@ create table if not exists planner.linked_apps (
   sort_order int not null default 0
 );
 
+-- Persistent sidebar private note (one per user)
+create table if not exists planner.sidebar_notes (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  content text not null default '',
+  updated_at timestamptz not null default now()
+);
+
 -- RLS
 alter table planner.day_templates enable row level security;
 alter table planner.blocks enable row level security;
@@ -142,6 +149,7 @@ alter table planner.tags enable row level security;
 alter table planner.items enable row level security;
 alter table planner.item_tags enable row level security;
 alter table planner.linked_apps enable row level security;
+alter table planner.sidebar_notes enable row level security;
 
 create policy "day_templates_own" on planner.day_templates for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "blocks_own" on planner.blocks for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
@@ -154,6 +162,7 @@ create policy "tags_own" on planner.tags for all using (auth.uid() = user_id) wi
 create policy "items_own" on planner.items for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "item_tags_own" on planner.item_tags for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "linked_apps_own" on planner.linked_apps for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "sidebar_notes_own" on planner.sidebar_notes for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- Migration for existing projects:
 -- alter table planner.block_week_logs add column if not exists hidden_tasks jsonb not null default '[]'::jsonb;

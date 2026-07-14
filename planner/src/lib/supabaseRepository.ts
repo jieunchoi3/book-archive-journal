@@ -532,6 +532,26 @@ export async function seedDefaultLinkedApps(userId: string): Promise<LinkedApp[]
   return apps
 }
 
+export async function fetchSidebarNote(userId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('sidebar_notes')
+    .select('content')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) return null
+  return data.content ?? ''
+}
+
+export async function upsertSidebarNote(userId: string, content: string): Promise<void> {
+  const { error } = await supabase.from('sidebar_notes').upsert({
+    user_id: userId,
+    content,
+    updated_at: new Date().toISOString(),
+  })
+  if (error) throw error
+}
+
 export async function syncLinkedApps(userId: string, apps: LinkedApp[]): Promise<void> {
   for (let i = 0; i < apps.length; i++) {
     const app = apps[i]

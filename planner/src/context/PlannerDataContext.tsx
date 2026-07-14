@@ -21,6 +21,7 @@ import type {
 } from '../types/planner'
 import type { Category, Item, ItemDone, ItemOccurrence, Recurrence, Tag } from '../types/item'
 import { mergeDefaultEventCategories } from '../data/seedEventCategories'
+import { loadSidebarNoteLocal, saveSidebarNoteLocal } from '../lib/sidebarNoteStorage'
 import {
   getItemDone,
   isRecurringItem,
@@ -32,12 +33,14 @@ import { dayKeyToRRuleDay, expandItemsForWeek, isTemplateWeeklyHabit } from '../
 import {
   fetchItemsStore,
   fetchLinkedApps,
+  fetchSidebarNote,
   fetchTemplate,
   fetchWeeklyLog,
   importAllFromLocal,
   seedDefaultTemplate,
   syncItemsStore,
   syncLinkedApps,
+  upsertSidebarNote,
   syncTemplate,
   upsertBlockWeekLog,
   upsertOneOffTask,
@@ -188,6 +191,8 @@ interface PlannerDataContextValue {
   updateLinkedApp: (id: string, updates: Partial<LinkedApp>) => void
   deleteLinkedApp: (id: string) => void
   openLinkedApp: (app: LinkedApp) => LinkedApp | null
+  sidebarNote: string
+  setSidebarNote: (content: string) => void
 }
 
 const PlannerDataContext = createContext<PlannerDataContextValue | null>(null)
@@ -216,12 +221,14 @@ export function PlannerDataProvider({
     items: [],
   })
   const [linkedApps, setLinkedApps] = useState<LinkedApp[]>([])
+  const [sidebarNote, setSidebarNoteState] = useState('')
 
   const templateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const blockLogTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const templateSyncQueue = useRef<Promise<void>>(Promise.resolve())
   const itemsTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const appsTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const sidebarNoteTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const templateRef = useRef(template)
   const weeklyLogRef = useRef(weeklyLog)
   const weekStartRef = useRef(weekStart)
@@ -342,16 +349,36 @@ export function PlannerDataProvider({
     [userId],
   )
 
+  const persistSidebarNote = useCallback(
+    (content: string) => {
+      saveSidebarNoteLocal(userId, content)
+      if (sidebarNoteTimer.current) clearTimeout(sidebarNoteTimer.current)
+      sidebarNoteTimer.current = setTimeout(() => {
+        upsertSidebarNote(userId, content).catch((e) => logError('upsertSidebarNote', e))
+      }, 500)
+    },
+    [userId],
+  )
+
+  const setSidebarNote = useCallback(
+    (content: string) => {
+      setSidebarNoteState(content)
+      persistSidebarNote(content)
+    },
+    [persistSidebarNote],
+  )
+
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       try {
         setLoading(true)
-        const [tmpl, log, store, apps] = await Promise.all([
+        const [tmpl, log, store, apps, remoteNote] = await Promise.all([
           fetchTemplate(userId),
           loadWeeklyLog(getCurrentWeekStart()),
           fetchItemsStore(userId),
           fetchLinkedApps(userId),
+          fetchSidebarNote(userId).catch(() => null),
         ])
         if (cancelled) return
         let finalTemplate = tmpl
@@ -368,6 +395,15 @@ export function PlannerDataProvider({
           void syncItemsStore(userId, normalizedStore).catch((e) => logError('seedCategories', e))
         }
         setLinkedApps(apps)
+        const localNote = loadSidebarNoteLocal(userId)
+        let note = localNote
+        if (remoteNote !== null) {
+          note = remoteNote.length > 0 ? remoteNote : localNote
+          if (note !== localNote) saveSidebarNoteLocal(userId, note)
+        } else if (localNote) {
+          void upsertSidebarNote(userId, localNote).catch((e) => logError('upsertSidebarNote', e))
+        }
+        setSidebarNoteState(note)
         setShowImportBanner(hasLocalPlannerData() && !isLocalImportDone())
       } catch (e) {
         if (!cancelled) logError('loadPlannerData', e)
@@ -1347,6 +1383,8 @@ export function PlannerDataProvider({
       }
       return app
     },
+    sidebarNote,
+    setSidebarNote,
   }
 
   return (

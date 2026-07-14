@@ -15,7 +15,7 @@ import {
 import { EventQuickAddForm, type EventAddPayload } from './EventQuickAddForm'
 import { ItemChip } from './ItemChip'
 import { EditItemModal } from './ItemModals'
-import { QuickLaunchPanel } from './QuickLaunchPanel'
+import { PlannerSidebar } from './PlannerSidebar'
 import type { LinkedAppsActions } from '../hooks/useLinkedApps'
 
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -241,7 +241,7 @@ export function MonthCalendarView({
   return (
     <div className="flex min-h-screen gap-6 p-6 pb-24">
       <aside className="hidden w-52 shrink-0 lg:block">
-        <QuickLaunchPanel linkedApps={linkedApps} />
+        <PlannerSidebar linkedApps={linkedApps} />
       </aside>
 
       <div className="min-w-0 flex-1">
