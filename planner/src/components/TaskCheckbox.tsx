@@ -53,7 +53,7 @@ function TaskEditPopover({ label, oneOff, onRename, onDelete, onClose }: TaskEdi
   return (
     <div
       ref={panelRef}
-      className="absolute left-6 top-full z-50 mt-1 w-[min(240px,calc(100vw-2rem))] rounded-xl border border-hairline bg-white p-2.5 shadow-lg"
+      className="absolute left-6 top-full z-[200] mt-1 w-[min(240px,calc(100vw-2rem))] rounded-xl border border-hairline bg-white p-2.5 shadow-lg"
       role="dialog"
       aria-label="Edit task"
       onClick={(e) => e.stopPropagation()}
@@ -128,7 +128,10 @@ export function TaskCheckbox({
   const editable = Boolean(onRename && onDelete && !hidden)
 
   return (
-    <div className="group/task relative flex items-start gap-1 py-0.5">
+    <div
+      className={`group/task relative flex items-start gap-1 py-0.5 ${popoverOpen ? 'z-[100]' : ''}`}
+      {...(popoverOpen ? { 'data-task-popover-open': 'true' } : {})}
+    >
       {!hidden && (
         <div className="flex min-w-0 flex-1 items-start gap-2">
           <span
@@ -136,7 +139,7 @@ export function TaskCheckbox({
               checked
                 ? 'border-transparent bg-[#007AFF] text-white check-pop'
                 : oneOff
-                  ? 'border-dashed border-[#AEAEB2] bg-white/50 group-hover/task:border-[#8E8E93]'
+                  ? 'border-dashed border-[#FF3B30]/65 bg-white/50 group-hover/task:border-[#FF3B30]'
                   : 'border-[#C7C7CC] bg-white group-hover/task:border-[#AEAEB2]'
             }`}
             onClick={(e) => {

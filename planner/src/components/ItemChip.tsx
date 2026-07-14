@@ -2,19 +2,30 @@ import type { ItemOccurrence } from '../types/item'
 
 interface ItemChipProps {
   occurrence: ItemOccurrence
+  categoryColor?: string
   onToggleDone?: () => void
   onClick?: () => void
 }
 
-export function ItemChip({ occurrence, onToggleDone, onClick }: ItemChipProps) {
+export function ItemChip({ occurrence, categoryColor, onToggleDone, onClick }: ItemChipProps) {
   const { item, done } = occurrence
+  const color = categoryColor ?? '#8E8E93'
 
   return (
     <div
-      className={`flex items-center gap-1.5 rounded-full bg-[#F2F2F7] px-2.5 py-1 ring-1 ring-[#E5E5EA]/80 transition-colors hover:bg-[#EBEBEF] ${
+      className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 transition-colors hover:brightness-[0.97] ${
         done && item.checkable ? 'opacity-55' : ''
       }`}
+      style={{
+        backgroundColor: `${color}22`,
+        boxShadow: `inset 0 0 0 1px ${color}44`,
+      }}
     >
+      <span
+        className="h-1.5 w-1.5 shrink-0 rounded-full"
+        style={{ backgroundColor: color }}
+        aria-hidden
+      />
       {item.checkable && onToggleDone && (
         <button
           type="button"

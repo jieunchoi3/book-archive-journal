@@ -16,6 +16,7 @@ interface DayColumnProps {
   weekStart: string
   planner: PlannerActions
   items: ItemsActions
+  onFocusDay?: () => void
 }
 
 const DAY_TYPE_COLORS: Record<string, string> = {
@@ -54,7 +55,7 @@ function CollapsibleSection({
   )
 }
 
-export function DayColumn({ day, weekStart, planner, items }: DayColumnProps) {
+export function DayColumn({ day, weekStart, planner, items, onFocusDay }: DayColumnProps) {
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null)
   const [showCompleted, setShowCompleted] = useState(false)
   const [showHidden, setShowHidden] = useState(false)
@@ -121,7 +122,7 @@ export function DayColumn({ day, weekStart, planner, items }: DayColumnProps) {
       onEdit={() => setEditingBlockId(block.id)}
       onToggleTask={(taskId, kind) => planner.toggleTask(day.key, block.id, taskId, kind)}
       onHideTask={(taskId, kind) => planner.toggleHideTask(day.key, block.id, taskId, kind)}
-      onAddTask={(label, recurring) => planner.addTask(day.key, block.id, label, recurring)}
+      onAddTask={(label, recurrence) => planner.addTask(day.key, block.id, label, recurrence)}
       onFlexibleNoteChange={(note) => planner.setFlexibleNote(day.key, block.id, note)}
       {...taskHandlersForBlock(block.id)}
     />
@@ -129,7 +130,7 @@ export function DayColumn({ day, weekStart, planner, items }: DayColumnProps) {
 
   return (
     <div
-      className={`relative flex min-w-[168px] flex-1 flex-col overflow-hidden rounded-xl border ${
+      className={`relative flex min-w-[168px] flex-1 flex-col overflow-visible rounded-xl border has-[[data-task-popover-open=true]]:z-40 ${
         today
           ? 'border-[#007AFF] bg-gradient-to-b from-[#007AFF]/10 via-[#007AFF]/[0.03] to-white shadow-lg shadow-[#007AFF]/20 ring-2 ring-[#007AFF]/25'
           : 'border-hairline bg-white'
@@ -142,32 +143,68 @@ export function DayColumn({ day, weekStart, planner, items }: DayColumnProps) {
         />
       )}
       <header
-        className={`border-b px-3 py-3 ${today ? 'border-[#007AFF]/25 bg-[#007AFF]/[0.08]' : 'border-hairline'}`}
+        className={`border-b px-3 py-3 ${today ? 'border-[#007AFF]/25 bg-[#007AFF]/[0.08]' : 'border-hairline'} ${onFocusDay ? 'cursor-pointer transition-colors hover:bg-[#007AFF]/5' : ''}`}
       >
-        <div className="flex items-baseline justify-between gap-1">
-          <span
-            className={`text-[15px] font-semibold ${today ? 'text-[#007AFF]' : 'text-[#1C1C1E]'}`}
+        {onFocusDay ? (
+          <button
+            type="button"
+            onClick={onFocusDay}
+            className="w-full text-left"
+            aria-label={`${day.dayName} focus view`}
           >
-            {day.dayName}
-            <span
-              className={`ml-1 text-[13px] font-normal ${today ? 'text-[#007AFF]/75' : 'text-muted'}`}
-            >
-              {formatShortDateForDay(weekStart, day.key)}
-            </span>
-          </span>
-          {today && (
-            <span className="shrink-0 rounded-full bg-[#007AFF] px-2 py-0.5 text-[10px] font-bold tracking-wide text-white shadow-md shadow-[#007AFF]/40">
-              Today
-            </span>
-          )}
-        </div>
-        <div className="mt-0.5 flex items-center gap-1.5">
-          <span
-            className="h-1.5 w-1.5 rounded-full"
-            style={{ backgroundColor: DAY_TYPE_COLORS[day.dayType] }}
-          />
-          <span className="text-[11px] text-muted">{day.tag}</span>
-        </div>
+            <div className="flex items-baseline justify-between gap-1">
+              <span
+                className={`text-[15px] font-semibold ${today ? 'text-[#007AFF]' : 'text-[#1C1C1E]'}`}
+              >
+                {day.dayName}
+                <span
+                  className={`ml-1 text-[13px] font-normal ${today ? 'text-[#007AFF]/75' : 'text-muted'}`}
+                >
+                  {formatShortDateForDay(weekStart, day.key)}
+                </span>
+              </span>
+              {today && (
+                <span className="shrink-0 rounded-full bg-[#007AFF] px-2 py-0.5 text-[10px] font-bold tracking-wide text-white shadow-md shadow-[#007AFF]/40">
+                  Today
+                </span>
+              )}
+            </div>
+            <div className="mt-0.5 flex items-center gap-1.5">
+              <span
+                className="h-1.5 w-1.5 rounded-full"
+                style={{ backgroundColor: DAY_TYPE_COLORS[day.dayType] }}
+              />
+              <span className="text-[11px] text-muted">{day.tag}</span>
+            </div>
+          </button>
+        ) : (
+          <>
+            <div className="flex items-baseline justify-between gap-1">
+              <span
+                className={`text-[15px] font-semibold ${today ? 'text-[#007AFF]' : 'text-[#1C1C1E]'}`}
+              >
+                {day.dayName}
+                <span
+                  className={`ml-1 text-[13px] font-normal ${today ? 'text-[#007AFF]/75' : 'text-muted'}`}
+                >
+                  {formatShortDateForDay(weekStart, day.key)}
+                </span>
+              </span>
+              {today && (
+                <span className="shrink-0 rounded-full bg-[#007AFF] px-2 py-0.5 text-[10px] font-bold tracking-wide text-white shadow-md shadow-[#007AFF]/40">
+                  Today
+                </span>
+              )}
+            </div>
+            <div className="mt-0.5 flex items-center gap-1.5">
+              <span
+                className="h-1.5 w-1.5 rounded-full"
+                style={{ backgroundColor: DAY_TYPE_COLORS[day.dayType] }}
+              />
+              <span className="text-[11px] text-muted">{day.tag}</span>
+            </div>
+          </>
+        )}
       </header>
 
       <DayItemsSection
@@ -194,8 +231,8 @@ export function DayColumn({ day, weekStart, planner, items }: DayColumnProps) {
               onHideTask={(taskId, kind) =>
                 planner.toggleHideTask(day.key, block.id, taskId, kind)
               }
-              onAddTask={(label, recurring) =>
-                planner.addTask(day.key, block.id, label, recurring)
+              onAddTask={(label, recurrence) =>
+                planner.addTask(day.key, block.id, label, recurrence)
               }
               onFlexibleNoteChange={(note) =>
                 planner.setFlexibleNote(day.key, block.id, note)
@@ -261,8 +298,8 @@ export function DayColumn({ day, weekStart, planner, items }: DayColumnProps) {
             setEditingBlockId(null)
           }}
           onClose={() => setEditingBlockId(null)}
-          onAddTask={(label, recurring) =>
-            planner.addTask(day.key, editingBlock.id, label, recurring)
+          onAddTask={(label, recurrence) =>
+            planner.addTask(day.key, editingBlock.id, label, recurrence)
           }
           onDeleteRecurringTask={(taskId, scope) =>
             planner.deleteRecurringTask(day.key, editingBlock.id, taskId, scope)

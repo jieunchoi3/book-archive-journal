@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react'
 import { ChevronDown, ChevronUp, Plus, Trash2, X } from 'lucide-react'
 import { CATEGORY_OPTIONS, CATEGORY_STYLES } from '../lib/categories'
 import type { Block, BlockCategory, OneOffTask } from '../types/planner'
+import type { Recurrence } from '../types/item'
+import { isTemplateWeeklyHabit } from '../lib/itemRecurrence'
 import { createTask } from '../context/PlannerDataContext'
+import { RecurrenceFields } from './RecurrenceFields'
 
 interface BlockEditModalProps {
   block: Block
@@ -10,7 +13,7 @@ interface BlockEditModalProps {
   onSave: (block: Block) => void
   onDelete: () => void
   onClose: () => void
-  onAddTask: (label: string, recurring: boolean) => void
+  onAddTask: (label: string, recurrence: Recurrence | null) => void
   onDeleteRecurringTask: (taskId: string, scope: 'week' | 'template') => void
   onDeleteOneOffTask: (taskId: string) => void
   onRenameOneOffTask: (taskId: string, label: string) => void
@@ -29,7 +32,11 @@ export function BlockEditModal({
 }: BlockEditModalProps) {
   const [draft, setDraft] = useState<Block>({ ...block })
   const [newTaskLabel, setNewTaskLabel] = useState('')
-  const [repeatWeekly, setRepeatWeekly] = useState(true)
+  const [recurrence, setRecurrence] = useState<Recurrence | null>({
+    freq: 'weekly',
+    interval: 1,
+    until: null,
+  })
   const [newBadge, setNewBadge] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleteTaskId, setDeleteTaskId] = useState<string | null>(null)
@@ -64,13 +71,13 @@ export function BlockEditModal({
   const handleAddTask = () => {
     const label = newTaskLabel.trim()
     if (!label) return
-    if (repeatWeekly) {
+    if (isTemplateWeeklyHabit(recurrence)) {
       setDraft({ ...draft, tasks: [...draft.tasks, createTask(label)] })
     } else {
-      onAddTask(label, false)
+      onAddTask(label, recurrence)
     }
     setNewTaskLabel('')
-    setRepeatWeekly(true)
+    setRecurrence({ freq: 'weekly', interval: 1, until: null })
   }
 
   return (
@@ -360,15 +367,12 @@ export function BlockEditModal({
                   Add
                 </button>
               </div>
-              <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-[#636366]">
-                <input
-                  type="checkbox"
-                  checked={repeatWeekly}
-                  onChange={(e) => setRepeatWeekly(e.target.checked)}
-                  className="rounded"
-                />
-                매주 반복
-              </label>
+              <RecurrenceFields recurrence={recurrence} onRecurrenceChange={setRecurrence} />
+              {!isTemplateWeeklyHabit(recurrence) && recurrence && (
+                <p className="text-[10px] text-muted">
+                  2주마다 등 고급 반복은 Events 섹션에 표시됩니다.
+                </p>
+              )}
             </div>
           </div>
         </div>

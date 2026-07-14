@@ -81,8 +81,6 @@ export function TasksColumn({
       {editingItem && (
         <EditItemModal
           item={editingItem}
-          categories={allCategories}
-          tags={items.tags}
           items={items}
           onClose={() => setEditingItem(null)}
         />

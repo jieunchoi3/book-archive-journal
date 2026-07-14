@@ -12,7 +12,7 @@ import {
 } from '@dnd-kit/core'
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
-import type { WeekTemplate } from '../types/planner'
+import type { DayKey, WeekTemplate } from '../types/planner'
 import type { PlannerActions } from '../hooks/usePlanner'
 import type { ItemsActions } from '../hooks/useItems'
 import {
@@ -27,6 +27,7 @@ import {
 } from '../lib/weekUtils'
 import { PlannerSidebar } from './PlannerSidebar'
 import { DayColumn } from './DayColumn'
+import { DayFocusView } from './DayFocusView'
 import { WeekSummary } from './WeekSummary'
 import { MonthCalendarTrigger } from './MonthCalendarPopover'
 import type { LinkedAppsActions } from '../hooks/useLinkedApps'
@@ -41,6 +42,11 @@ interface WeekViewProps {
 
 export function WeekView({ template, weekStart, planner, items, linkedApps }: WeekViewProps) {
   const [activeTaskDrag, setActiveTaskDrag] = useState<TaskDragData | null>(null)
+  const [focusedDayKey, setFocusedDayKey] = useState<DayKey | null>(null)
+
+  const focusedDay = focusedDayKey
+    ? template.days.find((d) => d.key === focusedDayKey)
+    : null
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -120,14 +126,17 @@ export function WeekView({ template, weekStart, planner, items, linkedApps }: We
   )
 
   const goPrev = () => {
+    setFocusedDayKey(null)
     void planner.goToWeek(shiftWeekStart(weekStart, -1))
   }
 
   const goNext = () => {
+    setFocusedDayKey(null)
     void planner.goToWeek(shiftWeekStart(weekStart, 1))
   }
 
   const goToday = () => {
+    setFocusedDayKey(null)
     void planner.goToWeek(getWeekStartDate())
   }
 
@@ -193,6 +202,7 @@ export function WeekView({ template, weekStart, planner, items, linkedApps }: We
               weekCompletionPercent={planner.weekCompletionPercent}
               weekStart={weekStart}
               days={template.days.map((d) => ({ key: d.key, dayName: d.dayName }))}
+              onDayClick={(dayKey) => setFocusedDayKey(dayKey)}
             />
 
             <DndContext
@@ -201,17 +211,30 @@ export function WeekView({ template, weekStart, planner, items, linkedApps }: We
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
             >
-              <div className="flex gap-2 overflow-x-auto pb-4">
-                {template.days.map((day) => (
-                  <DayColumn
-                    key={`${weekStart}-${day.key}`}
-                    day={day}
-                    weekStart={weekStart}
-                    planner={planner}
-                    items={items}
-                  />
-                ))}
-              </div>
+              {focusedDay ? (
+                <DayFocusView
+                  day={focusedDay}
+                  weekStart={weekStart}
+                  allDays={template.days}
+                  planner={planner}
+                  items={items}
+                  onClose={() => setFocusedDayKey(null)}
+                  onNavigateDay={setFocusedDayKey}
+                />
+              ) : (
+                <div className="flex gap-2 overflow-x-auto pb-4">
+                  {template.days.map((day) => (
+                    <DayColumn
+                      key={`${weekStart}-${day.key}`}
+                      day={day}
+                      weekStart={weekStart}
+                      planner={planner}
+                      items={items}
+                      onFocusDay={() => setFocusedDayKey(day.key)}
+                    />
+                  ))}
+                </div>
+              )}
 
               <DragOverlay dropAnimation={null}>
                 {activeTaskDrag ? (

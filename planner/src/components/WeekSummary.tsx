@@ -7,6 +7,7 @@ interface WeekSummaryProps {
   weekCompletionPercent: number
   weekStart: string
   days: { key: DayKey; dayName: string }[]
+  onDayClick?: (dayKey: DayKey) => void
 }
 
 export function WeekSummary({
@@ -14,6 +15,7 @@ export function WeekSummary({
   weekCompletionPercent,
   weekStart,
   days,
+  onDayClick,
 }: WeekSummaryProps) {
   return (
     <div className="mb-6 rounded-xl border border-hairline bg-white px-5 py-4 shadow-sm">
@@ -29,13 +31,8 @@ export function WeekSummary({
           const pct =
             stats.total === 0 ? 0 : Math.round((stats.done / stats.total) * 100)
           const today = isToday(day.key, weekStart)
-          return (
-            <div
-              key={day.key}
-              className={`flex-1 rounded-lg px-1 py-1 text-center ${
-                today ? 'bg-[#007AFF]/10 ring-1 ring-[#007AFF]/30' : ''
-              }`}
-            >
+          const inner = (
+            <>
               <div
                 className={`mb-1 text-[11px] font-medium ${today ? 'font-semibold text-[#007AFF]' : 'text-muted'}`}
               >
@@ -55,6 +52,25 @@ export function WeekSummary({
                   {stats.done}/{stats.total}
                 </div>
               )}
+            </>
+          )
+
+          const className = `flex-1 rounded-lg px-1 py-1 text-center ${
+            today ? 'bg-[#007AFF]/10 ring-1 ring-[#007AFF]/30' : ''
+          } ${onDayClick ? 'cursor-pointer transition-colors hover:bg-[#007AFF]/5' : ''}`
+
+          return onDayClick ? (
+            <button
+              key={day.key}
+              type="button"
+              onClick={() => onDayClick(day.key)}
+              className={className}
+            >
+              {inner}
+            </button>
+          ) : (
+            <div key={day.key} className={className}>
+              {inner}
             </div>
           )
         })}

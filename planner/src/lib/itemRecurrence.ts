@@ -1,8 +1,7 @@
 import { RRule, type Weekday } from 'rrule'
 import type { DayKey } from '../types/planner'
 import type { Item, ItemOccurrence, Recurrence, RRuleDay } from '../types/item'
-import { getItemDone, isRecurringItem } from '../types/item'
-import { RRULE_DAYS } from '../types/item'
+import { getItemDone, isRecurringItem, RRULE_DAYS } from '../types/item'
 import { formatDateKey, getDateKeyForDay, parseDateKey, shiftWeekStart } from './weekUtils'
 
 const RRULE_WEEKDAY: Record<RRuleDay, Weekday> = {
@@ -162,4 +161,26 @@ export function dayKeyToRRuleDay(dayKey: DayKey): RRuleDay {
     sun: 'SU',
   }
   return map[dayKey]
+}
+
+export function dateKeyToRRuleDay(dateKey: string): RRuleDay {
+  const jsDay = parseDateKey(dateKey).getDay()
+  const map: RRuleDay[] = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA']
+  return map[jsDay]!
+}
+
+export function normalizeRecurrenceForDate(
+  recurrence: Recurrence | null,
+  dateKey: string,
+): Recurrence | null {
+  if (!recurrence) return null
+  if (recurrence.freq === 'weekly' && !recurrence.byDay?.length) {
+    return { ...recurrence, byDay: [dateKeyToRRuleDay(dateKey)] }
+  }
+  return recurrence
+}
+
+/** Weekly interval 1 → block template habit; anything else → scheduled event item. */
+export function isTemplateWeeklyHabit(recurrence: Recurrence | null): boolean {
+  return recurrence?.freq === 'weekly' && recurrence.interval === 1
 }

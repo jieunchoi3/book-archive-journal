@@ -1,3 +1,4 @@
+import { mergeDefaultEventCategories } from '../data/seedEventCategories'
 import type { Category, Item, Tag } from '../types/item'
 import { nextCategoryColor } from '../types/item'
 import { generateId } from './weekUtils'
@@ -93,7 +94,10 @@ export function loadItemsStore(): ItemsStore {
     items: loadJson(ITEMS_KEY, []),
   }
   store = migrateLegacyEvents(store)
-  return store
+  return {
+    ...store,
+    categories: mergeDefaultEventCategories(store.categories),
+  }
 }
 
 export function saveItemsStore(store: ItemsStore): void {

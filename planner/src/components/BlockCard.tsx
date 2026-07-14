@@ -7,7 +7,10 @@ import { CATEGORY_STYLES } from '../lib/categories'
 import { blockDropId } from '../lib/taskDnd'
 import type { Block, BlockDayLog, DayKey, RenderTask } from '../types/planner'
 import { FLEXIBLE_TAGS } from '../types/planner'
+import type { Recurrence } from '../types/item'
+import { isTemplateWeeklyHabit } from '../lib/itemRecurrence'
 import { DraggableTaskCheckbox } from './DraggableTaskCheckbox'
+import { RecurrenceFields } from './RecurrenceFields'
 
 interface BlockCardProps {
   block: Block
@@ -17,7 +20,7 @@ interface BlockCardProps {
   onEdit: () => void
   onToggleTask: (taskId: string, kind: 'recurring' | 'one-off') => void
   onHideTask?: (taskId: string, kind: 'recurring' | 'one-off') => void
-  onAddTask: (label: string, recurring: boolean) => void
+  onAddTask: (label: string, recurrence: Recurrence | null) => void
   onRenameTask?: (taskId: string, kind: 'recurring' | 'one-off', label: string) => void
   onDeleteTask?: (taskId: string, kind: 'recurring' | 'one-off') => void
   onFlexibleNoteChange: (note: string) => void
@@ -40,7 +43,7 @@ export function BlockCard({
 }: BlockCardProps) {
   const [showAddTask, setShowAddTask] = useState(false)
   const [newTaskLabel, setNewTaskLabel] = useState('')
-  const [repeatWeekly, setRepeatWeekly] = useState(false)
+  const [recurrence, setRecurrence] = useState<Recurrence | null>(null)
 
   const { setNodeRef: setDropRef, isOver } = useDroppable({
     id: blockDropId(dayKey, block.id),
@@ -54,10 +57,16 @@ export function BlockCard({
   const handleAddTask = () => {
     const label = newTaskLabel.trim()
     if (!label) return
-    onAddTask(label, repeatWeekly)
+    onAddTask(label, recurrence)
     setNewTaskLabel('')
+    setRecurrence(null)
     setShowAddTask(false)
-    setRepeatWeekly(false)
+  }
+
+  const resetAddForm = () => {
+    setShowAddTask(false)
+    setNewTaskLabel('')
+    setRecurrence(null)
   }
 
   return (
@@ -185,21 +194,15 @@ export function BlockCard({
               className="w-full rounded-md border border-hairline bg-white px-2 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-[#007AFF]/30"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleAddTask()
-                if (e.key === 'Escape') {
-                  setShowAddTask(false)
-                  setNewTaskLabel('')
-                }
+                if (e.key === 'Escape') resetAddForm()
               }}
             />
-            <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-[#636366]">
-              <input
-                type="checkbox"
-                checked={repeatWeekly}
-                onChange={(e) => setRepeatWeekly(e.target.checked)}
-                className="rounded"
-              />
-              매주 반복
-            </label>
+            <RecurrenceFields recurrence={recurrence} onRecurrenceChange={setRecurrence} />
+            {!isTemplateWeeklyHabit(recurrence) && recurrence && (
+              <p className="text-[10px] leading-snug text-muted">
+                2주마다 등 고급 반복은 날짜 상단 Events에 표시됩니다.
+              </p>
+            )}
             <div className="flex gap-1">
               <button
                 type="button"
@@ -210,10 +213,7 @@ export function BlockCard({
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setShowAddTask(false)
-                  setNewTaskLabel('')
-                }}
+                onClick={resetAddForm}
                 className="rounded-md px-2 py-0.5 text-[10px] text-muted"
               >
                 취소

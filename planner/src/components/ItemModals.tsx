@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { X } from 'lucide-react'
 import type { ItemsActions } from '../hooks/useItems'
 import type { Category, Item, Recurrence, Tag } from '../types/item'
+import { EventCategoryPicker } from './EventCategoryPicker'
 import { RecurrenceFields } from './RecurrenceFields'
 
 interface QuickAddItemModalProps {
@@ -21,7 +22,7 @@ export function QuickAddItemModal({
 }: QuickAddItemModalProps) {
   const [title, setTitle] = useState('')
   const [dueDate, setDueDate] = useState('')
-  const [selectedCategory, setSelectedCategory] = useState(categoryId ?? '')
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(categoryId)
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [recurrence, setRecurrence] = useState<Recurrence | null>(null)
   const [showOnWeeklyView, setShowOnWeeklyView] = useState(!!dueDate)
@@ -36,7 +37,7 @@ export function QuickAddItemModal({
     if (!title.trim()) return
     items.addItem({
       title: title.trim(),
-      categoryId: selectedCategory || null,
+      categoryId: selectedCategory,
       tagIds: selectedTags,
       dueDate: dueDate || null,
       recurrence,
@@ -85,21 +86,12 @@ export function QuickAddItemModal({
             />
           </div>
 
-          <div>
-            <label className="mb-1 block text-[11px] font-medium text-muted">Category</label>
-            <select
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              className="w-full rounded-lg border border-hairline px-3 py-2 text-[13px] focus:outline-none"
-            >
-              <option value="">No Category</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          <EventCategoryPicker
+            categories={categories}
+            selectedId={selectedCategory}
+            onSelect={setSelectedCategory}
+            items={items}
+          />
 
           {tags.length > 0 && (
             <div>
@@ -157,24 +149,19 @@ export function QuickAddItemModal({
 
 interface EditItemModalProps {
   item: Item
-  categories: Category[]
-  tags: Tag[]
   items: ItemsActions
   onClose: () => void
+  title?: string
 }
 
-export function EditItemModal({ item, categories, tags, items, onClose }: EditItemModalProps) {
+export function EditItemModal({
+  item,
+  items,
+  onClose,
+  title = 'Edit Event',
+}: EditItemModalProps) {
   const [draft, setDraft] = useState({ ...item })
   const [confirmDelete, setConfirmDelete] = useState(false)
-
-  const toggleTag = (id: string) => {
-    setDraft((prev) => ({
-      ...prev,
-      tagIds: prev.tagIds.includes(id)
-        ? prev.tagIds.filter((t) => t !== id)
-        : [...prev.tagIds, id],
-    }))
-  }
 
   return (
     <div
@@ -182,17 +169,17 @@ export function EditItemModal({ item, categories, tags, items, onClose }: EditIt
       onClick={onClose}
     >
       <div
-        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-hairline bg-white shadow-xl"
+        className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-2xl border border-hairline bg-white shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-hairline px-5 py-4">
-          <h2 className="text-[15px] font-semibold">Edit Item</h2>
+        <div className="flex items-center justify-between border-b border-hairline px-4 py-3">
+          <h2 className="text-[14px] font-semibold">{title}</h2>
           <button type="button" onClick={onClose} className="rounded-lg p-1 text-muted hover:bg-surface">
-            <X size={18} />
+            <X size={16} />
           </button>
         </div>
 
-        <div className="space-y-3 px-5 py-4">
+        <div className="space-y-3 px-4 py-3">
           <input
             type="text"
             value={draft.title}
@@ -205,37 +192,20 @@ export function EditItemModal({ item, categories, tags, items, onClose }: EditIt
             onChange={(e) => setDraft({ ...draft, dueDate: e.target.value || null })}
             className="w-full rounded-lg border border-hairline px-3 py-2 text-[13px] focus:outline-none"
           />
-          <select
-            value={draft.categoryId ?? ''}
-            onChange={(e) => setDraft({ ...draft, categoryId: e.target.value || null })}
+          <input
+            type="text"
+            value={draft.time ?? ''}
+            onChange={(e) => setDraft({ ...draft, time: e.target.value || undefined })}
+            placeholder="시간 (선택)"
             className="w-full rounded-lg border border-hairline px-3 py-2 text-[13px] focus:outline-none"
-          >
-            <option value="">No Category</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-          {tags.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {tags.map((tag) => (
-                <button
-                  key={tag.id}
-                  type="button"
-                  onClick={() => toggleTag(tag.id)}
-                  className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
-                    draft.tagIds.includes(tag.id)
-                      ? 'bg-[#1C1C1E] text-white'
-                      : 'bg-[#F2F2F7] text-[#636366]'
-                  }`}
-                >
-                  {tag.icon && <span className="mr-1">{tag.icon}</span>}
-                  {tag.name}
-                </button>
-              ))}
-            </div>
-          )}
+          />
+          <EventCategoryPicker
+            categories={items.categories}
+            selectedId={draft.categoryId}
+            onSelect={(categoryId) => setDraft({ ...draft, categoryId })}
+            items={items}
+            allowManage
+          />
           <RecurrenceFields
             recurrence={draft.recurrence}
             onRecurrenceChange={(r) => setDraft({ ...draft, recurrence: r })}
@@ -250,7 +220,7 @@ export function EditItemModal({ item, categories, tags, items, onClose }: EditIt
           </label>
         </div>
 
-        <div className="flex items-center justify-between border-t border-hairline px-5 py-4">
+        <div className="flex items-center justify-between border-t border-hairline px-4 py-3">
           {confirmDelete ? (
             <div className="flex gap-2">
               <button
@@ -259,17 +229,17 @@ export function EditItemModal({ item, categories, tags, items, onClose }: EditIt
                   items.deleteItem(item.id)
                   onClose()
                 }}
-                className="rounded-lg bg-red-500 px-3 py-1.5 text-[12px] text-white"
+                className="rounded-lg bg-red-500 px-3 py-1.5 text-[11px] text-white"
               >
                 Delete
               </button>
-              <button type="button" onClick={() => setConfirmDelete(false)} className="text-[12px] text-muted">
+              <button type="button" onClick={() => setConfirmDelete(false)} className="text-[11px] text-muted">
                 Cancel
               </button>
             </div>
           ) : (
-            <button type="button" onClick={() => setConfirmDelete(true)} className="text-[12px] text-red-500">
-              Delete item
+            <button type="button" onClick={() => setConfirmDelete(true)} className="text-[11px] text-red-500">
+              Delete event
             </button>
           )}
           <button
@@ -278,7 +248,7 @@ export function EditItemModal({ item, categories, tags, items, onClose }: EditIt
               items.updateItem(item.id, draft)
               onClose()
             }}
-            className="rounded-lg bg-[#007AFF] px-5 py-2 text-[13px] font-medium text-white"
+            className="rounded-lg bg-[#007AFF] px-4 py-1.5 text-[12px] font-medium text-white"
           >
             Save
           </button>

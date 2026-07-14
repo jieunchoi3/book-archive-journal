@@ -19,7 +19,8 @@ import type {
   WeekTemplate,
   WeeklyLog,
 } from '../types/planner'
-import type { Category, Item, ItemDone, ItemOccurrence, Tag } from '../types/item'
+import type { Category, Item, ItemDone, ItemOccurrence, Recurrence, Tag } from '../types/item'
+import { mergeDefaultEventCategories } from '../data/seedEventCategories'
 import {
   getItemDone,
   isRecurringItem,
@@ -27,7 +28,7 @@ import {
   NO_CATEGORY_ID,
 } from '../types/item'
 import type { LinkedApp } from '../types/linkedApp'
-import { expandItemsForWeek } from '../lib/itemRecurrence'
+import { dayKeyToRRuleDay, expandItemsForWeek, isTemplateWeeklyHabit } from '../lib/itemRecurrence'
 import {
   fetchItemsStore,
   fetchLinkedApps,
@@ -62,6 +63,14 @@ import {
 } from '../lib/blockTasks'
 import { generateId, getCurrentWeekStart, getDateKeyForDay } from '../lib/weekUtils'
 import { SEED_TEMPLATE } from '../data/seedTemplate'
+
+function withDefaultEventCategories(
+  store: { categories: Category[]; tags: Tag[]; items: Item[] },
+): { categories: Category[]; tags: Tag[]; items: Item[] } {
+  const categories = mergeDefaultEventCategories(store.categories)
+  if (categories.length === store.categories.length) return store
+  return { ...store, categories }
+}
 
 function normalizeOrders(blocks: Block[]): Block[] {
   return blocks.map((b, i) => ({ ...b, order: i }))
@@ -115,7 +124,7 @@ interface PlannerDataContextValue {
   isBlockCompleteForDay: (dayKey: DayKey, block: Block) => boolean
   getHiddenBlockTasks: (dayKey: DayKey, block: Block) => RenderTask[]
   setFlexibleNote: (dayKey: DayKey, blockId: string, note: string) => void
-  addTask: (dayKey: DayKey, blockId: string, label: string, recurring: boolean) => void
+  addTask: (dayKey: DayKey, blockId: string, label: string, recurrence: Recurrence | null) => void
   deleteRecurringTask: (
     dayKey: DayKey,
     blockId: string,
@@ -157,7 +166,7 @@ interface PlannerDataContextValue {
   getItemsForDay: (dayKey: DayKey) => ItemOccurrence[]
   getCategory: (id: string | null) => Category | null
   getTag: (id: string) => Tag | null
-  addCategory: (name: string) => string
+  addCategory: (name: string, color?: string) => string
   updateCategory: (id: string, updates: Partial<Category>) => void
   deleteCategory: (id: string) => void
   addTag: (name: string, icon?: string) => string
@@ -353,7 +362,11 @@ export function PlannerDataProvider({
         putWeekCache(log)
         setWeeklyLog(log)
         setWeekStart(getCurrentWeekStart())
-        setItemsStore(store)
+        const normalizedStore = withDefaultEventCategories(store)
+        setItemsStore(normalizedStore)
+        if (normalizedStore.categories.length !== store.categories.length) {
+          void syncItemsStore(userId, normalizedStore).catch((e) => logError('seedCategories', e))
+        }
         setLinkedApps(apps)
         setShowImportBanner(hasLocalPlannerData() && !isLocalImportDone())
       } catch (e) {
@@ -384,7 +397,11 @@ export function PlannerDataProvider({
         fetchLinkedApps(userId),
       ])
       if (tmpl) setTemplate(tmpl)
-      setItemsStore(store)
+      const normalizedStore = withDefaultEventCategories(store)
+      setItemsStore(normalizedStore)
+      if (normalizedStore.categories.length !== store.categories.length) {
+        void syncItemsStore(userId, normalizedStore).catch((e) => logError('seedCategories', e))
+      }
       setLinkedApps(apps)
       const log = await loadWeeklyLog(weekStart)
       putWeekCache(log)
@@ -628,9 +645,36 @@ export function PlannerDataProvider({
   )
 
   const addTask = useCallback(
-    (dayKey: DayKey, blockId: string, label: string, recurring: boolean) => {
-      if (recurring) {
-        const task: TaskTemplate = { id: generateId(), label }
+    (dayKey: DayKey, blockId: string, label: string, recurrence: Recurrence | null) => {
+      const trimmed = label.trim()
+      if (!trimmed) return
+
+      if (!recurrence) {
+        const dateKey = getDateKeyForDay(weekStartRef.current, dayKey)
+        const task: OneOffTask = { id: generateId(), label: trimmed, done: false }
+        setWeeklyLog((prev) => {
+          const base = { ...prev, weekStart: weekStartRef.current }
+          const dateMap = base.oneOffByDate[dateKey] ?? {}
+          const existing = dateMap[blockId] ?? []
+          const next: WeeklyLog = {
+            ...base,
+            oneOffByDate: {
+              ...base.oneOffByDate,
+              [dateKey]: { ...dateMap, [blockId]: [...existing, task] },
+            },
+          }
+          weeklyLogRef.current = next
+          putWeekCache(next)
+          return next
+        })
+        void upsertOneOffTask(userId, task, dateKey, blockId).catch((e) =>
+          logError('upsertOneOffTask', e),
+        )
+        return
+      }
+
+      if (isTemplateWeeklyHabit(recurrence)) {
+        const task: TaskTemplate = { id: generateId(), label: trimmed }
         setTemplate((prev) => {
           const next: WeekTemplate = {
             days: prev.days.map((d) =>
@@ -653,27 +697,31 @@ export function PlannerDataProvider({
       }
 
       const dateKey = getDateKeyForDay(weekStartRef.current, dayKey)
-      const task: OneOffTask = { id: generateId(), label, done: false }
-      setWeeklyLog((prev) => {
-        const base = { ...prev, weekStart: weekStartRef.current }
-        const dateMap = base.oneOffByDate[dateKey] ?? {}
-        const existing = dateMap[blockId] ?? []
-        const next: WeeklyLog = {
-          ...base,
-          oneOffByDate: {
-            ...base.oneOffByDate,
-            [dateKey]: { ...dateMap, [blockId]: [...existing, task] },
-          },
-        }
-        weeklyLogRef.current = next
-        putWeekCache(next)
+      const normalizedRecurrence: Recurrence = {
+        ...recurrence,
+        byDay:
+          recurrence.freq === 'weekly' && !recurrence.byDay?.length
+            ? [dayKeyToRRuleDay(dayKey)]
+            : recurrence.byDay,
+      }
+      const newItem: Item = {
+        id: generateId(),
+        title: trimmed,
+        categoryId: null,
+        tagIds: [],
+        dueDate: dateKey,
+        recurrence: normalizedRecurrence,
+        done: {},
+        showOnWeeklyView: true,
+        checkable: true,
+      }
+      setItemsStore((prev) => {
+        const next = { ...prev, items: [...prev.items, newItem] }
+        persistItems(next)
         return next
       })
-      void upsertOneOffTask(userId, task, dateKey, blockId).catch((e) =>
-        logError('upsertOneOffTask', e),
-      )
     },
-    [enqueueTemplateSync, userId, putWeekCache],
+    [userId, putWeekCache, enqueueTemplateSync, persistItems],
   )
 
   const deleteRecurringTask = useCallback(
@@ -1140,11 +1188,11 @@ export function PlannerDataProvider({
     getItemsForDay: (dayKey) => itemsByDay[dayKey] ?? [],
     getCategory: (id) => categories.find((c) => c.id === id) ?? null,
     getTag: (id) => tags.find((t) => t.id === id) ?? null,
-    addCategory: (name) => {
+    addCategory: (name, color) => {
       const category: Category = {
         id: generateId(),
         name: name.trim(),
-        color: nextCategoryColor(categories),
+        color: color ?? nextCategoryColor(categories),
       }
       updateItemsStore((prev) => ({
         ...prev,
