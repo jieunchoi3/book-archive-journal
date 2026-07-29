@@ -123,16 +123,20 @@ function MonthEventPill({
   const content = (
     <>
       <span
-        className="h-1.5 w-1.5 shrink-0 rounded-full"
+        className="mt-[3px] h-1.5 w-1.5 shrink-0 rounded-full"
         style={{ backgroundColor: categoryColor }}
       />
-      <span className={`truncate font-medium text-[#1C1C1E] ${done && item.checkable ? 'line-through' : ''}`}>
+      <span
+        className={`min-w-0 whitespace-normal break-words font-medium text-[#1C1C1E] ${
+          done && item.checkable ? 'line-through' : ''
+        }`}
+      >
         {item.title}
       </span>
     </>
   )
 
-  const className = `flex min-w-0 items-center gap-1 rounded px-1 py-0.5 text-[10px] leading-tight ${
+  const className = `flex w-full min-w-0 items-start gap-1 rounded px-1 py-0.5 text-left text-[10px] leading-snug ${
     done && item.checkable ? 'opacity-50' : ''
   } ${onClick ? 'cursor-pointer hover:ring-1 hover:ring-[#007AFF]/25' : ''}`
 
@@ -357,7 +361,7 @@ export function MonthCalendarView({
                   return (
                     <div
                       key={dateKey}
-                      className={`group/cell relative flex min-h-[88px] flex-col p-1.5 transition-colors sm:min-h-[104px] ${
+                      className={`group/cell relative flex min-h-[88px] min-w-0 flex-col overflow-x-hidden p-1.5 transition-colors sm:min-h-[104px] ${
                         isSelected
                           ? 'bg-[#007AFF]/8 ring-1 ring-inset ring-[#007AFF]/30'
                           : 'hover:bg-[#FAFAFA]'
@@ -370,7 +374,7 @@ export function MonthCalendarView({
                           setShowAdd(false)
                           setCellAddDateKey(null)
                         }}
-                        className="flex min-h-0 flex-1 flex-col text-left"
+                        className="flex min-h-0 min-w-0 flex-1 flex-col text-left"
                       >
                         <span
                           className={`mb-1 flex h-6 w-6 items-center justify-center rounded-full text-[12px] font-semibold tabular-nums ${

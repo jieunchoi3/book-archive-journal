@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Plus } from 'lucide-react'
 import type { DayKey } from '../types/planner'
 import type { ItemsActions } from '../hooks/useItems'
@@ -8,6 +8,17 @@ import { dayKeyToRRuleDay, normalizeRecurrenceForDate } from '../lib/itemRecurre
 import { EventQuickAddForm } from './EventQuickAddForm'
 import { ItemChip } from './ItemChip'
 import { EditItemModal } from './ItemModals'
+
+function isOccurrenceComplete(occ: ItemOccurrence): boolean {
+  return occ.item.checkable && occ.done
+}
+
+/** Incomplete events first; completed sink below. Stable within each group. */
+function sortOccurrencesByCompletion(occurrences: ItemOccurrence[]): ItemOccurrence[] {
+  return [...occurrences].sort((a, b) => {
+    return Number(isOccurrenceComplete(a)) - Number(isOccurrenceComplete(b))
+  })
+}
 
 interface DayItemsSectionProps {
   dayKey: DayKey
@@ -26,6 +37,10 @@ export function DayItemsSection({
   const [editingId, setEditingId] = useState<string | null>(null)
   const dueDate = getDateKeyForDay(weekStart, dayKey)
   const editingItem = editingId ? items.items.find((i) => i.id === editingId) : null
+  const sortedOccurrences = useMemo(
+    () => sortOccurrencesByCompletion(occurrences),
+    [occurrences],
+  )
 
   return (
     <div className="border-b border-hairline px-2 py-2">
@@ -43,9 +58,9 @@ export function DayItemsSection({
         )}
       </div>
 
-      {occurrences.length > 0 && (
+      {sortedOccurrences.length > 0 && (
         <div className="mb-1.5 flex flex-col gap-1">
-          {occurrences.map((occ) => {
+          {sortedOccurrences.map((occ) => {
             const cat = items.getCategory(occ.item.categoryId)
             return (
               <ItemChip

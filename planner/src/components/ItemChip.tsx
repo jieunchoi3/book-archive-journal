@@ -13,7 +13,7 @@ export function ItemChip({ occurrence, categoryColor, onToggleDone, onClick }: I
 
   return (
     <div
-      className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 transition-colors hover:brightness-[0.97] ${
+      className={`flex items-start gap-1.5 rounded-2xl px-2.5 py-1.5 transition-colors hover:brightness-[0.97] ${
         done && item.checkable ? 'opacity-55' : ''
       }`}
       style={{
@@ -22,7 +22,7 @@ export function ItemChip({ occurrence, categoryColor, onToggleDone, onClick }: I
       }}
     >
       <span
-        className="h-1.5 w-1.5 shrink-0 rounded-full"
+        className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full"
         style={{ backgroundColor: color }}
         aria-hidden
       />
@@ -33,7 +33,7 @@ export function ItemChip({ occurrence, categoryColor, onToggleDone, onClick }: I
             e.stopPropagation()
             onToggleDone()
           }}
-          className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border transition-colors ${
+          className={`mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border transition-colors ${
             done
               ? 'border-transparent bg-[#8E8E93] text-white'
               : 'border-[#C7C7CC] bg-white hover:border-[#AEAEB2]'
@@ -54,8 +54,8 @@ export function ItemChip({ occurrence, categoryColor, onToggleDone, onClick }: I
         </button>
       )}
 
-      <button type="button" onClick={onClick} className="flex min-w-0 flex-1 items-center gap-1 text-left">
-        <span className="min-w-0 truncate text-[11px] font-medium text-[#48484A]">
+      <button type="button" onClick={onClick} className="flex min-w-0 flex-1 items-start gap-1 text-left">
+        <span className="min-w-0 whitespace-normal break-words text-[11px] font-medium leading-snug text-[#48484A]">
           <span className={done && item.checkable ? 'line-through' : ''}>{item.title}</span>
           {item.time && (
             <span className="ml-1 font-normal text-muted">{item.time}</span>
