@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
-import { Calendar, CalendarDays } from 'lucide-react'
+import { BookHeart, Calendar, CalendarDays } from 'lucide-react'
 
-export type AppView = 'monthly' | 'weekly'
+export type AppView = 'diary' | 'monthly' | 'weekly'
 
 interface BottomNavProps {
   active: AppView
@@ -12,6 +12,12 @@ export function BottomNav({ active, onChange }: BottomNavProps) {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-hairline bg-white/95 backdrop-blur-md">
       <div className="mx-auto flex max-w-lg justify-around px-4 py-2">
+        <NavButton
+          label="Diary"
+          icon={<BookHeart size={20} />}
+          active={active === 'diary'}
+          onClick={() => onChange('diary')}
+        />
         <NavButton
           label="Monthly"
           icon={<Calendar size={20} />}
@@ -44,7 +50,7 @@ function NavButton({
     <button
       type="button"
       onClick={onClick}
-      className={`flex flex-col items-center gap-0.5 rounded-lg px-6 py-1.5 transition-colors ${
+      className={`flex flex-col items-center gap-0.5 rounded-lg px-5 py-1.5 transition-colors ${
         active ? 'text-[#007AFF]' : 'text-muted hover:text-[#48484A]'
       }`}
     >

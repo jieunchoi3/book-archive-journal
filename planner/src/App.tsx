@@ -8,6 +8,7 @@ import { useLinkedApps } from './hooks/useLinkedApps'
 import { ImportLocalDataBanner } from './components/ImportLocalDataBanner'
 import { WeekView } from './components/WeekView'
 import { MonthCalendarView } from './components/MonthCalendarView'
+import { DiaryView } from './components/DiaryView'
 import { BottomNav, type AppView } from './components/BottomNav'
 
 function AppContent() {
@@ -19,7 +20,9 @@ function AppContent() {
   return (
     <>
       <ImportLocalDataBanner />
-      {view === 'weekly' ? (
+      {view === 'diary' ? (
+        <DiaryView />
+      ) : view === 'weekly' ? (
         <WeekView
           template={planner.template}
           weekStart={planner.weekStart}
