@@ -21,11 +21,13 @@ import {
 import {
   DIARY_CANVAS_SIZE,
   bakeCropIntoLayer,
+  bakeLassoCropIntoLayer,
   createLayerFromSrc,
   drawStrokes,
   loadImage,
   removeBackgroundFromLayer,
 } from '../lib/diaryImage'
+import type { DiaryPoint } from '../types/diary'
 import { generateId } from '../lib/weekUtils'
 
 type Tool = 'move' | 'draw' | 'erase' | 'crop'
@@ -69,6 +71,8 @@ export function DiaryPhotoEditor({
   const [cropRect, setCropRect] = useState<{ x: number; y: number; width: number; height: number } | null>(
     null,
   )
+  const [cropMode, setCropMode] = useState<'rect' | 'lasso'>('lasso')
+  const [cropLasso, setCropLasso] = useState<DiaryPoint[]>([])
   const [removingBg, setRemovingBg] = useState(false)
   const [bgProgress, setBgProgress] = useState<string | null>(null)
   const [bgError, setBgError] = useState<string | null>(null)
@@ -135,7 +139,7 @@ export function DiaryPhotoEditor({
   const canRedo = historyTick >= 0 && redoStack.current.length > 0
 
   const dragRef = useRef<{
-    mode: 'move' | 'draw' | 'draw-canvas' | 'crop-new' | 'crop-resize' | 'resize'
+    mode: 'move' | 'draw' | 'draw-canvas' | 'crop-new' | 'crop-lasso' | 'crop-resize' | 'resize'
     startX: number
     startY: number
     originX: number
@@ -311,12 +315,49 @@ export function DiaryPhotoEditor({
         ctx.strokeRect(cropRect.x, cropRect.y, cropRect.width, cropRect.height)
         ctx.setLineDash([])
       }
+
+      if (cropLasso.length >= 2) {
+        ctx.save()
+        ctx.fillStyle = 'rgba(0,0,0,0.45)'
+        ctx.beginPath()
+        ctx.rect(0, 0, DIARY_CANVAS_SIZE, DIARY_CANVAS_SIZE)
+        ctx.moveTo(cropLasso[0].x, cropLasso[0].y)
+        for (let i = 1; i < cropLasso.length; i++) {
+          ctx.lineTo(cropLasso[i].x, cropLasso[i].y)
+        }
+        ctx.closePath()
+        ctx.fill('evenodd')
+        ctx.restore()
+
+        ctx.strokeStyle = '#007AFF'
+        ctx.lineWidth = 2.5 * uiScale
+        ctx.lineJoin = 'round'
+        ctx.lineCap = 'round'
+        ctx.setLineDash([])
+        ctx.beginPath()
+        ctx.moveTo(cropLasso[0].x, cropLasso[0].y)
+        for (let i = 1; i < cropLasso.length; i++) {
+          ctx.lineTo(cropLasso[i].x, cropLasso[i].y)
+        }
+        if (cropLasso.length >= 3) ctx.closePath()
+        ctx.stroke()
+      }
     }
     void paint()
     return () => {
       cancelled = true
     }
-  }, [layers, canvasStrokes, cropRect, frameColor, tool, activeLayer, activeNaturalSize, uiScale])
+  }, [
+    layers,
+    canvasStrokes,
+    cropRect,
+    cropLasso,
+    frameColor,
+    tool,
+    activeLayer,
+    activeNaturalSize,
+    uiScale,
+  ])
 
   const canvasPoint = (e: React.PointerEvent<HTMLCanvasElement> | React.WheelEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current!
@@ -357,6 +398,19 @@ export function DiaryPhotoEditor({
         penDrawingRef.current = false
         return
       }
+      if (cropMode === 'lasso') {
+        setCropRect(null)
+        setCropLasso([pt])
+        dragRef.current = {
+          mode: 'crop-lasso',
+          startX: pt.x,
+          startY: pt.y,
+          originX: 0,
+          originY: 0,
+        }
+        return
+      }
+      setCropLasso([])
       setCropRect({ x: pt.x, y: pt.y, width: 0, height: 0 })
       dragRef.current = { mode: 'crop-new', startX: pt.x, startY: pt.y, originX: 0, originY: 0 }
       return
@@ -454,6 +508,17 @@ export function DiaryPhotoEditor({
       return
     }
 
+    if (drag.mode === 'crop-lasso') {
+      setCropLasso((prev) => {
+        const last = prev[prev.length - 1]
+        if (!last) return [pt]
+        const dist = Math.hypot(pt.x - last.x, pt.y - last.y)
+        if (dist < 4 * uiScale) return prev
+        return [...prev, pt]
+      })
+      return
+    }
+
     if (drag.mode === 'draw-canvas' && drag.strokeId) {
       setCanvasStrokes((prev) =>
         prev.map((s) =>
@@ -535,12 +600,27 @@ export function DiaryPhotoEditor({
     setTool('move')
   }
 
+  const clearCropSelection = () => {
+    setCropRect(null)
+    setCropLasso([])
+  }
+
   const applyCrop = async () => {
-    if (!activeLayer || !cropRect || cropRect.width < 8 || cropRect.height < 8) return
+    if (!activeLayer) return
+    if (cropMode === 'lasso') {
+      if (cropLasso.length < 8) return
+      pushHistory()
+      const next = await bakeLassoCropIntoLayer(activeLayer, cropLasso)
+      setLayers((prev) => prev.map((l) => (l.id === activeLayer.id ? next : l)))
+      clearCropSelection()
+      setTool('move')
+      return
+    }
+    if (!cropRect || cropRect.width < 8 || cropRect.height < 8) return
     pushHistory()
     const next = await bakeCropIntoLayer(activeLayer, cropRect)
     setLayers((prev) => prev.map((l) => (l.id === activeLayer.id ? next : l)))
-    setCropRect(null)
+    clearCropSelection()
     setTool('move')
   }
 
@@ -552,7 +632,7 @@ export function DiaryPhotoEditor({
       setActiveId(next.at(-1)?.id ?? null)
       return next
     })
-    setCropRect(null)
+    clearCropSelection()
   }
 
   const changeScale = (delta: number) => {
@@ -691,12 +771,20 @@ export function DiaryPhotoEditor({
 
           <div className="flex max-h-[42vh] w-full shrink-0 flex-col gap-3 overflow-auto border-t border-hairline p-3 md:max-h-none md:w-64 md:border-l md:border-t-0 md:p-4">
             <div className="flex flex-wrap items-center gap-1">
-              <ToolBtn active={tool === 'move'} onClick={() => { setTool('move'); setCropRect(null) }} icon={<Image size={14} />} label="Photo" />
+              <ToolBtn
+                active={tool === 'move'}
+                onClick={() => {
+                  setTool('move')
+                  clearCropSelection()
+                }}
+                icon={<Image size={14} />}
+                label="Photo"
+              />
               <ToolBtn
                 active={tool === 'draw'}
                 onClick={() => {
                   setTool('draw')
-                  setCropRect(null)
+                  clearCropSelection()
                   setActiveId(null)
                 }}
                 icon={<Pencil size={14} />}
@@ -706,14 +794,81 @@ export function DiaryPhotoEditor({
                 active={tool === 'erase'}
                 onClick={() => {
                   setTool('erase')
-                  setCropRect(null)
+                  clearCropSelection()
                   setActiveId(null)
                 }}
                 icon={<Eraser size={14} />}
                 label="Erase"
               />
-              <ToolBtn active={tool === 'crop'} onClick={() => setTool('crop')} icon={<Crop size={14} />} label="Crop" />
+              <ToolBtn
+                active={tool === 'crop'}
+                onClick={() => {
+                  setTool('crop')
+                  clearCropSelection()
+                }}
+                icon={<Crop size={14} />}
+                label="Crop"
+              />
             </div>
+
+            {tool === 'crop' && (
+              <div className="space-y-2 rounded-xl bg-[#F5F5F7] p-2.5">
+                <p className="text-[11px] font-medium text-[#48484A]">Crop shape</p>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCropMode('lasso')
+                      clearCropSelection()
+                    }}
+                    className={`flex-1 rounded-lg px-2 py-1.5 text-[11px] font-medium ${
+                      cropMode === 'lasso'
+                        ? 'bg-[#007AFF] text-white'
+                        : 'bg-white text-[#48484A] shadow-sm'
+                    }`}
+                  >
+                    Lasso
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCropMode('rect')
+                      clearCropSelection()
+                    }}
+                    className={`flex-1 rounded-lg px-2 py-1.5 text-[11px] font-medium ${
+                      cropMode === 'rect'
+                        ? 'bg-[#007AFF] text-white'
+                        : 'bg-white text-[#48484A] shadow-sm'
+                    }`}
+                  >
+                    Rectangle
+                  </button>
+                </div>
+                <p className="text-[10px] leading-snug text-muted">
+                  {cropMode === 'lasso'
+                    ? 'Draw freely around the area to keep, then apply.'
+                    : 'Drag a rectangle over the area to keep, then apply.'}
+                </p>
+                {(cropMode === 'lasso' ? cropLasso.length >= 8 : Boolean(cropRect && cropRect.width >= 8)) && (
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => void applyCrop()}
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#007AFF] px-3 py-2 text-[12px] font-semibold text-white"
+                    >
+                      <Check size={14} /> Apply crop
+                    </button>
+                    <button
+                      type="button"
+                      onClick={clearCropSelection}
+                      className="rounded-xl bg-white px-3 py-2 text-[12px] font-medium text-muted shadow-sm"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="flex gap-1">
               <button
@@ -928,19 +1083,10 @@ export function DiaryPhotoEditor({
                   <p className="text-[10px] leading-snug text-[#FF3B30]">{bgError}</p>
                 )}
                 <p className="text-[10px] leading-snug text-muted">
-                  First run downloads a small AI model (~40MB), then runs in your browser.
+                  Runs on-device. On iPad it uses a smaller image to avoid memory errors; if it
+                  still fails, use Erase or Lasso crop.
                 </p>
               </div>
-            )}
-
-            {tool === 'crop' && cropRect && (
-              <button
-                type="button"
-                onClick={() => void applyCrop()}
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#007AFF] px-3 py-2 text-[12px] font-semibold text-white"
-              >
-                <Check size={14} /> Apply crop
-              </button>
             )}
 
             <div className="rounded-xl bg-[#F5F5F7] p-2.5">

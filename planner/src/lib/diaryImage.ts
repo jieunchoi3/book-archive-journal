@@ -139,6 +139,30 @@ export async function renderDiaryComposite(
   return flat.toDataURL('image/jpeg', 0.92)
 }
 
+function recenterLayerFromImage(
+  layer: DiaryPhotoLayer,
+  src: string,
+  imgW: number,
+  imgH: number,
+  visualW: number,
+  visualH: number,
+): DiaryPhotoLayer {
+  const fit = Math.min(DIARY_CANVAS_SIZE / imgW, DIARY_CANVAS_SIZE / imgH)
+  const drawW = imgW * fit
+  const drawH = imgH * fit
+  // Prefer keeping the previous visual center when possible.
+  const cx = layer.x + visualW / 2
+  const cy = layer.y + visualH / 2
+  return {
+    ...layer,
+    src,
+    x: cx - drawW / 2,
+    y: cy - drawH / 2,
+    scale: fit,
+    strokes: [],
+  }
+}
+
 /** Bake a crop rect (canvas coords) into a layer's source image. */
 export async function bakeCropIntoLayer(
   layer: DiaryPhotoLayer,
@@ -159,19 +183,74 @@ export async function bakeCropIntoLayer(
   ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
   const cropped = canvas.toDataURL('image/jpeg', 0.92)
+  const visualW = img.width * layer.scale
+  const visualH = img.height * layer.scale
+  return recenterLayerFromImage(
+    layer,
+    cropped,
+    canvas.width,
+    canvas.height,
+    visualW,
+    visualH,
+  )
+}
 
-  const fit = Math.min(DIARY_CANVAS_SIZE / canvas.width, DIARY_CANVAS_SIZE / canvas.height)
-  const drawW = canvas.width * fit
-  const drawH = canvas.height * fit
+/**
+ * Bake a freehand lasso path (canvas coords) into a transparent PNG cutout.
+ * Points outside the path become transparent.
+ */
+export async function bakeLassoCropIntoLayer(
+  layer: DiaryPhotoLayer,
+  points: { x: number; y: number }[],
+): Promise<DiaryPhotoLayer> {
+  if (points.length < 3) return layer
+  const img = await loadImage(layer.src)
 
-  return {
-    ...layer,
-    src: cropped,
-    x: (DIARY_CANVAS_SIZE - drawW) / 2,
-    y: (DIARY_CANVAS_SIZE - drawH) / 2,
-    scale: fit,
-    strokes: [],
+  const imgPoints = points.map((p) => ({
+    x: (p.x - layer.x) / layer.scale,
+    y: (p.y - layer.y) / layer.scale,
+  }))
+
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const p of imgPoints) {
+    minX = Math.min(minX, p.x)
+    minY = Math.min(minY, p.y)
+    maxX = Math.max(maxX, p.x)
+    maxY = Math.max(maxY, p.y)
   }
+
+  // Clamp to image bounds
+  minX = Math.max(0, Math.floor(minX))
+  minY = Math.max(0, Math.floor(minY))
+  maxX = Math.min(img.width, Math.ceil(maxX))
+  maxY = Math.min(img.height, Math.ceil(maxY))
+  const w = Math.max(1, maxX - minX)
+  const h = Math.max(1, maxY - minY)
+
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return layer
+
+  ctx.beginPath()
+  ctx.moveTo(imgPoints[0].x - minX, imgPoints[0].y - minY)
+  for (let i = 1; i < imgPoints.length; i++) {
+    ctx.lineTo(imgPoints[i].x - minX, imgPoints[i].y - minY)
+  }
+  ctx.closePath()
+  ctx.clip()
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
+  ctx.drawImage(img, -minX, -minY)
+
+  const cropped = canvas.toDataURL('image/png')
+  const visualW = img.width * layer.scale
+  const visualH = img.height * layer.scale
+  return recenterLayerFromImage(layer, cropped, w, h, visualW, visualH)
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -183,33 +262,69 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   })
 }
 
+function isAppleMobile(): boolean {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent || ''
+  if (/iPad|iPhone|iPod/.test(ua)) return true
+  // iPadOS 13+ reports as MacIntel but has touch
+  return navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1
+}
+
+/** Downscale a source for ML so iPad Safari does not OOM. */
+async function downscaleForBackgroundRemoval(src: string, maxEdge: number): Promise<string> {
+  const img = await loadImage(src)
+  const edge = Math.max(img.width, img.height)
+  if (edge <= maxEdge) return src
+  return compressImageSource(src, maxEdge, 0.85)
+}
+
 /** Run ML background removal on a layer; result is a transparent PNG. */
 export async function removeBackgroundFromLayer(
   layer: DiaryPhotoLayer,
   onProgress?: (key: string, current: number, total: number) => void,
 ): Promise<DiaryPhotoLayer> {
-  const { removeBackground } = await import('@imgly/background-removal')
-  const blob = await removeBackground(layer.src, {
-    model: 'isnet_quint8',
-    output: { format: 'image/png', quality: 0.9 },
-    progress: onProgress,
-  })
-  const src = await blobToDataUrl(blob)
-  const [oldImg, newImg] = await Promise.all([loadImage(layer.src), loadImage(src)])
-  const visualW = oldImg.width * layer.scale
-  const visualH = oldImg.height * layer.scale
-  const scale = Math.min(visualW / newImg.width, visualH / newImg.height)
-  const drawW = newImg.width * scale
-  const drawH = newImg.height * scale
-  const cx = layer.x + visualW / 2
-  const cy = layer.y + visualH / 2
+  const appleMobile = isAppleMobile()
+  // iPad/iPhone Safari WASM heap is tiny — feed a much smaller image + CPU only.
+  const maxEdge = appleMobile ? 640 : 1280
+  const mlSource = await downscaleForBackgroundRemoval(layer.src, maxEdge)
 
-  return {
-    ...layer,
-    src,
-    x: cx - drawW / 2,
-    y: cy - drawH / 2,
-    scale,
-    strokes: [],
+  onProgress?.('prepare', 1, 3)
+
+  try {
+    const { removeBackground } = await import('@imgly/background-removal')
+    const blob = await removeBackground(mlSource, {
+      model: 'isnet_quint8',
+      device: 'cpu',
+      output: { format: 'image/png', quality: 0.85 },
+      progress: onProgress,
+    })
+    const src = await blobToDataUrl(blob)
+    const [oldImg, newImg] = await Promise.all([loadImage(layer.src), loadImage(src)])
+    const visualW = oldImg.width * layer.scale
+    const visualH = oldImg.height * layer.scale
+    const scale = Math.min(visualW / newImg.width, visualH / newImg.height)
+    const drawW = newImg.width * scale
+    const drawH = newImg.height * scale
+    const cx = layer.x + visualW / 2
+    const cy = layer.y + visualH / 2
+
+    return {
+      ...layer,
+      src,
+      x: cx - drawW / 2,
+      y: cy - drawH / 2,
+      scale,
+      strokes: [],
+    }
+  } catch (e) {
+    const raw = e instanceof Error ? e.message : String(e)
+    if (/out of memory|no available backend|backend found/i.test(raw)) {
+      throw new Error(
+        appleMobile
+          ? 'iPad ran out of memory for AI background removal. Close other tabs/apps, try a smaller photo, or use Erase / Lasso crop instead.'
+          : 'Background removal ran out of memory. Try a smaller photo, or use Erase / Lasso crop instead.',
+      )
+    }
+    throw e instanceof Error ? e : new Error('Background removal failed')
   }
 }
