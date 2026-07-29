@@ -17,6 +17,7 @@ import { EventQuickAddForm, type EventAddPayload } from './EventQuickAddForm'
 import { ItemChip } from './ItemChip'
 import { EditItemModal } from './ItemModals'
 import { PlannerSidebar } from './PlannerSidebar'
+import { PageSearch, type SearchSuggestion } from './PageSearch'
 import type { LinkedAppsActions } from '../hooks/useLinkedApps'
 
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -286,6 +287,31 @@ export function MonthCalendarView({
     onOpenWeekly()
   }
 
+  const searchSuggestions = useMemo((): SearchSuggestion[] => {
+    return items.items.map((item) => {
+      const cat = items.getCategory(item.categoryId)
+      const tagNames = item.tagIds
+        .map((id) => items.tags.find((t) => t.id === id)?.name)
+        .filter((n): n is string => Boolean(n))
+      const when = item.dueDate
+        ? parseDateKey(item.dueDate).toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          })
+        : item.recurrence
+          ? 'Recurring'
+          : undefined
+      return {
+        id: item.id,
+        title: item.title,
+        subtitle: [cat?.name, item.time, ...tagNames].filter(Boolean).join(' · ') || 'Event',
+        meta: when,
+        haystack: [cat?.name, item.time, item.dueDate, ...tagNames, 'event'],
+      }
+    })
+  }, [items.items, items.categories, items.tags, items.getCategory])
+
   return (
     <div className="flex min-h-screen gap-6 p-6 pb-24">
       <aside className="hidden w-52 shrink-0 lg:block">
@@ -298,6 +324,21 @@ export function MonthCalendarView({
             <h1 className="text-[22px] font-semibold tracking-tight text-[#1C1C1E]">Events</h1>
             <p className="text-[13px] text-muted">Monthly overview of your events</p>
           </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <PageSearch
+              placeholder="Search events, categories, tags…"
+              suggestions={searchSuggestions}
+              onSelect={(s) => {
+                const item = items.items.find((i) => i.id === s.id)
+                if (!item) return
+                setEditingId(item.id)
+                if (item.dueDate) {
+                  const d = parseDateKey(item.dueDate)
+                  setViewMonth({ year: d.getFullYear(), month: d.getMonth() })
+                  setSelectedDateKey(item.dueDate)
+                }
+              }}
+            />
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -327,6 +368,7 @@ export function MonthCalendarView({
                 Today
               </button>
             )}
+          </div>
           </div>
         </header>
 

@@ -2,15 +2,22 @@ import { useEffect, useMemo, useState } from 'react'
 import { BookHeart, ChevronLeft, ChevronRight, Wallet } from 'lucide-react'
 import { useDiary } from '../hooks/useDiary'
 import { useExpenses } from '../hooks/useExpenses'
+import { useAuth } from '../hooks/useAuth'
+import { loadAllDiaryEntriesLocal } from '../lib/diaryStorage'
 import {
   formatMonthYear,
   getMonthGrid,
   getTodayKey,
   parseDateKey,
 } from '../lib/weekUtils'
-import { diaryEntryHasPhoto, isDiaryEntryEmpty } from '../types/diary'
+import {
+  diaryEntryHasPhoto,
+  isDiaryEntryEmpty,
+  type DiaryEntry,
+} from '../types/diary'
 import { formatMoney, spendHeatColor } from '../types/expense'
 import { DiaryDayEditor } from './DiaryDayEditor'
+import { PageSearch, type SearchSuggestion } from './PageSearch'
 
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const SPEND_TOGGLE_KEY = 'planner:diaryShowSpending'
@@ -30,7 +37,9 @@ export function DiaryView() {
     refreshMonth,
   } = diary
   const expenses = useExpenses()
+  const { user } = useAuth()
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null)
+  const [searchIndex, setSearchIndex] = useState<Record<string, DiaryEntry>>({})
   const [showSpending, setShowSpending] = useState(() => {
     try {
       return localStorage.getItem(SPEND_TOGGLE_KEY) === '1'
@@ -42,6 +51,38 @@ export function DiaryView() {
   useEffect(() => {
     expenses.setMonthKey(year, month)
   }, [year, month, expenses.setMonthKey])
+
+  useEffect(() => {
+    let cancelled = false
+    void loadAllDiaryEntriesLocal(user.id).then((all) => {
+      if (!cancelled) setSearchIndex(all)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [user.id, entriesByDate])
+
+  const searchSuggestions = useMemo((): SearchSuggestion[] => {
+    const merged = { ...searchIndex, ...entriesByDate }
+    return Object.values(merged)
+      .filter((e) => !isDiaryEntryEmpty(e) || diaryEntryHasPhoto(e))
+      .map((e) => {
+        const label = parseDateKey(e.dateKey).toLocaleDateString(undefined, {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        })
+        const snippet = e.body.trim().replace(/\s+/g, ' ').slice(0, 80)
+        return {
+          id: e.dateKey,
+          title: e.title.trim() || (diaryEntryHasPhoto(e) ? 'Photo diary' : 'Diary entry'),
+          subtitle: snippet || label,
+          meta: label,
+          haystack: [e.body, e.dateKey],
+        }
+      })
+  }, [searchIndex, entriesByDate])
 
   useEffect(() => {
     try {
@@ -100,6 +141,16 @@ export function DiaryView() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <PageSearch
+              placeholder="Search diary titles & notes…"
+              suggestions={searchSuggestions}
+              accentClassName="text-[#FF2D55]"
+              onSelect={(s) => {
+                const d = parseDateKey(s.id)
+                setViewMonth(d.getFullYear(), d.getMonth())
+                setSelectedDateKey(s.id)
+              }}
+            />
             <button
               type="button"
               onClick={() => setShowSpending((v) => !v)}

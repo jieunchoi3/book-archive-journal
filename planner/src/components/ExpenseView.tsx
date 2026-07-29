@@ -2,10 +2,11 @@ import { useMemo, useState } from 'react'
 import { Check, ChevronLeft, ChevronRight, Pencil, Trash2, Wallet, X } from 'lucide-react'
 import { useExpenses } from '../hooks/useExpenses'
 import { formatMoney } from '../types/expense'
-import { formatMonthYear, getTodayKey } from '../lib/weekUtils'
+import { formatMonthYear, getTodayKey, parseDateKey } from '../lib/weekUtils'
 import { ExpenseQuickAdd } from './ExpenseQuickAdd'
 import { ExpensePieChart } from './ExpensePieChart'
 import { ExpenseReport } from './ExpenseReport'
+import { PageSearch, type SearchSuggestion } from './PageSearch'
 
 export function ExpenseView() {
   const expenses = useExpenses()
@@ -73,6 +74,39 @@ export function ExpenseView() {
     return map
   }, [expenseCategories, incomeCategories])
 
+  const searchSuggestions = useMemo((): SearchSuggestion[] => {
+    const txnSuggestions = transactions.map((t) => {
+      const cat = catById.get(t.categoryId)
+      const label = parseDateKey(t.dateKey).toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
+      return {
+        id: `txn:${t.id}`,
+        title: t.note.trim() || cat?.name || (t.flow === 'in' ? 'Income' : 'Expense'),
+        subtitle: `${t.flow === 'in' ? 'In' : 'Out'} · ${cat?.name ?? 'Uncategorised'}`,
+        meta: `${formatMoney(t.amount)} · ${label}`,
+        haystack: [
+          t.note,
+          cat?.name,
+          t.flow,
+          t.flow === 'in' ? 'income' : 'expense',
+          String(t.amount),
+          t.dateKey,
+        ],
+      }
+    })
+    const catSuggestions = [...expenseCategories, ...incomeCategories].map((c) => ({
+      id: `cat:${c.id}`,
+      title: c.name,
+      subtitle: c.kind === 'in' ? 'Income source' : 'Expense category',
+      meta: c.budget != null ? `Budget ${formatMoney(c.budget)}` : undefined,
+      haystack: [c.kind, c.kind === 'in' ? 'income' : 'expense', 'budget'],
+    }))
+    return [...txnSuggestions, ...catSuggestions]
+  }, [transactions, catById, expenseCategories, incomeCategories])
+
   return (
     <div className="min-h-screen p-6 pb-24">
       <div className="mx-auto max-w-6xl">
@@ -90,6 +124,36 @@ export function ExpenseView() {
               </p>
             </div>
           </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <PageSearch
+              placeholder="Search notes, categories, amounts…"
+              suggestions={searchSuggestions}
+              accentClassName="text-[#8B5A2B]"
+              onSelect={(s) => {
+                if (s.id.startsWith('txn:')) {
+                  const id = s.id.slice(4)
+                  const txn = transactions.find((t) => t.id === id)
+                  if (!txn) return
+                  const d = parseDateKey(txn.dateKey)
+                  setMonthKey(d.getFullYear(), d.getMonth())
+                  setSelectedDateKey(txn.dateKey)
+                  return
+                }
+                if (s.id.startsWith('cat:')) {
+                  const id = s.id.slice(4)
+                  const cat = catById.get(id)
+                  if (!cat) return
+                  const hit = [...transactions]
+                    .filter((t) => t.categoryId === id)
+                    .sort((a, b) => b.dateKey.localeCompare(a.dateKey))[0]
+                  if (hit) {
+                    const d = parseDateKey(hit.dateKey)
+                    setMonthKey(d.getFullYear(), d.getMonth())
+                    setSelectedDateKey(hit.dateKey)
+                  }
+                }
+              }}
+            />
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -117,6 +181,7 @@ export function ExpenseView() {
             >
               Today
             </button>
+          </div>
           </div>
         </header>
 

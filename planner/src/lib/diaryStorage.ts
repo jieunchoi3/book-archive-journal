@@ -59,6 +59,18 @@ async function loadDiaryEntriesForMonthLocal(
   month: number,
 ): Promise<Record<string, DiaryEntry>> {
   const prefix = `${year}-${String(month + 1).padStart(2, '0')}-`
+  const all = await loadAllDiaryEntriesLocal(userId)
+  const out: Record<string, DiaryEntry> = {}
+  for (const [dateKey, entry] of Object.entries(all)) {
+    if (dateKey.startsWith(prefix)) out[dateKey] = entry
+  }
+  return out
+}
+
+/** All locally cached diary entries for a user (for cross-month search). */
+export async function loadAllDiaryEntriesLocal(
+  userId: string,
+): Promise<Record<string, DiaryEntry>> {
   const db = await openDb()
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readonly')
@@ -71,7 +83,7 @@ async function loadDiaryEntriesForMonthLocal(
         return
       }
       const row = cursor.value as StoredRow
-      if (row.userId === userId && row.dateKey.startsWith(prefix)) {
+      if (row.userId === userId) {
         out[row.dateKey] = row.entry
       }
       cursor.continue()

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -30,6 +30,7 @@ import { DayColumn } from './DayColumn'
 import { DayFocusView } from './DayFocusView'
 import { WeekSummary } from './WeekSummary'
 import { MonthCalendarTrigger } from './MonthCalendarPopover'
+import { PageSearch, type SearchSuggestion } from './PageSearch'
 import type { LinkedAppsActions } from '../hooks/useLinkedApps'
 
 interface WeekViewProps {
@@ -143,12 +144,63 @@ export function WeekView({ template, weekStart, planner, items, linkedApps }: We
   const isCurrentWeek = weekStart === getWeekStartDate()
   const loadingWeek = planner.loadingWeek
 
+  const searchSuggestions = useMemo((): SearchSuggestion[] => {
+    const out: SearchSuggestion[] = []
+    for (const day of template.days) {
+      for (const block of day.blocks) {
+        out.push({
+          id: `block:${day.key}:${block.id}`,
+          title: block.title,
+          subtitle: [day.dayName, block.timeRangeLabel].filter(Boolean).join(' · '),
+          meta: 'Block',
+          haystack: [
+            block.description,
+            block.timeRangeLabel,
+            day.tag,
+            day.dayName,
+            ...(block.badges ?? []),
+          ],
+        })
+        for (const task of block.tasks) {
+          out.push({
+            id: `task:${day.key}:${block.id}:${task.id}`,
+            title: task.label,
+            subtitle: `${day.dayName} · ${block.title}`,
+            meta: 'Task',
+            haystack: [block.title, day.dayName],
+          })
+        }
+        const note = planner.getBlockLog(day.key, block.id).flexibleNote?.trim()
+        if (note) {
+          out.push({
+            id: `note:${day.key}:${block.id}`,
+            title: note.length > 64 ? `${note.slice(0, 64)}…` : note,
+            subtitle: `${day.dayName} · ${block.title}`,
+            meta: 'Note',
+            haystack: [note, block.title],
+          })
+        }
+      }
+      for (const occ of items.getItemsForDay(day.key)) {
+        const cat = items.getCategory(occ.item.categoryId)
+        out.push({
+          id: `item:${day.key}:${occ.item.id}`,
+          title: occ.item.title,
+          subtitle: [day.dayName, cat?.name, occ.item.time].filter(Boolean).join(' · '),
+          meta: 'Event',
+          haystack: [cat?.name, occ.item.time, day.dayName],
+        })
+      }
+    }
+    return out
+  }, [template.days, planner, items])
+
   return (
     <div className="flex min-h-screen gap-6 p-6 pb-24">
       <PlannerSidebar linkedApps={linkedApps} />
 
       <div className="min-w-0 flex-1">
-        <header className="mb-6 flex items-center justify-between">
+        <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-[22px] font-semibold tracking-tight text-[#1C1C1E]">
               Weekly Planner
@@ -161,6 +213,15 @@ export function WeekView({ template, weekStart, planner, items, linkedApps }: We
               }}
             />
           </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <PageSearch
+              placeholder="Search blocks, tasks, events…"
+              suggestions={searchSuggestions}
+              onSelect={(s) => {
+                const dayKey = s.id.split(':')[1] as DayKey | undefined
+                if (dayKey) setFocusedDayKey(dayKey)
+              }}
+            />
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -187,6 +248,7 @@ export function WeekView({ template, weekStart, planner, items, linkedApps }: We
             >
               <ChevronRight size={18} />
             </button>
+          </div>
           </div>
         </header>
 
