@@ -84,7 +84,7 @@ async function saveDiaryEntryLocal(userId: string, entry: DiaryEntry): Promise<v
   const db = await openDb()
   const id = dbKey(userId, entry.dateKey)
 
-  if (isDiaryEntryEmpty(entry)) {
+  if (isDiaryEntryEmpty(entry) && !(entry.layers?.length > 0)) {
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE, 'readwrite')
       tx.objectStore(STORE).delete(id)
@@ -108,14 +108,15 @@ async function saveDiaryEntryLocal(userId: string, entry: DiaryEntry): Promise<v
   })
 }
 
-function needsLayerHydration(entry: DiaryEntry): boolean {
-  return entry.layers.some((l) => !l.src)
+function hasRealImageBytes(entry: DiaryEntry): boolean {
+  return (
+    Boolean(entry.coverDataUrl?.startsWith('data:')) ||
+    entry.layers.some((l) => l.src.startsWith('data:'))
+  )
 }
 
-function pickNewer(a: DiaryEntry | null, b: DiaryEntry | null): DiaryEntry | null {
-  if (!a) return b
-  if (!b) return a
-  return (a.updatedAt || '') >= (b.updatedAt || '') ? a : b
+function needsLayerHydration(entry: DiaryEntry): boolean {
+  return entry.layers.some((l) => !l.src)
 }
 
 /** One-time push of local-only diary days up to Supabase. */
@@ -125,9 +126,10 @@ async function migrateLocalMonthToCloud(
   cloud: Record<string, DiaryEntry>,
 ): Promise<void> {
   for (const [dateKey, entry] of Object.entries(local)) {
-    if (isDiaryEntryEmpty(entry)) continue
     if (cloud[dateKey]) continue
-    if (needsLayerHydration(entry)) continue
+    if (!hasRealImageBytes(entry) && isDiaryEntryEmpty(entry)) continue
+    if (needsLayerHydration(entry) && entry.layers.length > 0) continue
+    if (!hasRealImageBytes(entry) && !entry.title && !entry.body) continue
     try {
       await upsertDiaryEntryCloud(userId, entry)
     } catch (e) {
@@ -146,13 +148,14 @@ export async function loadDiaryEntry(
 
   try {
     const cloud = await fetchDiaryEntryCloud(userId, dateKey)
-    const best = pickNewer(local, cloud)
-    if (best && best !== local) {
-      await saveDiaryEntryLocal(userId, best)
-    } else if (local && !cloud && !needsLayerHydration(local) && !isDiaryEntryEmpty(local)) {
+    if (cloud) {
+      await saveDiaryEntryLocal(userId, cloud)
+      return cloud
+    }
+    if (local && hasRealImageBytes(local) && !isDiaryEntryEmpty(local)) {
       await upsertDiaryEntryCloud(userId, local)
     }
-    return best
+    return local
   } catch (e) {
     console.warn('[diary] cloud load failed, using local', e)
     return local
@@ -170,30 +173,36 @@ export async function loadDiaryEntriesForMonth(
 
   try {
     const cloud = await fetchDiaryEntriesForMonthCloud(userId, year, month)
+    console.info('[diary] cloud month loaded', {
+      year,
+      month: month + 1,
+      cloudDays: Object.keys(cloud),
+      localDays: Object.keys(local),
+    })
     await migrateLocalMonthToCloud(userId, local, cloud)
 
+    // Online: cloud is source of truth. Only keep local-only days not yet uploaded.
     const merged: Record<string, DiaryEntry> = { ...cloud }
     for (const [dateKey, entry] of Object.entries(local)) {
-      const remote = merged[dateKey]
-      if (!remote) {
+      if (merged[dateKey]) continue
+      if (hasRealImageBytes(entry) || entry.title || entry.body) {
         merged[dateKey] = entry
-        continue
-      }
-      // Prefer local when it has hydrated layer bytes and is newer or equal.
-      const localHydrated = !needsLayerHydration(entry)
-      const remoteHydrated = !needsLayerHydration(remote)
-      if (localHydrated && (!remoteHydrated || (entry.updatedAt || '') >= (remote.updatedAt || ''))) {
-        merged[dateKey] = entry
-      } else if (!remote.coverDataUrl && entry.coverDataUrl) {
-        merged[dateKey] = { ...remote, coverDataUrl: entry.coverDataUrl }
       }
     }
 
-    // Cache covers / metadata locally for offline month browsing.
-    for (const entry of Object.values(merged)) {
-      if (!isDiaryEntryEmpty(entry) || entry.coverDataUrl) {
-        await saveDiaryEntryLocal(userId, entry)
-      }
+    // Cache metadata locally; keep prior local image bytes when cloud only has signed covers.
+    for (const [dateKey, entry] of Object.entries(merged)) {
+      const prev = local[dateKey]
+      const toStore =
+        prev && hasRealImageBytes(prev) && needsLayerHydration(entry)
+          ? {
+              ...entry,
+              layers: prev.layers,
+              coverDataUrl: entry.coverDataUrl ?? prev.coverDataUrl,
+            }
+          : entry
+      await saveDiaryEntryLocal(userId, toStore)
+      merged[dateKey] = toStore
     }
 
     return merged
@@ -207,11 +216,13 @@ export async function saveDiaryEntry(userId: string, entry: DiaryEntry): Promise
   // Avoid overwriting good local photos with empty-src placeholders.
   if (needsLayerHydration(entry) && entry.layers.length > 0) {
     const existing = await loadDiaryEntryLocal(userId, entry.dateKey)
-    if (existing && !needsLayerHydration(existing)) {
+    if (existing && hasRealImageBytes(existing)) {
       entry = {
         ...entry,
         layers: existing.layers,
-        coverDataUrl: entry.coverDataUrl ?? existing.coverDataUrl,
+        coverDataUrl: entry.coverDataUrl?.startsWith('data:')
+          ? entry.coverDataUrl
+          : existing.coverDataUrl,
       }
     }
   }
@@ -221,7 +232,7 @@ export async function saveDiaryEntry(userId: string, entry: DiaryEntry): Promise
   if (!isSupabaseConfigured) return
 
   try {
-    if (isDiaryEntryEmpty(entry)) {
+    if (isDiaryEntryEmpty(entry) && entry.layers.length === 0) {
       await deleteDiaryEntryCloud(userId, entry.dateKey)
     } else {
       await upsertDiaryEntryCloud(userId, entry)
@@ -237,7 +248,9 @@ export async function hydrateDiaryEntry(
   userId: string,
   entry: DiaryEntry,
 ): Promise<DiaryEntry> {
-  if (!needsLayerHydration(entry)) return entry
+  if (!needsLayerHydration(entry) && entry.coverDataUrl?.startsWith('data:')) {
+    return entry
+  }
   if (!isSupabaseConfigured) return entry
   const cloud = await fetchDiaryEntryCloud(userId, entry.dateKey)
   if (!cloud) return entry

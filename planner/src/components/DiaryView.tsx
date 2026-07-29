@@ -8,7 +8,7 @@ import {
   getTodayKey,
   parseDateKey,
 } from '../lib/weekUtils'
-import { isDiaryEntryEmpty } from '../types/diary'
+import { diaryEntryHasPhoto, isDiaryEntryEmpty } from '../types/diary'
 import { formatMoney, spendHeatColor } from '../types/expense'
 import { DiaryDayEditor } from './DiaryDayEditor'
 
@@ -26,6 +26,8 @@ export function DiaryView() {
     ensureHydrated,
     upsertEntry,
     loading,
+    syncError,
+    refreshMonth,
   } = diary
   const expenses = useExpenses()
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null)
@@ -180,7 +182,7 @@ export function DiaryView() {
                   const spent = expenses.spentByDate[dateKey] ?? 0
                   const intensity =
                     showSpending && maxSpend > 0 && spent > 0 ? spent / maxSpend : 0
-                  const hasPhoto = Boolean(entry?.coverDataUrl)
+                  const hasPhoto = diaryEntryHasPhoto(entry)
 
                   return (
                     <button
@@ -196,11 +198,17 @@ export function DiaryView() {
                           : undefined
                       }
                     >
-                      {hasPhoto ? (
+                      {hasPhoto && entry?.coverDataUrl ? (
                         <img
-                          src={entry!.coverDataUrl!}
+                          src={entry.coverDataUrl}
                           alt=""
                           className={`absolute inset-0 h-full w-full object-cover transition-opacity ${
+                            inMonth ? 'opacity-100' : 'opacity-40'
+                          }`}
+                        />
+                      ) : hasPhoto ? (
+                        <div
+                          className={`absolute inset-0 bg-[#E8E8ED] ${
                             inMonth ? 'opacity-100' : 'opacity-40'
                           }`}
                         />
@@ -280,6 +288,18 @@ export function DiaryView() {
 
         {loading && (
           <p className="mt-3 text-center text-[12px] text-muted">Loading diary…</p>
+        )}
+        {syncError && (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#FF3B30]/10 px-3 py-2 text-[12px] text-[#FF3B30]">
+            <span>Sync issue: {syncError}</span>
+            <button
+              type="button"
+              onClick={() => void refreshMonth()}
+              className="font-medium underline"
+            >
+              Retry
+            </button>
+          </div>
         )}
       </div>
 

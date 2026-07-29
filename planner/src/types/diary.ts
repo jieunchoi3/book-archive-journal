@@ -78,3 +78,9 @@ export function isDiaryEntryEmpty(entry: DiaryEntry): boolean {
     !entry.coverDataUrl
   )
 }
+
+/** True when the day has photo content (bytes, remote cover, or layer placeholders). */
+export function diaryEntryHasPhoto(entry: DiaryEntry | null | undefined): boolean {
+  if (!entry) return false
+  return Boolean(entry.coverDataUrl) || entry.layers.length > 0
+}

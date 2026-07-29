@@ -3,6 +3,7 @@ import { isDiaryEntryEmpty } from '../types/diary'
 import { supabase } from './supabase'
 
 const BUCKET = 'diary-media'
+const SIGNED_URL_TTL_SEC = 60 * 60 * 6
 
 type CloudLayer = {
   id: string
@@ -15,7 +16,7 @@ type CloudLayer = {
 
 type DiaryRow = {
   user_id: string
-  date_key: string
+  date_key: string | Date
   title: string
   body: string
   frame_color: string
@@ -31,6 +32,24 @@ function layerPath(userId: string, dateKey: string, layerId: string) {
 
 function coverPath(userId: string, dateKey: string) {
   return `${userId}/${dateKey}/cover.jpg`
+}
+
+/** Normalize PostgREST date / Date values to YYYY-MM-DD. */
+export function normalizeDateKey(value: string | Date): string {
+  if (value instanceof Date) {
+    const y = value.getUTCFullYear()
+    const m = String(value.getUTCMonth() + 1).padStart(2, '0')
+    const d = String(value.getUTCDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  }
+  const raw = String(value)
+  const iso = raw.match(/^(\d{4}-\d{2}-\d{2})/)
+  if (iso) return iso[1]
+  const parsed = new Date(raw)
+  if (!Number.isNaN(parsed.getTime())) {
+    return normalizeDateKey(parsed)
+  }
+  return raw.slice(0, 10)
 }
 
 async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
@@ -52,6 +71,7 @@ async function uploadDataUrl(path: string, dataUrl: string): Promise<void> {
   const { error } = await supabase.storage.from(BUCKET).upload(path, blob, {
     upsert: true,
     contentType: blob.type || 'image/jpeg',
+    cacheControl: '3600',
   })
   if (error) throw error
 }
@@ -60,6 +80,17 @@ async function downloadDataUrl(path: string): Promise<string> {
   const { data, error } = await supabase.storage.from(BUCKET).download(path)
   if (error) throw error
   return blobToDataUrl(data)
+}
+
+async function signedUrl(path: string): Promise<string | null> {
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUrl(path, SIGNED_URL_TTL_SEC)
+  if (error) {
+    console.warn('[diary] signed URL failed', path, error.message)
+    return null
+  }
+  return data.signedUrl
 }
 
 async function removePaths(paths: string[]): Promise<void> {
@@ -81,26 +112,35 @@ async function hydrateLayers(layers: CloudLayer[]): Promise<DiaryPhotoLayer[]> {
   )
 }
 
-async function rowToEntry(row: DiaryRow, opts?: { hydrateLayers?: boolean }): Promise<DiaryEntry> {
-  const dateKey =
-    typeof row.date_key === 'string' ? row.date_key.slice(0, 10) : String(row.date_key)
-  const layers = opts?.hydrateLayers === false
-    ? (row.layers ?? []).map((layer) => ({
-        id: layer.id,
-        x: layer.x,
-        y: layer.y,
-        scale: layer.scale,
-        strokes: layer.strokes ?? [],
-        src: '',
-      }))
-    : await hydrateLayers(row.layers ?? [])
+async function rowToEntry(
+  row: DiaryRow,
+  opts?: { hydrateLayers?: boolean; coverMode?: 'signed' | 'download' },
+): Promise<DiaryEntry> {
+  const dateKey = normalizeDateKey(row.date_key)
+  const cloudLayers = Array.isArray(row.layers) ? row.layers : []
+  const coverMode = opts?.coverMode ?? 'signed'
+
+  const layers =
+    opts?.hydrateLayers === false
+      ? cloudLayers.map((layer) => ({
+          id: layer.id,
+          x: layer.x,
+          y: layer.y,
+          scale: layer.scale,
+          strokes: layer.strokes ?? [],
+          src: '',
+        }))
+      : await hydrateLayers(cloudLayers)
 
   let coverDataUrl: string | null = null
   if (row.cover_path) {
     try {
-      coverDataUrl = await downloadDataUrl(row.cover_path)
+      coverDataUrl =
+        coverMode === 'download'
+          ? await downloadDataUrl(row.cover_path)
+          : await signedUrl(row.cover_path)
     } catch (e) {
-      console.warn('[diary] cover download failed', e)
+      console.warn('[diary] cover resolve failed', row.cover_path, e)
     }
   }
 
@@ -122,8 +162,8 @@ export async function fetchDiaryEntriesForMonthCloud(
   month: number,
 ): Promise<Record<string, DiaryEntry>> {
   const start = `${year}-${String(month + 1).padStart(2, '0')}-01`
-  const endDate = new Date(year, month + 1, 0)
-  const end = `${year}-${String(month + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`
+  const endDate = new Date(Date.UTC(year, month + 1, 0))
+  const end = `${year}-${String(month + 1).padStart(2, '0')}-${String(endDate.getUTCDate()).padStart(2, '0')}`
 
   const { data, error } = await supabase
     .from('diary_entries')
@@ -135,15 +175,24 @@ export async function fetchDiaryEntriesForMonthCloud(
   if (error) throw error
 
   const out: Record<string, DiaryEntry> = {}
-  for (const row of (data ?? []) as DiaryRow[]) {
-    // Month grid only needs covers; hydrate layers lazily when opening a day.
-    const entry = await rowToEntry(row, { hydrateLayers: false })
-    if (entry.coverDataUrl || entry.title || entry.body || (entry.canvasStrokes?.length ?? 0) > 0) {
-      out[entry.dateKey] = entry
-    } else if ((row.layers ?? []).length > 0) {
-      out[entry.dateKey] = entry
-    }
-  }
+  await Promise.all(
+    ((data ?? []) as DiaryRow[]).map(async (row) => {
+      const entry = await rowToEntry(row, {
+        hydrateLayers: false,
+        coverMode: 'signed',
+      })
+      const hasLayers = (row.layers ?? []).length > 0
+      if (
+        entry.coverDataUrl ||
+        entry.title ||
+        entry.body ||
+        (entry.canvasStrokes?.length ?? 0) > 0 ||
+        hasLayers
+      ) {
+        out[entry.dateKey] = entry
+      }
+    }),
+  )
   return out
 }
 
@@ -160,7 +209,10 @@ export async function fetchDiaryEntryCloud(
 
   if (error) throw error
   if (!data) return null
-  return rowToEntry(data as DiaryRow, { hydrateLayers: true })
+  return rowToEntry(data as DiaryRow, {
+    hydrateLayers: true,
+    coverMode: 'download',
+  })
 }
 
 export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): Promise<void> {
@@ -175,12 +227,11 @@ export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): 
     if (layer.src.startsWith('data:')) {
       await uploadDataUrl(path, layer.src)
     } else if (layer.src.startsWith('http')) {
-      // Already a remote URL from a previous session — re-upload via fetch if needed.
       const blob = await (await fetch(layer.src)).blob()
       const dataUrl = await blobToDataUrl(blob)
       await uploadDataUrl(path, dataUrl)
     } else if (!layer.src) {
-      // Placeholder from month list — keep existing storage object.
+      // Keep existing storage object for placeholder layers from month list.
     } else {
       await uploadDataUrl(path, layer.src)
     }
@@ -198,14 +249,20 @@ export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): 
   if (entry.coverDataUrl?.startsWith('data:')) {
     cover = coverPath(userId, entry.dateKey)
     await uploadDataUrl(cover, entry.coverDataUrl)
-  } else if (entry.coverDataUrl) {
-    cover = coverPath(userId, entry.dateKey)
   } else if (entry.layers.length > 0 || (entry.canvasStrokes?.length ?? 0) > 0) {
-    // Keep previous cover path if we somehow lost the data URL.
     cover = coverPath(userId, entry.dateKey)
+    // If we only have a signed/http cover URL, re-upload so Storage stays fresh.
+    if (entry.coverDataUrl?.startsWith('http')) {
+      try {
+        const blob = await (await fetch(entry.coverDataUrl)).blob()
+        const dataUrl = await blobToDataUrl(blob)
+        await uploadDataUrl(cover, dataUrl)
+      } catch {
+        // Keep previous cover object if re-fetch fails.
+      }
+    }
   }
 
-  // Drop storage for removed layers.
   const { data: existing } = await supabase
     .from('diary_entries')
     .select('layers')

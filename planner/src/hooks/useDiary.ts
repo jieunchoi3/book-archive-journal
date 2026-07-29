@@ -28,6 +28,7 @@ export interface DiaryActions {
   setViewMonth: (year: number, month: number) => void
   entriesByDate: Record<string, DiaryEntry>
   loading: boolean
+  syncError: string | null
   getEntry: (dateKey: string) => DiaryEntry
   ensureHydrated: (dateKey: string) => Promise<DiaryEntry>
   upsertEntry: (dateKey: string, patch: DiaryEntryPatch) => Promise<DiaryEntry>
@@ -44,7 +45,30 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
   }))
   const [entriesByDate, setEntriesByDate] = useState<Record<string, DiaryEntry>>({})
   const [loading, setLoading] = useState(true)
+  const [syncError, setSyncError] = useState<string | null>(null)
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  const pendingEntries = useRef<Record<string, DiaryEntry>>({})
+
+  const flushSave = useCallback(
+    async (entry: DiaryEntry) => {
+      const key = entry.dateKey
+      if (saveTimers.current[key]) {
+        clearTimeout(saveTimers.current[key])
+        delete saveTimers.current[key]
+      }
+      delete pendingEntries.current[key]
+      try {
+        await saveDiaryEntry(userId, entry)
+        setSyncError(null)
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'Diary sync failed'
+        console.error('[diary] save failed', e)
+        setSyncError(message)
+        throw e
+      }
+    },
+    [userId],
+  )
 
   const refreshMonth = useCallback(async () => {
     setLoading(true)
@@ -55,6 +79,10 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
         normalized[key] = normalizeEntry(entry)
       }
       setEntriesByDate(normalized)
+      setSyncError(null)
+    } catch (e) {
+      console.error('[diary] month refresh failed', e)
+      setSyncError(e instanceof Error ? e.message : 'Could not load diary')
     } finally {
       setLoading(false)
     }
@@ -64,11 +92,28 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
     void refreshMonth()
   }, [refreshMonth])
 
+  // Flush pending cloud saves when leaving the diary tab / unmounting.
   useEffect(() => {
-    return () => {
-      for (const t of Object.values(saveTimers.current)) clearTimeout(t)
+    const flushAll = () => {
+      const pending = Object.values(pendingEntries.current)
+      for (const entry of pending) {
+        void saveDiaryEntry(userId, entry).catch((e) =>
+          console.error('[diary] flush save failed', e),
+        )
+      }
     }
-  }, [])
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') flushAll()
+    }
+    window.addEventListener('pagehide', flushAll)
+    document.addEventListener('visibilitychange', onHide)
+    return () => {
+      window.removeEventListener('pagehide', flushAll)
+      document.removeEventListener('visibilitychange', onHide)
+      for (const t of Object.values(saveTimers.current)) clearTimeout(t)
+      flushAll()
+    }
+  }, [userId])
 
   const setViewMonth = useCallback((year: number, month: number) => {
     setViewMonthState({ year, month })
@@ -97,17 +142,16 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
     [entriesByDate, userId],
   )
 
-  const persist = useCallback(
+  const persistDebounced = useCallback(
     (entry: DiaryEntry) => {
       const key = entry.dateKey
+      pendingEntries.current[key] = entry
       if (saveTimers.current[key]) clearTimeout(saveTimers.current[key])
       saveTimers.current[key] = setTimeout(() => {
-        void saveDiaryEntry(userId, entry).catch((e) =>
-          console.error('[diary] save failed', e),
-        )
+        void flushSave(entry)
       }, 400)
     },
-    [userId],
+    [flushSave],
   )
 
   const upsertEntry = useCallback(
@@ -150,10 +194,20 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
       }
 
       setEntriesByDate((prev) => ({ ...prev, [dateKey]: next }))
-      persist(next)
+
+      const touchesMedia =
+        patch.layers !== undefined ||
+        patch.frameColor !== undefined ||
+        patch.canvasStrokes !== undefined
+      if (touchesMedia) {
+        // Photos must hit Supabase before the user can leave the tab.
+        await flushSave(next)
+      } else {
+        persistDebounced(next)
+      }
       return next
     },
-    [entriesByDate, persist, userId],
+    [entriesByDate, flushSave, persistDebounced, userId],
   )
 
   return {
@@ -162,6 +216,7 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
     setViewMonth,
     entriesByDate,
     loading,
+    syncError,
     getEntry,
     ensureHydrated,
     upsertEntry,
