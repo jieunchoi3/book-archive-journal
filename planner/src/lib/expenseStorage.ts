@@ -1,8 +1,10 @@
 import type { ExpenseStore } from '../types/expense'
 import { emptyExpenseStore } from '../types/expense'
+import { fetchExpenseStoreCloud, upsertExpenseStoreCloud } from './expenseCloud'
+import { isSupabaseConfigured } from './supabase'
 
 const DB_NAME = 'planner-expenses'
-const DB_VERSION = 1
+const DB_VERSION = 2
 const STORE = 'store'
 
 function rowId(userId: string) {
@@ -30,26 +32,36 @@ interface StoredRow {
   updatedAt: string
 }
 
-export async function loadExpenseStore(userId: string): Promise<ExpenseStore | null> {
+async function loadExpenseStoreLocal(
+  userId: string,
+): Promise<{ store: ExpenseStore; updatedAt: string } | null> {
   const db = await openDb()
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readonly')
     const req = tx.objectStore(STORE).get(rowId(userId))
     req.onsuccess = () => {
       const row = req.result as StoredRow | undefined
-      resolve(row?.store ?? null)
+      if (!row) {
+        resolve(null)
+        return
+      }
+      resolve({ store: row.store, updatedAt: row.updatedAt })
     }
     req.onerror = () => reject(req.error)
   })
 }
 
-export async function saveExpenseStore(userId: string, store: ExpenseStore): Promise<void> {
+async function saveExpenseStoreLocal(
+  userId: string,
+  store: ExpenseStore,
+  updatedAt = new Date().toISOString(),
+): Promise<void> {
   const db = await openDb()
   const row: StoredRow = {
     id: rowId(userId),
     userId,
     store,
-    updatedAt: new Date().toISOString(),
+    updatedAt,
   }
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readwrite')
@@ -57,6 +69,56 @@ export async function saveExpenseStore(userId: string, store: ExpenseStore): Pro
     tx.oncomplete = () => resolve()
     tx.onerror = () => reject(tx.error)
   })
+}
+
+export async function loadExpenseStore(userId: string): Promise<ExpenseStore | null> {
+  const local = await loadExpenseStoreLocal(userId)
+
+  if (!isSupabaseConfigured) return local?.store ?? null
+
+  try {
+    const cloud = await fetchExpenseStoreCloud(userId)
+
+    if (!cloud && local) {
+      await upsertExpenseStoreCloud(userId, local.store)
+      return local.store
+    }
+
+    if (cloud && !local) {
+      await saveExpenseStoreLocal(userId, cloud.store, cloud.updatedAt)
+      return cloud.store
+    }
+
+    if (cloud && local) {
+      const preferCloud = (cloud.updatedAt || '') >= (local.updatedAt || '')
+      const best = preferCloud ? cloud : local
+      if (preferCloud) {
+        await saveExpenseStoreLocal(userId, cloud.store, cloud.updatedAt)
+      } else {
+        await upsertExpenseStoreCloud(userId, local.store)
+      }
+      return best.store
+    }
+
+    return null
+  } catch (e) {
+    console.warn('[expenses] cloud load failed, using local', e)
+    return local?.store ?? null
+  }
+}
+
+export async function saveExpenseStore(userId: string, store: ExpenseStore): Promise<void> {
+  const updatedAt = new Date().toISOString()
+  await saveExpenseStoreLocal(userId, store, updatedAt)
+
+  if (!isSupabaseConfigured) return
+
+  try {
+    await upsertExpenseStoreCloud(userId, store)
+  } catch (e) {
+    console.error('[expenses] cloud save failed', e)
+    throw e
+  }
 }
 
 export function ensureExpenseStore(store: ExpenseStore | null): ExpenseStore {

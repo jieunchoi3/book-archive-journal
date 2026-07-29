@@ -137,6 +137,30 @@ create table if not exists planner.sidebar_notes (
   updated_at timestamptz not null default now()
 );
 
+-- Photo diary (images in storage bucket diary-media; layers[].path)
+create table if not exists planner.diary_entries (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  date_key date not null,
+  title text not null default '',
+  body text not null default '',
+  frame_color text not null default '#F2F2F7',
+  canvas_strokes jsonb not null default '[]'::jsonb,
+  layers jsonb not null default '[]'::jsonb,
+  cover_path text,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, date_key)
+);
+
+create index if not exists diary_entries_user_month_idx
+  on planner.diary_entries (user_id, date_key);
+
+-- Expense tracker document per user
+create table if not exists planner.expense_stores (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  store jsonb not null default '{"categories":[],"transactions":[]}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
 -- RLS
 alter table planner.day_templates enable row level security;
 alter table planner.blocks enable row level security;
@@ -150,6 +174,8 @@ alter table planner.items enable row level security;
 alter table planner.item_tags enable row level security;
 alter table planner.linked_apps enable row level security;
 alter table planner.sidebar_notes enable row level security;
+alter table planner.diary_entries enable row level security;
+alter table planner.expense_stores enable row level security;
 
 create policy "day_templates_own" on planner.day_templates for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "blocks_own" on planner.blocks for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
@@ -163,6 +189,8 @@ create policy "items_own" on planner.items for all using (auth.uid() = user_id) 
 create policy "item_tags_own" on planner.item_tags for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "linked_apps_own" on planner.linked_apps for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "sidebar_notes_own" on planner.sidebar_notes for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "diary_entries_own" on planner.diary_entries for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "expense_stores_own" on planner.expense_stores for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- Migration for existing projects:
 -- alter table planner.block_week_logs add column if not exists hidden_tasks jsonb not null default '[]'::jsonb;

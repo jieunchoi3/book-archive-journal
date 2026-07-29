@@ -17,7 +17,16 @@ const SPEND_TOGGLE_KEY = 'planner:diaryShowSpending'
 
 export function DiaryView() {
   const diary = useDiary()
-  const { year, month, setViewMonth, entriesByDate, getEntry, upsertEntry, loading } = diary
+  const {
+    year,
+    month,
+    setViewMonth,
+    entriesByDate,
+    getEntry,
+    ensureHydrated,
+    upsertEntry,
+    loading,
+  } = diary
   const expenses = useExpenses()
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null)
   const [showSpending, setShowSpending] = useState(() => {
@@ -39,6 +48,11 @@ export function DiaryView() {
       // ignore
     }
   }, [showSpending])
+
+  useEffect(() => {
+    if (!selectedDateKey) return
+    void ensureHydrated(selectedDateKey)
+  }, [selectedDateKey, ensureHydrated])
 
   const weeks = useMemo(() => getMonthGrid(year, month), [year, month])
   const todayKey = getTodayKey()

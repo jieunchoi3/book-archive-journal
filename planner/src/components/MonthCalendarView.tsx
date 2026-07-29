@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import type { ItemsActions } from '../hooks/useItems'
 import type { PlannerActions } from '../hooks/usePlanner'
@@ -20,6 +21,7 @@ import type { LinkedAppsActions } from '../hooks/useLinkedApps'
 
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const MAX_VISIBLE_EVENTS = 3
+const CELL_ADD_POPOVER_WIDTH = 320
 
 type CategoryFilter = 'all' | typeof NO_CATEGORY_ID | string
 
@@ -63,21 +65,51 @@ function formatSelectedDateLabel(dateKey: string): string {
   })
 }
 
+function positionNearAnchor(anchor: DOMRect, width: number, heightHint: number) {
+  const margin = 10
+  let left = anchor.left
+  if (left + width > window.innerWidth - margin) {
+    left = Math.max(margin, anchor.right - width)
+  }
+  left = Math.min(left, window.innerWidth - width - margin)
+  left = Math.max(margin, left)
+
+  let top = anchor.bottom + 6
+  if (top + heightHint > window.innerHeight - margin) {
+    top = Math.max(margin, anchor.top - heightHint - 6)
+  }
+
+  return { left, top }
+}
+
 function CellAddPopover({
   items,
   dateKey,
+  anchorRect,
   onAdd,
   onClose,
 }: {
   items: ItemsActions
   dateKey: string
+  anchorRect: DOMRect
   onAdd: (payload: EventAddPayload) => void
   onClose: () => void
 }) {
   const panelRef = useRef<HTMLDivElement>(null)
+  const [coords, setCoords] = useState(() =>
+    positionNearAnchor(anchorRect, CELL_ADD_POPOVER_WIDTH, 360),
+  )
+
+  useLayoutEffect(() => {
+    const el = panelRef.current
+    const height = el?.offsetHeight ?? 360
+    setCoords(positionNearAnchor(anchorRect, CELL_ADD_POPOVER_WIDTH, height))
+  }, [anchorRect])
 
   useEffect(() => {
     const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as Element | null
+      if (target?.closest?.('[data-cell-add]')) return
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
         onClose()
       }
@@ -85,28 +117,40 @@ function CellAddPopover({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
     }
+    const onRepositionClose = () => onClose()
     document.addEventListener('mousedown', onPointerDown)
     document.addEventListener('keydown', onKey)
+    window.addEventListener('resize', onRepositionClose)
+    window.addEventListener('scroll', onRepositionClose, true)
     return () => {
       document.removeEventListener('mousedown', onPointerDown)
       document.removeEventListener('keydown', onKey)
+      window.removeEventListener('resize', onRepositionClose)
+      window.removeEventListener('scroll', onRepositionClose, true)
     }
   }, [onClose])
 
-  return (
+  return createPortal(
     <div
       ref={panelRef}
-      className="absolute left-0 top-full z-[200] mt-0.5 w-[min(280px,calc(100vw-2rem))]"
+      role="dialog"
+      aria-label={`Add event on ${formatSelectedDateLabel(dateKey)}`}
+      className="fixed z-[300] w-[min(320px,calc(100vw-1.25rem))] rounded-2xl border border-hairline bg-white p-3 shadow-2xl"
+      style={{ left: coords.left, top: coords.top }}
+      onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
+      <p className="mb-2 text-[12px] font-semibold text-[#1C1C1E]">
+        {formatSelectedDateLabel(dateKey)}
+      </p>
       <EventQuickAddForm
-        compact
         items={items}
         defaultWeeklyDay={dateKeyToRRuleDay(dateKey)}
         onAdd={onAdd}
         onCancel={onClose}
       />
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -176,7 +220,7 @@ export function MonthCalendarView({
   }))
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(getTodayKey())
   const [showAdd, setShowAdd] = useState(false)
-  const [cellAddDateKey, setCellAddDateKey] = useState<string | null>(null)
+  const [cellAdd, setCellAdd] = useState<{ dateKey: string; rect: DOMRect } | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all')
 
@@ -232,7 +276,7 @@ export function MonthCalendarView({
       checkable: true,
     })
     setShowAdd(false)
-    setCellAddDateKey(null)
+    setCellAdd(null)
     setSelectedDateKey(dateKey)
   }
 
@@ -365,14 +409,16 @@ export function MonthCalendarView({
                         isSelected
                           ? 'bg-[#007AFF]/8 ring-1 ring-inset ring-[#007AFF]/30'
                           : 'hover:bg-[#FAFAFA]'
-                      } ${!inMonth ? 'bg-[#FAFAFA]/50' : ''} ${cellAddDateKey === dateKey ? 'z-40' : ''}`}
+                      } ${!inMonth ? 'bg-[#FAFAFA]/50' : ''} ${
+                        cellAdd?.dateKey === dateKey ? 'z-40' : ''
+                      }`}
                     >
                       <button
                         type="button"
                         onClick={() => {
                           setSelectedDateKey(dateKey)
                           setShowAdd(false)
-                          setCellAddDateKey(null)
+                          setCellAdd(null)
                         }}
                         className="flex min-h-0 min-w-0 flex-1 flex-col text-left"
                       >
@@ -410,14 +456,21 @@ export function MonthCalendarView({
                       {inMonth && (
                         <button
                           type="button"
+                          data-cell-add
+                          onMouseDown={(e) => e.stopPropagation()}
                           onClick={(e) => {
                             e.stopPropagation()
                             setSelectedDateKey(dateKey)
-                            setCellAddDateKey((prev) => (prev === dateKey ? null : dateKey))
                             setShowAdd(false)
+                            const cell = e.currentTarget.parentElement
+                            if (!cell) return
+                            const rect = cell.getBoundingClientRect()
+                            setCellAdd((prev) =>
+                              prev?.dateKey === dateKey ? null : { dateKey, rect },
+                            )
                           }}
                           className={`absolute right-1 top-1 rounded-md p-0.5 text-muted transition-opacity hover:bg-[#007AFF]/10 hover:text-[#007AFF] ${
-                            cellAddDateKey === dateKey
+                            cellAdd?.dateKey === dateKey
                               ? 'bg-[#007AFF]/10 text-[#007AFF] opacity-100'
                               : 'opacity-0 group-hover/cell:opacity-100'
                           }`}
@@ -425,15 +478,6 @@ export function MonthCalendarView({
                         >
                           <Plus size={13} />
                         </button>
-                      )}
-
-                      {cellAddDateKey === dateKey && (
-                        <CellAddPopover
-                          items={items}
-                          dateKey={dateKey}
-                          onAdd={(payload) => handleAddEvent(dateKey, payload)}
-                          onClose={() => setCellAddDateKey(null)}
-                        />
                       )}
                     </div>
                   )
@@ -509,6 +553,16 @@ export function MonthCalendarView({
           </section>
         )}
       </div>
+
+      {cellAdd && (
+        <CellAddPopover
+          items={items}
+          dateKey={cellAdd.dateKey}
+          anchorRect={cellAdd.rect}
+          onAdd={(payload) => handleAddEvent(cellAdd.dateKey, payload)}
+          onClose={() => setCellAdd(null)}
+        />
+      )}
 
       {editingItem && (
         <EditItemModal item={editingItem} items={items} onClose={() => setEditingId(null)} />

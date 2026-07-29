@@ -3,6 +3,7 @@ import type { DiaryEntry, DiaryPhotoLayer } from '../types/diary'
 import { DEFAULT_DIARY_FRAME_COLOR, emptyDiaryEntry } from '../types/diary'
 import { renderDiaryComposite } from '../lib/diaryImage'
 import {
+  hydrateDiaryEntry,
   loadDiaryEntriesForMonth,
   loadDiaryEntry,
   saveDiaryEntry,
@@ -28,6 +29,7 @@ export interface DiaryActions {
   entriesByDate: Record<string, DiaryEntry>
   loading: boolean
   getEntry: (dateKey: string) => DiaryEntry
+  ensureHydrated: (dateKey: string) => Promise<DiaryEntry>
   upsertEntry: (dateKey: string, patch: DiaryEntryPatch) => Promise<DiaryEntry>
   refreshMonth: () => Promise<void>
 }
@@ -77,6 +79,24 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
     [entriesByDate],
   )
 
+  const ensureHydrated = useCallback(
+    async (dateKey: string) => {
+      const current = normalizeEntry(
+        entriesByDate[dateKey] ?? emptyDiaryEntry(dateKey),
+      )
+      if (!current.layers.some((l) => !l.src)) return current
+      try {
+        const hydrated = normalizeEntry(await hydrateDiaryEntry(userId, current))
+        setEntriesByDate((prev) => ({ ...prev, [dateKey]: hydrated }))
+        return hydrated
+      } catch (e) {
+        console.warn('[diary] hydrate failed', e)
+        return current
+      }
+    },
+    [entriesByDate, userId],
+  )
+
   const persist = useCallback(
     (entry: DiaryEntry) => {
       const key = entry.dateKey
@@ -92,11 +112,14 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
 
   const upsertEntry = useCallback(
     async (dateKey: string, patch: DiaryEntryPatch) => {
-      const existing = normalizeEntry(
+      let existing = normalizeEntry(
         entriesByDate[dateKey] ??
           (await loadDiaryEntry(userId, dateKey)) ??
           emptyDiaryEntry(dateKey),
       )
+      if (existing.layers.some((l) => !l.src)) {
+        existing = normalizeEntry(await hydrateDiaryEntry(userId, existing))
+      }
 
       const nextLayers: DiaryPhotoLayer[] = patch.layers ?? existing.layers
       const nextFrameColor = patch.frameColor ?? existing.frameColor
@@ -140,6 +163,7 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
     entriesByDate,
     loading,
     getEntry,
+    ensureHydrated,
     upsertEntry,
     refreshMonth,
   }
