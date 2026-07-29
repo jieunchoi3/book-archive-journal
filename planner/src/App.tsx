@@ -9,6 +9,7 @@ import { ImportLocalDataBanner } from './components/ImportLocalDataBanner'
 import { WeekView } from './components/WeekView'
 import { MonthCalendarView } from './components/MonthCalendarView'
 import { DiaryView } from './components/DiaryView'
+import { ExpenseView } from './components/ExpenseView'
 import { BottomNav, type AppView } from './components/BottomNav'
 
 function AppContent() {
@@ -22,6 +23,8 @@ function AppContent() {
       <ImportLocalDataBanner />
       {view === 'diary' ? (
         <DiaryView />
+      ) : view === 'expenses' ? (
+        <ExpenseView />
       ) : view === 'weekly' ? (
         <WeekView
           template={planner.template}
