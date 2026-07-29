@@ -34,6 +34,15 @@ function coverPath(userId: string, dateKey: string) {
   return `${userId}/${dateKey}/cover.jpg`
 }
 
+function thumbPath(userId: string, dateKey: string) {
+  return `${userId}/${dateKey}/thumb.jpg`
+}
+
+/** Derive thumb.jpg path next to an existing cover.jpg path. */
+function thumbPathFromCover(cover: string): string {
+  return cover.replace(/cover\.jpg$/i, 'thumb.jpg')
+}
+
 /** Normalize PostgREST date / Date values to YYYY-MM-DD. */
 export function normalizeDateKey(value: string | Date): string {
   if (value instanceof Date) {
@@ -71,7 +80,8 @@ async function uploadDataUrl(path: string, dataUrl: string): Promise<void> {
   const { error } = await supabase.storage.from(BUCKET).upload(path, blob, {
     upsert: true,
     contentType: blob.type || 'image/jpeg',
-    cacheControl: '3600',
+    // Thumbs/covers are immutable per day revision; allow long browser cache.
+    cacheControl: '86400',
   })
   if (error) throw error
 }
@@ -91,6 +101,34 @@ async function signedUrl(path: string): Promise<string | null> {
     return null
   }
   return data.signedUrl
+}
+
+/** Batch-sign storage paths; missing objects are omitted from the map. */
+async function signedUrls(paths: string[]): Promise<Map<string, string>> {
+  const unique = [...new Set(paths.filter(Boolean))]
+  const out = new Map<string, string>()
+  if (!unique.length) return out
+
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUrls(unique, SIGNED_URL_TTL_SEC)
+
+  if (error) {
+    console.warn('[diary] batch signed URLs failed', error.message)
+    // Fall back to sequential so a batch API issue doesn't blank the month.
+    await Promise.all(
+      unique.map(async (path) => {
+        const url = await signedUrl(path)
+        if (url) out.set(path, url)
+      }),
+    )
+    return out
+  }
+
+  for (const item of data ?? []) {
+    if (item.signedUrl && item.path) out.set(item.path, item.signedUrl)
+  }
+  return out
 }
 
 async function removePaths(paths: string[]): Promise<void> {
@@ -114,7 +152,11 @@ async function hydrateLayers(layers: CloudLayer[]): Promise<DiaryPhotoLayer[]> {
 
 async function rowToEntry(
   row: DiaryRow,
-  opts?: { hydrateLayers?: boolean; coverMode?: 'signed' | 'download' },
+  opts?: {
+    hydrateLayers?: boolean
+    coverMode?: 'signed' | 'download'
+    signedUrlMap?: Map<string, string>
+  },
 ): Promise<DiaryEntry> {
   const dateKey = normalizeDateKey(row.date_key)
   const cloudLayers = Array.isArray(row.layers) ? row.layers : []
@@ -133,12 +175,27 @@ async function rowToEntry(
       : await hydrateLayers(cloudLayers)
 
   let coverDataUrl: string | null = null
+  let thumbDataUrl: string | null = null
+
   if (row.cover_path) {
+    const thumb = thumbPathFromCover(row.cover_path)
     try {
-      coverDataUrl =
-        coverMode === 'download'
-          ? await downloadDataUrl(row.cover_path)
-          : await signedUrl(row.cover_path)
+      if (coverMode === 'download') {
+        coverDataUrl = await downloadDataUrl(row.cover_path)
+        try {
+          thumbDataUrl = await downloadDataUrl(thumb)
+        } catch {
+          thumbDataUrl = null
+        }
+      } else if (opts?.signedUrlMap) {
+        thumbDataUrl = opts.signedUrlMap.get(thumb) ?? null
+        coverDataUrl = opts.signedUrlMap.get(row.cover_path) ?? null
+        // Grid only needs a thumb; if missing, fall back to full cover URL.
+        if (!thumbDataUrl && coverDataUrl) thumbDataUrl = coverDataUrl
+      } else {
+        thumbDataUrl = (await signedUrl(thumb)) ?? (await signedUrl(row.cover_path))
+        coverDataUrl = await signedUrl(row.cover_path)
+      }
     } catch (e) {
       console.warn('[diary] cover resolve failed', row.cover_path, e)
     }
@@ -152,6 +209,7 @@ async function rowToEntry(
     canvasStrokes: row.canvas_strokes ?? [],
     frameColor: row.frame_color,
     coverDataUrl,
+    thumbDataUrl,
     updatedAt: row.updated_at,
   }
 }
@@ -174,15 +232,26 @@ export async function fetchDiaryEntriesForMonthCloud(
 
   if (error) throw error
 
+  const rows = (data ?? []) as DiaryRow[]
+  const paths: string[] = []
+  for (const row of rows) {
+    if (!row.cover_path) continue
+    paths.push(thumbPathFromCover(row.cover_path))
+    paths.push(row.cover_path)
+  }
+  const urlMap = await signedUrls(paths)
+
   const out: Record<string, DiaryEntry> = {}
   await Promise.all(
-    ((data ?? []) as DiaryRow[]).map(async (row) => {
+    rows.map(async (row) => {
       const entry = await rowToEntry(row, {
         hydrateLayers: false,
         coverMode: 'signed',
+        signedUrlMap: urlMap,
       })
       const hasLayers = (row.layers ?? []).length > 0
       if (
+        entry.thumbDataUrl ||
         entry.coverDataUrl ||
         entry.title ||
         entry.body ||
@@ -246,12 +315,13 @@ export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): 
   }
 
   let cover: string | null = null
+  const thumb = thumbPath(userId, entry.dateKey)
+
   if (entry.coverDataUrl?.startsWith('data:')) {
     cover = coverPath(userId, entry.dateKey)
     await uploadDataUrl(cover, entry.coverDataUrl)
   } else if (entry.layers.length > 0 || (entry.canvasStrokes?.length ?? 0) > 0) {
     cover = coverPath(userId, entry.dateKey)
-    // If we only have a signed/http cover URL, re-upload so Storage stays fresh.
     if (entry.coverDataUrl?.startsWith('http')) {
       try {
         const blob = await (await fetch(entry.coverDataUrl)).blob()
@@ -261,6 +331,13 @@ export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): 
         // Keep previous cover object if re-fetch fails.
       }
     }
+  }
+
+  if (entry.thumbDataUrl?.startsWith('data:')) {
+    await uploadDataUrl(thumb, entry.thumbDataUrl)
+  } else if (entry.coverDataUrl?.startsWith('data:')) {
+    // Older clients: derive thumb from the full cover before upload finishes elsewhere.
+    // Cover data URL is already small enough to re-encode client-side in useDiary.
   }
 
   const { data: existing } = await supabase
@@ -302,7 +379,8 @@ export async function deleteDiaryEntryCloud(userId: string, dateKey: string): Pr
   const row = existing as { layers?: CloudLayer[]; cover_path?: string | null } | null
   const paths = [
     ...(row?.layers ?? []).map((l) => l.path),
-    ...(row?.cover_path ? [row.cover_path] : []),
+    ...(row?.cover_path ? [row.cover_path, thumbPathFromCover(row.cover_path)] : []),
+    thumbPath(userId, dateKey),
   ]
   await removePaths(paths)
 

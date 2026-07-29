@@ -2,14 +2,39 @@ import type { DiaryPhotoLayer, DiaryStroke } from '../types/diary'
 import { generateId } from './weekUtils'
 
 export const DIARY_CANVAS_SIZE = 1600
+/** Month-grid thumbnail edge length (full cover stays at DIARY_CANVAS_SIZE). */
+export const DIARY_THUMB_SIZE = 320
 
 export function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image()
+    if (src.startsWith('http')) img.crossOrigin = 'anonymous'
     img.onload = () => resolve(img)
     img.onerror = () => reject(new Error('Failed to load image'))
     img.src = src
   })
+}
+
+/** Downscale a cover (data URL or remote) into a small JPEG thumb for the grid. */
+export async function downscaleToThumb(
+  source: string,
+  size = DIARY_THUMB_SIZE,
+  quality = 0.82,
+): Promise<string | null> {
+  try {
+    const img = await loadImage(source)
+    const canvas = document.createElement('canvas')
+    canvas.width = size
+    canvas.height = size
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(img, 0, 0, size, size)
+    return canvas.toDataURL('image/jpeg', quality)
+  } catch {
+    return null
+  }
 }
 
 /** Compress a File or data URL into a high-quality JPEG data URL. */

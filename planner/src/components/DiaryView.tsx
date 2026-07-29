@@ -12,6 +12,7 @@ import {
 } from '../lib/weekUtils'
 import {
   diaryEntryHasPhoto,
+  diaryGridImageUrl,
   isDiaryEntryEmpty,
   type DiaryEntry,
 } from '../types/diary'
@@ -237,6 +238,7 @@ export function DiaryView() {
                   const intensity =
                     showSpending && maxSpend > 0 && spent > 0 ? spent / maxSpend : 0
                   const hasPhoto = diaryEntryHasPhoto(entry)
+                  const gridSrc = diaryGridImageUrl(entry)
 
                   return (
                     <button
@@ -252,17 +254,19 @@ export function DiaryView() {
                           : undefined
                       }
                     >
-                      {hasPhoto && entry?.coverDataUrl ? (
+                      {hasPhoto && gridSrc ? (
                         <img
-                          src={entry.coverDataUrl}
+                          src={gridSrc}
                           alt=""
+                          loading="lazy"
+                          decoding="async"
                           className={`absolute inset-0 h-full w-full object-cover transition-opacity ${
                             inMonth ? 'opacity-100' : 'opacity-40'
                           }`}
                         />
                       ) : hasPhoto ? (
                         <div
-                          className={`absolute inset-0 bg-[#E8E8ED] ${
+                          className={`absolute inset-0 animate-pulse bg-[#E8E8ED] ${
                             inMonth ? 'opacity-100' : 'opacity-40'
                           }`}
                         />

@@ -1,16 +1,18 @@
 import type { DiaryEntry } from '../types/diary'
 import { isDiaryEntryEmpty } from '../types/diary'
+import { downscaleToThumb } from './diaryImage'
 import {
   deleteDiaryEntryCloud,
   fetchDiaryEntriesForMonthCloud,
   fetchDiaryEntryCloud,
   upsertDiaryEntryCloud,
 } from './diaryCloud'
-import { isSupabaseConfigured } from './supabase'
+import { isSupabaseConfigured, supabase } from './supabase'
 
 const DB_NAME = 'planner-diary'
 const DB_VERSION = 1
 const STORE = 'entries'
+const THUMB_BUCKET = 'diary-media'
 
 function dbKey(userId: string, dateKey: string) {
   return `${userId}:${dateKey}`
@@ -53,7 +55,7 @@ async function loadDiaryEntryLocal(
   })
 }
 
-async function loadDiaryEntriesForMonthLocal(
+export async function loadDiaryEntriesForMonthLocal(
   userId: string,
   year: number,
   month: number,
@@ -122,6 +124,7 @@ async function saveDiaryEntryLocal(userId: string, entry: DiaryEntry): Promise<v
 
 function hasRealImageBytes(entry: DiaryEntry): boolean {
   return (
+    Boolean(entry.thumbDataUrl?.startsWith('data:')) ||
     Boolean(entry.coverDataUrl?.startsWith('data:')) ||
     entry.layers.some((l) => l.src.startsWith('data:'))
   )
@@ -129,6 +132,24 @@ function hasRealImageBytes(entry: DiaryEntry): boolean {
 
 function needsLayerHydration(entry: DiaryEntry): boolean {
   return entry.layers.some((l) => !l.src)
+}
+
+function preferLocalImages(cloud: DiaryEntry, local?: DiaryEntry): DiaryEntry {
+  if (!local) return cloud
+  const keepLocalCover = Boolean(local.coverDataUrl?.startsWith('data:'))
+  const keepLocalThumb = Boolean(local.thumbDataUrl?.startsWith('data:'))
+  const keepLocalLayers = hasRealImageBytes(local) && needsLayerHydration(cloud)
+
+  return {
+    ...cloud,
+    layers: keepLocalLayers ? local.layers : cloud.layers,
+    coverDataUrl: keepLocalCover
+      ? local.coverDataUrl
+      : (cloud.coverDataUrl ?? local.coverDataUrl ?? null),
+    thumbDataUrl: keepLocalThumb
+      ? local.thumbDataUrl
+      : (cloud.thumbDataUrl ?? local.thumbDataUrl ?? null),
+  }
 }
 
 /** One-time push of local-only diary days up to Supabase. */
@@ -161,8 +182,9 @@ export async function loadDiaryEntry(
   try {
     const cloud = await fetchDiaryEntryCloud(userId, dateKey)
     if (cloud) {
-      await saveDiaryEntryLocal(userId, cloud)
-      return cloud
+      const merged = preferLocalImages(cloud, local ?? undefined)
+      await saveDiaryEntryLocal(userId, merged)
+      return merged
     }
     if (local && hasRealImageBytes(local) && !isDiaryEntryEmpty(local)) {
       await upsertDiaryEntryCloud(userId, local)
@@ -202,17 +224,9 @@ export async function loadDiaryEntriesForMonth(
       }
     }
 
-    // Cache metadata locally; keep prior local image bytes when cloud only has signed covers.
+    // Cache metadata locally; keep prior local image bytes when cloud only has signed URLs.
     for (const [dateKey, entry] of Object.entries(merged)) {
-      const prev = local[dateKey]
-      const toStore =
-        prev && hasRealImageBytes(prev) && needsLayerHydration(entry)
-          ? {
-              ...entry,
-              layers: prev.layers,
-              coverDataUrl: entry.coverDataUrl ?? prev.coverDataUrl,
-            }
-          : entry
+      const toStore = preferLocalImages(entry, local[dateKey])
       await saveDiaryEntryLocal(userId, toStore)
       merged[dateKey] = toStore
     }
@@ -222,6 +236,57 @@ export async function loadDiaryEntriesForMonth(
     console.warn('[diary] cloud month load failed, using local', e)
     return local
   }
+}
+
+async function uploadThumbOnly(userId: string, dateKey: string, thumbDataUrl: string) {
+  const path = `${userId}/${dateKey}/thumb.jpg`
+  const res = await fetch(thumbDataUrl)
+  const blob = await res.blob()
+  const { error } = await supabase.storage.from(THUMB_BUCKET).upload(path, blob, {
+    upsert: true,
+    contentType: 'image/jpeg',
+    cacheControl: '86400',
+  })
+  if (error) console.warn('[diary] thumb upload failed', dateKey, error.message)
+}
+
+/**
+ * For days that only have a remote/full cover, build a small local thumb
+ * (and upload thumb.jpg) so the next visit paints instantly.
+ */
+export async function backfillDiaryThumbs(
+  userId: string,
+  entries: Record<string, DiaryEntry>,
+  onEntry?: (dateKey: string, entry: DiaryEntry) => void,
+): Promise<void> {
+  const jobs = Object.values(entries).filter((entry) => {
+    if (entry.thumbDataUrl?.startsWith('data:')) return false
+    return Boolean(entry.thumbDataUrl || entry.coverDataUrl)
+  })
+
+  const concurrency = 3
+  let i = 0
+  async function worker() {
+    while (i < jobs.length) {
+      const entry = jobs[i++]
+      const src = entry.thumbDataUrl || entry.coverDataUrl
+      if (!src) continue
+      try {
+        const thumb = await downscaleToThumb(src)
+        if (!thumb) continue
+        const next: DiaryEntry = { ...entry, thumbDataUrl: thumb }
+        await saveDiaryEntryLocal(userId, next)
+        if (isSupabaseConfigured) {
+          void uploadThumbOnly(userId, entry.dateKey, thumb)
+        }
+        onEntry?.(entry.dateKey, next)
+      } catch (e) {
+        console.warn('[diary] thumb backfill failed', entry.dateKey, e)
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, jobs.length) }, () => worker()))
 }
 
 export async function saveDiaryEntry(userId: string, entry: DiaryEntry): Promise<void> {
@@ -235,6 +300,9 @@ export async function saveDiaryEntry(userId: string, entry: DiaryEntry): Promise
         coverDataUrl: entry.coverDataUrl?.startsWith('data:')
           ? entry.coverDataUrl
           : existing.coverDataUrl,
+        thumbDataUrl: entry.thumbDataUrl?.startsWith('data:')
+          ? entry.thumbDataUrl
+          : (existing.thumbDataUrl ?? entry.thumbDataUrl),
       }
     }
   }
@@ -260,12 +328,16 @@ export async function hydrateDiaryEntry(
   userId: string,
   entry: DiaryEntry,
 ): Promise<DiaryEntry> {
-  if (!needsLayerHydration(entry) && entry.coverDataUrl?.startsWith('data:')) {
+  if (
+    !needsLayerHydration(entry) &&
+    entry.coverDataUrl?.startsWith('data:')
+  ) {
     return entry
   }
   if (!isSupabaseConfigured) return entry
   const cloud = await fetchDiaryEntryCloud(userId, entry.dateKey)
   if (!cloud) return entry
-  await saveDiaryEntryLocal(userId, cloud)
-  return cloud
+  const merged = preferLocalImages(cloud, entry)
+  await saveDiaryEntryLocal(userId, merged)
+  return merged
 }

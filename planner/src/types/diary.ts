@@ -34,8 +34,10 @@ export interface DiaryEntry {
   canvasStrokes: DiaryStroke[]
   /** Background fill behind non-square photos in the 1:1 frame. */
   frameColor: string
-  /** Pre-rendered square composite for the month grid thumbnail. */
+  /** Full-resolution square composite (editor / Storage cover.jpg). */
   coverDataUrl: string | null
+  /** Small square for the month grid (Storage thumb.jpg). */
+  thumbDataUrl?: string | null
   updatedAt: string
 }
 
@@ -65,6 +67,7 @@ export function emptyDiaryEntry(dateKey: string): DiaryEntry {
     canvasStrokes: [],
     frameColor: DEFAULT_DIARY_FRAME_COLOR,
     coverDataUrl: null,
+    thumbDataUrl: null,
     updatedAt: new Date().toISOString(),
   }
 }
@@ -82,5 +85,11 @@ export function isDiaryEntryEmpty(entry: DiaryEntry): boolean {
 /** True when the day has photo content (bytes, remote cover, or layer placeholders). */
 export function diaryEntryHasPhoto(entry: DiaryEntry | null | undefined): boolean {
   if (!entry) return false
-  return Boolean(entry.coverDataUrl) || entry.layers.length > 0
+  return Boolean(entry.thumbDataUrl || entry.coverDataUrl) || entry.layers.length > 0
+}
+
+/** Prefer the small grid thumb; fall back to the full cover. */
+export function diaryGridImageUrl(entry: DiaryEntry | null | undefined): string | null {
+  if (!entry) return null
+  return entry.thumbDataUrl || entry.coverDataUrl || null
 }

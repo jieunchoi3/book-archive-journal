@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DiaryEntry, DiaryPhotoLayer } from '../types/diary'
 import { DEFAULT_DIARY_FRAME_COLOR, emptyDiaryEntry } from '../types/diary'
-import { renderDiaryComposite } from '../lib/diaryImage'
+import { downscaleToThumb, renderDiaryComposite } from '../lib/diaryImage'
 import {
+  backfillDiaryThumbs,
   hydrateDiaryEntry,
   loadDiaryEntriesForMonth,
+  loadDiaryEntriesForMonthLocal,
   loadDiaryEntry,
   saveDiaryEntry,
 } from '../lib/diaryStorage'
@@ -72,18 +74,39 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
 
   const refreshMonth = useCallback(async () => {
     setLoading(true)
+    const year = viewMonth.year
+    const month = viewMonth.month
     try {
-      const map = await loadDiaryEntriesForMonth(userId, viewMonth.year, viewMonth.month)
+      // Paint IndexedDB immediately so revisits aren't blank while cloud syncs.
+      const local = await loadDiaryEntriesForMonthLocal(userId, year, month)
+      const localNormalized: Record<string, DiaryEntry> = {}
+      for (const [key, entry] of Object.entries(local)) {
+        localNormalized[key] = normalizeEntry(entry)
+      }
+      if (Object.keys(localNormalized).length > 0) {
+        setEntriesByDate(localNormalized)
+        setLoading(false)
+      }
+
+      const map = await loadDiaryEntriesForMonth(userId, year, month)
       const normalized: Record<string, DiaryEntry> = {}
       for (const [key, entry] of Object.entries(map)) {
         normalized[key] = normalizeEntry(entry)
       }
       setEntriesByDate(normalized)
       setSyncError(null)
+      setLoading(false)
+
+      // Build/upload missing thumbs in the background (existing full covers).
+      void backfillDiaryThumbs(userId, normalized, (dateKey, entry) => {
+        setEntriesByDate((prev) => ({
+          ...prev,
+          [dateKey]: normalizeEntry(entry),
+        }))
+      })
     } catch (e) {
       console.error('[diary] month refresh failed', e)
       setSyncError(e instanceof Error ? e.message : 'Could not load diary')
-    } finally {
       setLoading(false)
     }
   }, [userId, viewMonth.year, viewMonth.month])
@@ -169,6 +192,7 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
       const nextFrameColor = patch.frameColor ?? existing.frameColor
       const nextCanvasStrokes = patch.canvasStrokes ?? existing.canvasStrokes
       let coverDataUrl = existing.coverDataUrl
+      let thumbDataUrl = existing.thumbDataUrl ?? null
       if (
         patch.layers !== undefined ||
         patch.frameColor !== undefined ||
@@ -180,6 +204,9 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
           nextFrameColor,
           nextCanvasStrokes,
         )
+        thumbDataUrl = coverDataUrl
+          ? await downscaleToThumb(coverDataUrl)
+          : null
       }
 
       const next: DiaryEntry = {
@@ -189,6 +216,7 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
         frameColor: nextFrameColor,
         canvasStrokes: nextCanvasStrokes,
         coverDataUrl,
+        thumbDataUrl,
         dateKey,
         updatedAt: new Date().toISOString(),
       }
