@@ -1,7 +1,7 @@
 import type { DiaryPhotoLayer, DiaryStroke } from '../types/diary'
 import { generateId } from './weekUtils'
 
-export const DIARY_CANVAS_SIZE = 720
+export const DIARY_CANVAS_SIZE = 1600
 
 export function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -12,11 +12,11 @@ export function loadImage(src: string): Promise<HTMLImageElement> {
   })
 }
 
-/** Compress a File or data URL into a reasonably sized JPEG data URL. */
+/** Compress a File or data URL into a high-quality JPEG data URL. */
 export async function compressImageSource(
   source: File | string,
-  maxEdge = 1400,
-  quality = 0.78,
+  maxEdge = 2400,
+  quality = 0.92,
 ): Promise<string> {
   const src =
     typeof source === 'string' ? source : await fileToDataUrl(source)
@@ -29,6 +29,8 @@ export async function compressImageSource(
   canvas.height = h
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('Canvas unavailable')
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(img, 0, 0, w, h)
   return canvas.toDataURL('image/jpeg', quality)
 }
@@ -106,6 +108,8 @@ export async function renderDiaryComposite(
   for (const layer of layers) {
     try {
       const img = await loadImage(layer.src)
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = 'high'
       ctx.drawImage(
         img,
         layer.x,
@@ -127,10 +131,12 @@ export async function renderDiaryComposite(
   flat.height = size
   const fctx = flat.getContext('2d')
   if (!fctx) return null
+  fctx.imageSmoothingEnabled = true
+  fctx.imageSmoothingQuality = 'high'
   fctx.fillStyle = frameColor
   fctx.fillRect(0, 0, size, size)
   fctx.drawImage(canvas, 0, 0)
-  return flat.toDataURL('image/jpeg', 0.82)
+  return flat.toDataURL('image/jpeg', 0.92)
 }
 
 /** Bake a crop rect (canvas coords) into a layer's source image. */
@@ -149,8 +155,10 @@ export async function bakeCropIntoLayer(
   canvas.height = Math.max(1, Math.round(sh))
   const ctx = canvas.getContext('2d')
   if (!ctx) return layer
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
   ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
-  const cropped = canvas.toDataURL('image/jpeg', 0.85)
+  const cropped = canvas.toDataURL('image/jpeg', 0.92)
 
   const fit = Math.min(DIARY_CANVAS_SIZE / canvas.width, DIARY_CANVAS_SIZE / canvas.height)
   const drawW = canvas.width * fit

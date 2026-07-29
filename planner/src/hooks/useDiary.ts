@@ -109,7 +109,7 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
       ) {
         coverDataUrl = await renderDiaryComposite(
           nextLayers,
-          480,
+          1600,
           nextFrameColor,
           nextCanvasStrokes,
         )

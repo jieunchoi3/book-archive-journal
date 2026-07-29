@@ -3,7 +3,7 @@ import {
   Check,
   Crop,
   Eraser,
-  Move,
+  Image,
   Pencil,
   Plus,
   Redo2,
@@ -61,9 +61,11 @@ export function DiaryPhotoEditor({
   const [canvasStrokes, setCanvasStrokes] = useState<DiaryStroke[]>(initialCanvasStrokes)
   const [frameColor, setFrameColor] = useState(initialFrameColor)
   const [activeId, setActiveId] = useState<string | null>(initialLayers.at(-1)?.id ?? null)
-  const [tool, setTool] = useState<Tool>(initialLayers.length === 0 ? 'draw' : 'move')
+  const [tool, setTool] = useState<Tool>('move')
   const [brushColor, setBrushColor] = useState('#1C1C1E')
   const [brushWidth, setBrushWidth] = useState(4)
+  /** Scale UI chrome / brush feel from the original 720 canvas baseline. */
+  const uiScale = DIARY_CANVAS_SIZE / 720
   const [cropRect, setCropRect] = useState<{ x: number; y: number; width: number; height: number } | null>(
     null,
   )
@@ -144,6 +146,26 @@ export function DiaryPhotoEditor({
     startDist?: number
     strokeId?: string
   } | null>(null)
+  const activePointerIdRef = useRef<number | null>(null)
+  const penDrawingRef = useRef(false)
+  const imageCacheRef = useRef(new Map<string, HTMLImageElement>())
+
+  const shouldIgnorePointer = (e: React.PointerEvent) => {
+    // Ignore secondary contacts (resting hand / multi-touch noise).
+    if (!e.isPrimary && e.pointerType !== 'pen') return true
+    if (e.pointerType === 'touch') {
+      const w = e.width || 0
+      const h = e.height || 0
+      // Large contact area ≈ palm resting on the glass.
+      if (w * h >= 35 * 35) return true
+      // While Apple Pencil is drawing, ignore finger/palm entirely.
+      if (penDrawingRef.current) return true
+      if ((tool === 'draw' || tool === 'erase') && activePointerIdRef.current !== null) {
+        return true
+      }
+    }
+    return false
+  }
 
   const activeLayer = layers.find((l) => l.id === activeId) ?? null
 
@@ -207,19 +229,28 @@ export function DiaryPhotoEditor({
 
   useEffect(() => {
     let cancelled = false
+    const getCachedImage = async (src: string) => {
+      const cached = imageCacheRef.current.get(src)
+      if (cached?.complete) return cached
+      const img = await loadImage(src)
+      imageCacheRef.current.set(src, img)
+      return img
+    }
     const paint = async () => {
       const canvas = canvasRef.current
       if (!canvas) return
       const ctx = canvas.getContext('2d')
       if (!ctx) return
 
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = 'high'
       ctx.clearRect(0, 0, DIARY_CANVAS_SIZE, DIARY_CANVAS_SIZE)
       ctx.fillStyle = frameColor
       ctx.fillRect(0, 0, DIARY_CANVAS_SIZE, DIARY_CANVAS_SIZE)
 
       for (const layer of layers) {
         try {
-          const img = await loadImage(layer.src)
+          const img = await getCachedImage(layer.src)
           if (cancelled) return
           ctx.drawImage(
             img,
@@ -241,9 +272,11 @@ export function DiaryPhotoEditor({
         const by = activeLayer.y
         const bw = activeNaturalSize.w * activeLayer.scale
         const bh = activeNaturalSize.h * activeLayer.scale
+        const line = 2 * uiScale
+        const handle = 8 * uiScale
         ctx.strokeStyle = '#007AFF'
-        ctx.lineWidth = 2
-        ctx.setLineDash([6, 4])
+        ctx.lineWidth = line
+        ctx.setLineDash([6 * uiScale, 4 * uiScale])
         ctx.strokeRect(bx, by, bw, bh)
         ctx.setLineDash([])
         const handles = [
@@ -255,9 +288,9 @@ export function DiaryPhotoEditor({
         for (const [hx, hy] of handles) {
           ctx.fillStyle = '#FFFFFF'
           ctx.strokeStyle = '#007AFF'
-          ctx.lineWidth = 2
+          ctx.lineWidth = line
           ctx.beginPath()
-          ctx.rect(hx - 8, hy - 8, 16, 16)
+          ctx.rect(hx - handle, hy - handle, handle * 2, handle * 2)
           ctx.fill()
           ctx.stroke()
         }
@@ -273,8 +306,8 @@ export function DiaryPhotoEditor({
         ctx.restore()
 
         ctx.strokeStyle = '#007AFF'
-        ctx.lineWidth = 2
-        ctx.setLineDash([6, 4])
+        ctx.lineWidth = 2 * uiScale
+        ctx.setLineDash([6 * uiScale, 4 * uiScale])
         ctx.strokeRect(cropRect.x, cropRect.y, cropRect.width, cropRect.height)
         ctx.setLineDash([])
       }
@@ -283,7 +316,7 @@ export function DiaryPhotoEditor({
     return () => {
       cancelled = true
     }
-  }, [layers, canvasStrokes, cropRect, frameColor, tool, activeLayer, activeNaturalSize])
+  }, [layers, canvasStrokes, cropRect, frameColor, tool, activeLayer, activeNaturalSize, uiScale])
 
   const canvasPoint = (e: React.PointerEvent<HTMLCanvasElement> | React.WheelEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current!
@@ -304,16 +337,26 @@ export function DiaryPhotoEditor({
       { x: activeBounds.x, y: activeBounds.y + activeBounds.h },
       { x: activeBounds.x + activeBounds.w, y: activeBounds.y + activeBounds.h },
     ]
-    const hit = 18
+    const hit = 18 * uiScale
     return handles.some((h) => Math.abs(pt.x - h.x) <= hit && Math.abs(pt.y - h.y) <= hit)
   }
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (shouldIgnorePointer(e)) return
+    // One gesture at a time — blocks palm from starting a second interaction.
+    if (activePointerIdRef.current !== null) return
+    e.preventDefault()
+    activePointerIdRef.current = e.pointerId
+    if (e.pointerType === 'pen') penDrawingRef.current = true
     e.currentTarget.setPointerCapture(e.pointerId)
     const pt = canvasPoint(e)
 
     if (tool === 'crop') {
-      if (!activeLayer) return
+      if (!activeLayer) {
+        activePointerIdRef.current = null
+        penDrawingRef.current = false
+        return
+      }
       setCropRect({ x: pt.x, y: pt.y, width: 0, height: 0 })
       dragRef.current = { mode: 'crop-new', startX: pt.x, startY: pt.y, originX: 0, originY: 0 }
       return
@@ -322,10 +365,11 @@ export function DiaryPhotoEditor({
     if (tool === 'draw' || tool === 'erase') {
       pushHistory()
       const strokeId = generateId()
+      const baseWidth = tool === 'erase' ? Math.max(brushWidth, 12) : brushWidth
       const stroke: DiaryStroke = {
         id: strokeId,
         color: brushColor,
-        width: tool === 'erase' ? Math.max(brushWidth, 12) : brushWidth,
+        width: baseWidth * uiScale,
         points: [pt],
         erase: tool === 'erase',
       }
@@ -358,14 +402,18 @@ export function DiaryPhotoEditor({
       return
     }
 
-    if (!activeLayer || !activeBounds || !activeNaturalSize) return
+    if (!activeLayer || !activeBounds || !activeNaturalSize) {
+      activePointerIdRef.current = null
+      penDrawingRef.current = false
+      return
+    }
 
     if (tool === 'move') {
       pushHistory()
       if (hitResizeHandle(pt)) {
         const centerX = activeBounds.x + activeBounds.w / 2
         const centerY = activeBounds.y + activeBounds.h / 2
-        const startDist = Math.max(8, Math.hypot(pt.x - centerX, pt.y - centerY))
+        const startDist = Math.max(8 * uiScale, Math.hypot(pt.x - centerX, pt.y - centerY))
         dragRef.current = {
           mode: 'resize',
           startX: pt.x,
@@ -391,8 +439,10 @@ export function DiaryPhotoEditor({
   }
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) return
     const drag = dragRef.current
     if (!drag) return
+    e.preventDefault()
     const pt = canvasPoint(e)
 
     if (drag.mode === 'crop-new') {
@@ -461,7 +511,13 @@ export function DiaryPhotoEditor({
     }
   }
 
-  const onPointerUp = () => {
+  const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) return
+    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    }
+    activePointerIdRef.current = null
+    penDrawingRef.current = false
     dragRef.current = null
   }
 
@@ -570,28 +626,34 @@ export function DiaryPhotoEditor({
   }
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/45 p-4">
-      <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <header className="flex items-center justify-between border-b border-hairline px-4 py-3">
-          <div>
-            <h2 className="text-[16px] font-semibold text-[#1C1C1E]">Photo diary</h2>
-            <p className="text-[12px] text-muted">Crop, resize, draw, and stack photos</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-muted hover:bg-[#F2F2F7]"
-            aria-label="Close"
-          >
-            <X size={18} />
-          </button>
-        </header>
+    <div className="fixed inset-0 z-[80] flex flex-col bg-white">
+      <header className="flex shrink-0 items-center justify-between border-b border-hairline px-4 py-3">
+        <div>
+          <h2 className="text-[16px] font-semibold text-[#1C1C1E]">Photo diary</h2>
+          <p className="text-[12px] text-muted">Crop, resize, draw, and stack photos</p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg p-1.5 text-muted hover:bg-[#F2F2F7]"
+          aria-label="Close"
+        >
+          <X size={18} />
+        </button>
+      </header>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-4 md:flex-row">
-          <div className="min-w-0 flex-1">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
+        <div className="relative min-h-0 min-w-0 flex-1 bg-[#F5F5F7]">
+          <div
+            className="absolute inset-2 sm:inset-3"
+            style={{ containerType: 'size' }}
+          >
             <div
-              className="relative mx-auto aspect-square w-full max-w-[520px] overflow-hidden rounded-xl ring-1 ring-hairline"
-              style={{ backgroundColor: frameColor }}
+              className="absolute left-1/2 top-1/2 aspect-square -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-hairline"
+              style={{
+                backgroundColor: frameColor,
+                width: 'min(100cqw, 100cqh)',
+              }}
             >
               <canvas
                 ref={canvasRef}
@@ -600,6 +662,7 @@ export function DiaryPhotoEditor({
                 className={`h-full w-full touch-none ${
                   tool === 'move' && activeLayer ? 'cursor-move' : ''
                 }`}
+                style={{ touchAction: 'none' }}
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
@@ -624,12 +687,31 @@ export function DiaryPhotoEditor({
               )}
             </div>
           </div>
+        </div>
 
-          <div className="flex w-full shrink-0 flex-col gap-3 md:w-56">
+          <div className="flex max-h-[42vh] w-full shrink-0 flex-col gap-3 overflow-auto border-t border-hairline p-3 md:max-h-none md:w-64 md:border-l md:border-t-0 md:p-4">
             <div className="flex flex-wrap items-center gap-1">
-              <ToolBtn active={tool === 'move'} onClick={() => { setTool('move'); setCropRect(null) }} icon={<Move size={14} />} label="Move" />
-              <ToolBtn active={tool === 'draw'} onClick={() => { setTool('draw'); setCropRect(null) }} icon={<Pencil size={14} />} label="Draw" />
-              <ToolBtn active={tool === 'erase'} onClick={() => { setTool('erase'); setCropRect(null) }} icon={<Eraser size={14} />} label="Erase" />
+              <ToolBtn active={tool === 'move'} onClick={() => { setTool('move'); setCropRect(null) }} icon={<Image size={14} />} label="Photo" />
+              <ToolBtn
+                active={tool === 'draw'}
+                onClick={() => {
+                  setTool('draw')
+                  setCropRect(null)
+                  setActiveId(null)
+                }}
+                icon={<Pencil size={14} />}
+                label="Draw"
+              />
+              <ToolBtn
+                active={tool === 'erase'}
+                onClick={() => {
+                  setTool('erase')
+                  setCropRect(null)
+                  setActiveId(null)
+                }}
+                icon={<Eraser size={14} />}
+                label="Erase"
+              />
               <ToolBtn active={tool === 'crop'} onClick={() => setTool('crop')} icon={<Crop size={14} />} label="Crop" />
             </div>
 
@@ -654,54 +736,56 @@ export function DiaryPhotoEditor({
               </button>
             </div>
 
-            <div className="space-y-2 rounded-xl bg-[#F5F5F7] p-2.5">
-              <p className="text-[11px] font-medium text-[#48484A]">Frame colour</p>
-              <div className="flex items-center gap-2">
-                <label className="relative h-10 w-10 shrink-0 cursor-pointer overflow-hidden rounded-full shadow-sm ring-2 ring-white">
-                  <span
-                    className="absolute inset-0"
-                    style={{
-                      background:
-                        'conic-gradient(#FF3B30, #FFCC00, #34C759, #007AFF, #AF52DE, #FF3B30)',
-                    }}
-                  />
-                  <span
-                    className="absolute inset-[3px] rounded-full border border-white/80"
-                    style={{ backgroundColor: frameColor }}
-                  />
-                  <input
-                    type="color"
-                    value={frameColor}
-                    onChange={(e) => {
-                      pushHistory()
-                      setFrameColor(e.target.value)
-                    }}
-                    className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                    aria-label="Frame colour wheel"
-                  />
-                </label>
-                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-                  {DIARY_FRAME_COLORS.map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => {
-                        if (c.toLowerCase() === frameColor.toLowerCase()) return
-                        pushHistory()
-                        setFrameColor(c)
+            {tool === 'move' && (
+              <div className="space-y-2 rounded-xl bg-[#F5F5F7] p-2.5">
+                <p className="text-[11px] font-medium text-[#48484A]">Frame colour</p>
+                <div className="flex items-center gap-2">
+                  <label className="relative h-10 w-10 shrink-0 cursor-pointer overflow-hidden rounded-full shadow-sm ring-2 ring-white">
+                    <span
+                      className="absolute inset-0"
+                      style={{
+                        background:
+                          'conic-gradient(#FF3B30, #FFCC00, #34C759, #007AFF, #AF52DE, #FF3B30)',
                       }}
-                      className={`h-6 w-6 rounded-full border-2 ${
-                        frameColor.toLowerCase() === c.toLowerCase()
-                          ? 'border-[#007AFF]'
-                          : 'border-transparent'
-                      }`}
-                      style={{ backgroundColor: c, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.08)' }}
-                      aria-label={`Frame ${c}`}
                     />
-                  ))}
+                    <span
+                      className="absolute inset-[3px] rounded-full border border-white/80"
+                      style={{ backgroundColor: frameColor }}
+                    />
+                    <input
+                      type="color"
+                      value={frameColor}
+                      onChange={(e) => {
+                        pushHistory()
+                        setFrameColor(e.target.value)
+                      }}
+                      className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                      aria-label="Frame colour wheel"
+                    />
+                  </label>
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+                    {DIARY_FRAME_COLORS.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => {
+                          if (c.toLowerCase() === frameColor.toLowerCase()) return
+                          pushHistory()
+                          setFrameColor(c)
+                        }}
+                        className={`h-6 w-6 rounded-full border-2 ${
+                          frameColor.toLowerCase() === c.toLowerCase()
+                            ? 'border-[#007AFF]'
+                            : 'border-transparent'
+                        }`}
+                        style={{ backgroundColor: c, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.08)' }}
+                        aria-label={`Frame ${c}`}
+                      />
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {(tool === 'draw' || tool === 'erase') && (
               <div className="space-y-2 rounded-xl bg-[#F5F5F7] p-2.5">
@@ -959,9 +1043,9 @@ export function DiaryPhotoEditor({
               )}
             </div>
           </div>
-        </div>
+      </div>
 
-        <footer className="flex items-center justify-end gap-2 border-t border-hairline px-4 py-3">
+        <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-hairline px-4 py-3">
           <button
             type="button"
             onClick={onClose}
@@ -977,7 +1061,6 @@ export function DiaryPhotoEditor({
             Save photos
           </button>
         </footer>
-      </div>
     </div>
   )
 }
