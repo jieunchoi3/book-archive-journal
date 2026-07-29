@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowDownLeft, ArrowUpRight, Check, Plus } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Check, Pencil, Plus, Trash2, X } from 'lucide-react'
 import type { ExpenseCategory, MoneyFlow } from '../types/expense'
 import { EXPENSE_COLORS, formatMoney } from '../types/expense'
 import { getTodayKey } from '../lib/weekUtils'
@@ -16,6 +16,8 @@ interface ExpenseQuickAddProps {
     note?: string
   }) => void
   onAddCategory: (input: { name: string; color: string; kind: MoneyFlow }) => string
+  onRenameCategory: (categoryId: string, name: string) => void
+  onDeleteCategory: (categoryId: string) => void
 }
 
 export function ExpenseQuickAdd({
@@ -24,6 +26,8 @@ export function ExpenseQuickAdd({
   defaultDateKey,
   onAdd,
   onAddCategory,
+  onRenameCategory,
+  onDeleteCategory,
 }: ExpenseQuickAddProps) {
   const [flow, setFlow] = useState<MoneyFlow>('out')
   const [amount, setAmount] = useState('')
@@ -33,6 +37,8 @@ export function ExpenseQuickAdd({
   const [savedFlash, setSavedFlash] = useState(false)
   const [showNewCat, setShowNewCat] = useState(false)
   const [newCatName, setNewCatName] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState('')
 
   useEffect(() => {
     if (defaultDateKey) setDateKey(defaultDateKey)
@@ -44,6 +50,8 @@ export function ExpenseQuickAdd({
     if (categoryId && categories.some((c) => c.id === categoryId)) return categoryId
     return categories[0]?.id ?? ''
   }, [categories, categoryId])
+
+  const activeCategory = categories.find((c) => c.id === activeCategoryId)
 
   const submit = () => {
     const value = Number(amount.replace(/,/g, ''))
@@ -158,7 +166,10 @@ export function ExpenseQuickAdd({
               <button
                 key={cat.id}
                 type="button"
-                onClick={() => setCategoryId(cat.id)}
+                onClick={() => {
+                  setCategoryId(cat.id)
+                  setEditingId(null)
+                }}
                 className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[12px] font-medium transition-colors ${
                   selected ? 'text-white shadow-sm' : 'bg-[#F5F5F7] text-[#48484A]'
                 }`}
@@ -173,6 +184,72 @@ export function ExpenseQuickAdd({
             )
           })}
         </div>
+        {activeCategory && editingId === activeCategory.id ? (
+          <div className="mt-2 flex gap-2">
+            <input
+              type="text"
+              value={editingName}
+              autoFocus
+              onChange={(e) => setEditingName(e.target.value)}
+              className="min-w-0 flex-1 rounded-lg border border-hairline bg-[#FAFAFA] px-3 py-2 text-[13px] outline-none focus:border-[#8B5A2B]/40"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  onRenameCategory(activeCategory.id, editingName)
+                  setEditingId(null)
+                }
+                if (e.key === 'Escape') setEditingId(null)
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                onRenameCategory(activeCategory.id, editingName)
+                setEditingId(null)
+              }}
+              className="rounded-lg bg-[#8B5A2B] px-3 py-2 text-[12px] font-semibold text-white"
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditingId(null)}
+              className="rounded-lg bg-[#F2F2F7] px-2.5 py-2 text-muted"
+              aria-label="Cancel"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        ) : activeCategory ? (
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setEditingId(activeCategory.id)
+                setEditingName(activeCategory.name)
+                setShowNewCat(false)
+              }}
+              className="inline-flex items-center gap-1 rounded-lg bg-[#F5F5F7] px-2.5 py-1.5 text-[11px] font-medium text-[#48484A] hover:bg-[#EBEBEF]"
+            >
+              <Pencil size={12} /> Rename
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `Delete “${activeCategory.name}”? Past logs keep amounts but lose this label.`,
+                  )
+                ) {
+                  onDeleteCategory(activeCategory.id)
+                  setCategoryId('')
+                }
+              }}
+              className="inline-flex items-center gap-1 rounded-lg bg-[#F5F5F7] px-2.5 py-1.5 text-[11px] font-medium text-[#FF3B30] hover:bg-[#FFF1F0]"
+            >
+              <Trash2 size={12} /> Delete
+            </button>
+          </div>
+        ) : null}
         {showNewCat && (
           <div className="mt-2 flex gap-2">
             <input

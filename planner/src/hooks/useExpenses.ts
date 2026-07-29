@@ -32,6 +32,8 @@ export interface ExpenseActions {
   deleteTransaction: (id: string) => void
   setCategoryBudget: (categoryId: string, budget: number | null) => void
   addCategory: (input: { name: string; color: string; kind: MoneyFlow }) => string
+  renameCategory: (categoryId: string, name: string) => void
+  deleteCategory: (categoryId: string) => void
   monthKey: string
   setMonthKey: (year: number, month: number) => void
   monthTransactions: MoneyTransaction[]
@@ -206,6 +208,31 @@ export function useExpenses(): ExpenseActions {
     [persist, store],
   )
 
+  const renameCategory = useCallback(
+    (categoryId: string, name: string) => {
+      const trimmed = name.trim()
+      if (!trimmed) return
+      persist({
+        ...store,
+        categories: store.categories.map((c) =>
+          c.id === categoryId ? { ...c, name: trimmed } : c,
+        ),
+      })
+    },
+    [persist, store],
+  )
+
+  const deleteCategory = useCallback(
+    (categoryId: string) => {
+      persist({
+        ...store,
+        categories: store.categories.filter((c) => c.id !== categoryId),
+        // Keep past transactions; they will show as Unknown if category is gone.
+      })
+    },
+    [persist, store],
+  )
+
   const setMonthKey = useCallback((year: number, month: number) => {
     setViewMonth({ year, month })
   }, [])
@@ -220,6 +247,8 @@ export function useExpenses(): ExpenseActions {
     deleteTransaction,
     setCategoryBudget,
     addCategory,
+    renameCategory,
+    deleteCategory,
     monthKey: monthPrefix.slice(0, 7),
     setMonthKey,
     monthTransactions,

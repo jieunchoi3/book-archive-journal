@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, Trash2, Wallet } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Pencil, Trash2, Wallet, X } from 'lucide-react'
 import { useExpenses } from '../hooks/useExpenses'
 import { formatMoney } from '../types/expense'
 import { formatMonthYear, getTodayKey } from '../lib/weekUtils'
@@ -16,6 +16,8 @@ export function ExpenseView() {
     deleteTransaction,
     setCategoryBudget,
     addCategory,
+    renameCategory,
+    deleteCategory,
     setMonthKey,
     monthTransactions,
     spentByCategory,
@@ -30,6 +32,8 @@ export function ExpenseView() {
 
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(getTodayKey())
   const [budgetDrafts, setBudgetDrafts] = useState<Record<string, string>>({})
+  const [editingCatId, setEditingCatId] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState('')
 
   const pieSlices = useMemo(
     () =>
@@ -132,6 +136,8 @@ export function ExpenseView() {
             defaultDateKey={selectedDateKey ?? getTodayKey()}
             onAdd={addTransaction}
             onAddCategory={addCategory}
+            onRenameCategory={renameCategory}
+            onDeleteCategory={deleteCategory}
           />
 
           <div className="space-y-4">
@@ -166,14 +172,81 @@ export function ExpenseView() {
                         }`}
                       >
                         <div className="mb-1.5 flex items-center justify-between gap-2">
-                          <div className="flex min-w-0 items-center gap-2">
+                          <div className="flex min-w-0 flex-1 items-center gap-2">
                             <span
                               className="h-2.5 w-2.5 shrink-0 rounded-full"
                               style={{ backgroundColor: cat.color }}
                             />
-                            <span className="truncate text-[13px] font-medium text-[#1C1C1E]">
-                              {cat.name}
-                            </span>
+                            {editingCatId === cat.id ? (
+                              <div className="flex min-w-0 flex-1 items-center gap-1">
+                                <input
+                                  type="text"
+                                  value={editingName}
+                                  autoFocus
+                                  onChange={(e) => setEditingName(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      renameCategory(cat.id, editingName)
+                                      setEditingCatId(null)
+                                    }
+                                    if (e.key === 'Escape') setEditingCatId(null)
+                                  }}
+                                  className="min-w-0 flex-1 rounded-md border border-hairline bg-white px-2 py-1 text-[13px] font-medium outline-none focus:border-[#8B5A2B]/40"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    renameCategory(cat.id, editingName)
+                                    setEditingCatId(null)
+                                  }}
+                                  className="rounded-md p-1 text-[#3D7A5A] hover:bg-white"
+                                  aria-label="Save name"
+                                >
+                                  <Check size={14} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingCatId(null)}
+                                  className="rounded-md p-1 text-muted hover:bg-white"
+                                  aria-label="Cancel"
+                                >
+                                  <X size={14} />
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <span className="min-w-0 truncate text-[13px] font-medium text-[#1C1C1E]">
+                                  {cat.name}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingCatId(cat.id)
+                                    setEditingName(cat.name)
+                                  }}
+                                  className="rounded-md p-1 text-muted hover:bg-white hover:text-[#8B5A2B]"
+                                  aria-label={`Rename ${cat.name}`}
+                                >
+                                  <Pencil size={12} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (
+                                      window.confirm(
+                                        `Delete category “${cat.name}”? Past logs keep their amounts but lose this label.`,
+                                      )
+                                    ) {
+                                      deleteCategory(cat.id)
+                                    }
+                                  }}
+                                  className="rounded-md p-1 text-muted hover:bg-white hover:text-[#FF3B30]"
+                                  aria-label={`Delete ${cat.name}`}
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </>
+                            )}
                           </div>
                           <span className="shrink-0 text-[13px] font-semibold tabular-nums text-[#1C1C1E]">
                             {formatMoney(spent)}
