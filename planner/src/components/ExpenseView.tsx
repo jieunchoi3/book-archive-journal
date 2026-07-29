@@ -5,6 +5,7 @@ import { formatMoney } from '../types/expense'
 import { formatMonthYear, getTodayKey } from '../lib/weekUtils'
 import { ExpenseQuickAdd } from './ExpenseQuickAdd'
 import { ExpensePieChart } from './ExpensePieChart'
+import { ExpenseReport } from './ExpenseReport'
 
 export function ExpenseView() {
   const expenses = useExpenses()
@@ -12,6 +13,7 @@ export function ExpenseView() {
     loading,
     expenseCategories,
     incomeCategories,
+    transactions,
     addTransaction,
     deleteTransaction,
     setCategoryBudget,
@@ -315,6 +317,14 @@ export function ExpenseView() {
               <span className="font-semibold">Show spending</span> to see brown heat on your days
               (with photos).
             </div>
+
+            <ExpenseReport
+              year={year}
+              month={month}
+              expenseCategories={expenseCategories}
+              transactions={transactions}
+              monthOutTotal={monthOutTotal}
+            />
 
             <div className="rounded-2xl border border-hairline bg-white p-4 shadow-sm sm:p-5">
               <h2 className="mb-3 text-[16px] font-semibold text-[#1C1C1E]">
