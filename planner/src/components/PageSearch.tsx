@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Search, X } from 'lucide-react'
 import { rankByFuzzy } from '../lib/fuzzyMatch'
 
@@ -15,7 +15,7 @@ interface PageSearchProps {
   placeholder?: string
   suggestions: SearchSuggestion[]
   onSelect: (suggestion: SearchSuggestion) => void
-  /** Accent for the open search field focus ring / icon. */
+  /** Accent colour for the search icon. */
   accentClassName?: string
   emptyLabel?: string
   maxResults?: number
@@ -25,13 +25,13 @@ export function PageSearch({
   placeholder = 'Search…',
   suggestions,
   onSelect,
-  accentClassName = 'text-[#007AFF] focus:ring-[#007AFF]/25',
+  accentClassName = 'text-[#007AFF]',
   emptyLabel = 'No matches',
   maxResults = 8,
 }: PageSearchProps) {
-  const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
+  const [focused, setFocused] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const listId = useId()
@@ -45,21 +45,24 @@ export function PageSearch({
     ).map((r) => r.item)
   }, [query, suggestions, maxResults])
 
+  const showDropdown = focused && query.trim().length > 0
+
   useEffect(() => {
     setActiveIndex(0)
   }, [query, results.length])
 
   useEffect(() => {
-    if (!open) return
+    if (!showDropdown) return
     const onPointerDown = (e: MouseEvent) => {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false)
+        setFocused(false)
       }
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setOpen(false)
         setQuery('')
+        setFocused(false)
+        inputRef.current?.blur()
       }
     }
     document.addEventListener('mousedown', onPointerDown)
@@ -68,51 +71,38 @@ export function PageSearch({
       document.removeEventListener('mousedown', onPointerDown)
       document.removeEventListener('keydown', onKey)
     }
-  }, [open])
-
-  useEffect(() => {
-    if (open) inputRef.current?.focus()
-  }, [open])
+  }, [showDropdown])
 
   const pick = (suggestion: SearchSuggestion) => {
     onSelect(suggestion)
     setQuery('')
-    setOpen(false)
-  }
-
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1.5 rounded-full bg-[#F2F2F7] px-3 py-1.5 text-[12px] font-medium text-[#48484A] transition-colors hover:bg-[#E5E5EA]"
-        aria-label="Search"
-      >
-        <Search size={14} />
-        Search
-      </button>
-    )
+    setFocused(false)
+    inputRef.current?.blur()
   }
 
   return (
-    <div ref={rootRef} className="relative z-30 w-full min-w-[220px] max-w-sm sm:w-72">
-      <div className="flex items-center gap-1 rounded-xl border border-hairline bg-white px-2 shadow-sm focus-within:ring-2 focus-within:ring-[#007AFF]/20">
-        <Search size={15} className={`shrink-0 ${accentClassName.split(' ')[0] ?? 'text-[#007AFF]'}`} />
+    <div ref={rootRef} className="relative z-30 w-full">
+      <div className="flex items-center gap-2 rounded-xl border border-hairline bg-white px-3 shadow-sm focus-within:border-[#007AFF]/40 focus-within:ring-2 focus-within:ring-[#007AFF]/15">
+        <Search size={16} className={`shrink-0 ${accentClassName}`} aria-hidden />
         <input
           ref={inputRef}
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onFocus={() => setFocused(true)}
           placeholder={placeholder}
-          className="min-w-0 flex-1 bg-transparent py-2 text-[13px] text-[#1C1C1E] outline-none placeholder:text-muted"
+          className="min-w-0 flex-1 bg-transparent py-2.5 text-[14px] text-[#1C1C1E] outline-none placeholder:text-muted"
           role="combobox"
-          aria-expanded={query.trim().length > 0}
+          aria-expanded={showDropdown}
           aria-controls={listId}
           aria-autocomplete="list"
           aria-activedescendant={
-            results[activeIndex] ? `${listId}-${results[activeIndex].id}` : undefined
+            showDropdown && results[activeIndex]
+              ? `${listId}-${results[activeIndex].id}`
+              : undefined
           }
           onKeyDown={(e) => {
+            if (!showDropdown) return
             if (e.key === 'ArrowDown') {
               e.preventDefault()
               setActiveIndex((i) => Math.min(i + 1, Math.max(results.length - 1, 0)))
@@ -125,24 +115,26 @@ export function PageSearch({
             }
           }}
         />
-        <button
-          type="button"
-          onClick={() => {
-            if (query) setQuery('')
-            else setOpen(false)
-          }}
-          className="rounded-md p-1 text-muted hover:bg-[#F2F2F7]"
-          aria-label={query ? 'Clear search' : 'Close search'}
-        >
-          <X size={14} />
-        </button>
+        {query ? (
+          <button
+            type="button"
+            onClick={() => {
+              setQuery('')
+              inputRef.current?.focus()
+            }}
+            className="rounded-md p-1 text-muted hover:bg-[#F2F2F7]"
+            aria-label="Clear search"
+          >
+            <X size={15} />
+          </button>
+        ) : null}
       </div>
 
-      {query.trim() && (
+      {showDropdown && (
         <ul
           id={listId}
           role="listbox"
-          className="absolute left-0 right-0 top-full z-40 mt-1 max-h-72 overflow-auto rounded-xl border border-hairline bg-white py-1 shadow-xl"
+          className="absolute left-0 right-0 top-full z-40 mt-1.5 max-h-72 overflow-auto rounded-xl border border-hairline bg-white py-1 shadow-xl"
         >
           {results.length === 0 ? (
             <li className="px-3 py-2.5 text-[12px] text-muted">{emptyLabel}</li>
@@ -154,7 +146,7 @@ export function PageSearch({
                   id={`${listId}-${item.id}`}
                   onMouseEnter={() => setActiveIndex(index)}
                   onClick={() => pick(item)}
-                  className={`flex w-full flex-col gap-0.5 px-3 py-2 text-left transition-colors ${
+                  className={`flex w-full flex-col gap-0.5 px-3 py-2.5 text-left transition-colors ${
                     index === activeIndex ? 'bg-[#007AFF]/10' : 'hover:bg-[#F5F5F7]'
                   }`}
                 >
@@ -177,9 +169,4 @@ export function PageSearch({
       )}
     </div>
   )
-}
-
-/** Small helper for pages that want an inline hint under the control. */
-export function SearchHint({ children }: { children: ReactNode }) {
-  return <p className="mt-1 text-[10px] text-muted">{children}</p>
 }

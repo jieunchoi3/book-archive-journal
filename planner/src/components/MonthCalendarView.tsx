@@ -324,21 +324,6 @@ export function MonthCalendarView({
             <h1 className="text-[22px] font-semibold tracking-tight text-[#1C1C1E]">Events</h1>
             <p className="text-[13px] text-muted">Monthly overview of your events</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <PageSearch
-              placeholder="Search events, categories, tags…"
-              suggestions={searchSuggestions}
-              onSelect={(s) => {
-                const item = items.items.find((i) => i.id === s.id)
-                if (!item) return
-                setEditingId(item.id)
-                if (item.dueDate) {
-                  const d = parseDateKey(item.dueDate)
-                  setViewMonth({ year: d.getFullYear(), month: d.getMonth() })
-                  setSelectedDateKey(item.dueDate)
-                }
-              }}
-            />
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -369,8 +354,24 @@ export function MonthCalendarView({
               </button>
             )}
           </div>
-          </div>
         </header>
+
+        <div className="mb-3">
+          <PageSearch
+            placeholder="Search events, categories, tags…"
+            suggestions={searchSuggestions}
+            onSelect={(s) => {
+              const item = items.items.find((i) => i.id === s.id)
+              if (!item) return
+              setEditingId(item.id)
+              if (item.dueDate) {
+                const d = parseDateKey(item.dueDate)
+                setViewMonth({ year: d.getFullYear(), month: d.getMonth() })
+                setSelectedDateKey(item.dueDate)
+              }
+            }}
+          />
+        </div>
 
         {items.categories.length > 0 && (
           <div className="mb-3 flex flex-wrap items-center gap-2">

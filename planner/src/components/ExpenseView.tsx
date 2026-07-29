@@ -124,36 +124,6 @@ export function ExpenseView() {
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <PageSearch
-              placeholder="Search notes, categories, amounts…"
-              suggestions={searchSuggestions}
-              accentClassName="text-[#8B5A2B]"
-              onSelect={(s) => {
-                if (s.id.startsWith('txn:')) {
-                  const id = s.id.slice(4)
-                  const txn = transactions.find((t) => t.id === id)
-                  if (!txn) return
-                  const d = parseDateKey(txn.dateKey)
-                  setMonthKey(d.getFullYear(), d.getMonth())
-                  setSelectedDateKey(txn.dateKey)
-                  return
-                }
-                if (s.id.startsWith('cat:')) {
-                  const id = s.id.slice(4)
-                  const cat = catById.get(id)
-                  if (!cat) return
-                  const hit = [...transactions]
-                    .filter((t) => t.categoryId === id)
-                    .sort((a, b) => b.dateKey.localeCompare(a.dateKey))[0]
-                  if (hit) {
-                    const d = parseDateKey(hit.dateKey)
-                    setMonthKey(d.getFullYear(), d.getMonth())
-                    setSelectedDateKey(hit.dateKey)
-                  }
-                }
-              }}
-            />
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -182,8 +152,39 @@ export function ExpenseView() {
               Today
             </button>
           </div>
-          </div>
         </header>
+
+        <div className="mb-4">
+          <PageSearch
+            placeholder="Search notes, categories, amounts…"
+            suggestions={searchSuggestions}
+            accentClassName="text-[#8B5A2B]"
+            onSelect={(s) => {
+              if (s.id.startsWith('txn:')) {
+                const id = s.id.slice(4)
+                const txn = transactions.find((t) => t.id === id)
+                if (!txn) return
+                const d = parseDateKey(txn.dateKey)
+                setMonthKey(d.getFullYear(), d.getMonth())
+                setSelectedDateKey(txn.dateKey)
+                return
+              }
+              if (s.id.startsWith('cat:')) {
+                const id = s.id.slice(4)
+                const cat = catById.get(id)
+                if (!cat) return
+                const hit = [...transactions]
+                  .filter((t) => t.categoryId === id)
+                  .sort((a, b) => b.dateKey.localeCompare(a.dateKey))[0]
+                if (hit) {
+                  const d = parseDateKey(hit.dateKey)
+                  setMonthKey(d.getFullYear(), d.getMonth())
+                  setSelectedDateKey(hit.dateKey)
+                }
+              }
+            }}
+          />
+        </div>
 
         <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
           <StatCard label="Spent" value={formatMoney(monthOutTotal)} tone="out" />

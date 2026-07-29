@@ -141,16 +141,6 @@ export function DiaryView() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <PageSearch
-              placeholder="Search diary titles & notes…"
-              suggestions={searchSuggestions}
-              accentClassName="text-[#FF2D55]"
-              onSelect={(s) => {
-                const d = parseDateKey(s.id)
-                setViewMonth(d.getFullYear(), d.getMonth())
-                setSelectedDateKey(s.id)
-              }}
-            />
             <button
               type="button"
               onClick={() => setShowSpending((v) => !v)}
@@ -196,6 +186,19 @@ export function DiaryView() {
             </div>
           </div>
         </header>
+
+        <div className="mb-4">
+          <PageSearch
+            placeholder="Search diary titles & notes…"
+            suggestions={searchSuggestions}
+            accentClassName="text-[#FF2D55]"
+            onSelect={(s) => {
+              const d = parseDateKey(s.id)
+              setViewMonth(d.getFullYear(), d.getMonth())
+              setSelectedDateKey(s.id)
+            }}
+          />
+        </div>
 
         {showSpending && (
           <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px] text-muted">
@@ -358,8 +361,14 @@ export function DiaryView() {
         <DiaryDayEditor
           dateKey={selectedDateKey}
           entry={selectedEntry}
+          getEntry={getEntry}
           onChange={(patch) => {
             void upsertEntry(selectedDateKey, patch)
+          }}
+          onNavigateDate={(nextKey) => {
+            const d = parseDateKey(nextKey)
+            setViewMonth(d.getFullYear(), d.getMonth())
+            setSelectedDateKey(nextKey)
           }}
           onClose={() => setSelectedDateKey(null)}
         />

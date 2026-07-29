@@ -213,15 +213,6 @@ export function WeekView({ template, weekStart, planner, items, linkedApps }: We
               }}
             />
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <PageSearch
-              placeholder="Search blocks, tasks, events…"
-              suggestions={searchSuggestions}
-              onSelect={(s) => {
-                const dayKey = s.id.split(':')[1] as DayKey | undefined
-                if (dayKey) setFocusedDayKey(dayKey)
-              }}
-            />
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -249,8 +240,18 @@ export function WeekView({ template, weekStart, planner, items, linkedApps }: We
               <ChevronRight size={18} />
             </button>
           </div>
-          </div>
         </header>
+
+        <div className="mb-4">
+          <PageSearch
+            placeholder="Search blocks, tasks, events…"
+            suggestions={searchSuggestions}
+            onSelect={(s) => {
+              const dayKey = s.id.split(':')[1] as DayKey | undefined
+              if (dayKey) setFocusedDayKey(dayKey)
+            }}
+          />
+        </div>
 
         <div className="relative min-h-[320px]">
           <div
