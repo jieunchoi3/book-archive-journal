@@ -307,7 +307,9 @@ export function MonthCalendarView({
         title: item.title,
         subtitle: [cat?.name, item.time, ...tagNames].filter(Boolean).join(' · ') || 'Event',
         meta: when,
-        haystack: [cat?.name, item.time, item.dueDate, ...tagNames, 'event'],
+        haystack: [cat?.name, item.time, item.dueDate, ...tagNames, 'event'].filter(
+          (v): v is string => Boolean(v),
+        ),
       }
     })
   }, [items.items, items.categories, items.tags, items.getCategory])

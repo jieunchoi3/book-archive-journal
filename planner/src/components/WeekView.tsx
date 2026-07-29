@@ -188,7 +188,9 @@ export function WeekView({ template, weekStart, planner, items, linkedApps }: We
           title: occ.item.title,
           subtitle: [day.dayName, cat?.name, occ.item.time].filter(Boolean).join(' · '),
           meta: 'Event',
-          haystack: [cat?.name, occ.item.time, day.dayName],
+          haystack: [cat?.name, occ.item.time, day.dayName].filter(
+            (v): v is string => Boolean(v),
+          ),
         })
       }
     }

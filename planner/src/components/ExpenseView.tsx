@@ -94,7 +94,7 @@ export function ExpenseView() {
           t.flow === 'in' ? 'income' : 'expense',
           String(t.amount),
           t.dateKey,
-        ],
+        ].filter((v): v is string => Boolean(v)),
       }
     })
     const catSuggestions = [...expenseCategories, ...incomeCategories].map((c) => ({
