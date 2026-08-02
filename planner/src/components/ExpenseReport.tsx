@@ -171,30 +171,22 @@ export function ExpenseReport({
   const maxWeek = Math.max(1, ...weekBuckets.map((w) => w.amount))
 
   return (
-    <div className="rounded-2xl border border-hairline bg-white p-4 shadow-sm sm:p-5">
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-[16px] font-semibold text-[#1C1C1E]">Report</h2>
-          <p className="text-[12px] text-muted">
-            Filter categories and compare spending across the month
-          </p>
-        </div>
-        <div className="flex gap-2 text-[11px]">
-          <button
-            type="button"
-            onClick={selectAll}
-            className="rounded-lg px-2.5 py-1 font-medium text-[#8B5A2B] hover:bg-[#F3E5D8]"
-          >
-            All
-          </button>
-          <button
-            type="button"
-            onClick={clearAll}
-            className="rounded-lg px-2.5 py-1 font-medium text-muted hover:bg-[#F2F2F7]"
-          >
-            Clear
-          </button>
-        </div>
+    <>
+      <div className="mb-4 flex flex-wrap items-center justify-end gap-2 text-[11px]">
+        <button
+          type="button"
+          onClick={selectAll}
+          className="rounded-lg px-2.5 py-1 font-medium text-[#8B5A2B] hover:bg-[#F3E5D8]"
+        >
+          All
+        </button>
+        <button
+          type="button"
+          onClick={clearAll}
+          className="rounded-lg px-2.5 py-1 font-medium text-muted hover:bg-[#F2F2F7]"
+        >
+          Clear
+        </button>
       </div>
 
       <div className="mb-4 flex flex-wrap gap-1.5">
@@ -345,7 +337,7 @@ export function ExpenseReport({
           </ul>
         )}
       </div>
-    </div>
+    </>
   )
 }
 

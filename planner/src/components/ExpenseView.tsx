@@ -37,6 +37,7 @@ export function ExpenseView() {
   const [budgetDrafts, setBudgetDrafts] = useState<Record<string, string>>({})
   const [editingCatId, setEditingCatId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
+  const [overviewPanel, setOverviewPanel] = useState<'category' | 'report'>('category')
 
   const pieSlices = useMemo(
     () =>
@@ -210,17 +211,43 @@ export function ExpenseView() {
 
           <div className="space-y-4">
             <div className="rounded-2xl border border-hairline bg-white p-4 shadow-sm sm:p-5">
-              <h2 className="mb-1 text-[16px] font-semibold text-[#1C1C1E]">
-                Spending by category
-              </h2>
-              <p className="mb-4 text-[12px] text-muted">
-                This month’s expenses — set a budget to spot overspend
-              </p>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="inline-flex rounded-full bg-[#F2F2F7] p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setOverviewPanel('category')}
+                    className={`rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors ${
+                      overviewPanel === 'category'
+                        ? 'bg-white text-[#1C1C1E] shadow-sm'
+                        : 'text-muted hover:text-[#48484A]'
+                    }`}
+                  >
+                    By category
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOverviewPanel('report')}
+                    className={`rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors ${
+                      overviewPanel === 'report'
+                        ? 'bg-white text-[#1C1C1E] shadow-sm'
+                        : 'text-muted hover:text-[#48484A]'
+                    }`}
+                  >
+                    Report
+                  </button>
+                </div>
+              </div>
 
-              <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-start">
-                <ExpensePieChart slices={pieSlices} size={200} />
-                <div className="min-w-0 flex-1 space-y-2">
-                  {expenseCategories.map((cat) => {
+              {overviewPanel === 'category' ? (
+                <>
+                  <p className="mb-4 text-[12px] text-muted">
+                    This month’s expenses — set a budget to spot overspend
+                  </p>
+
+                  <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-start">
+                    <ExpensePieChart slices={pieSlices} size={200} />
+                    <div className="min-w-0 flex-1 space-y-2">
+                      {expenseCategories.map((cat) => {
                     const spent = spentByCategory[cat.id] ?? 0
                     const budget = cat.budget
                     const over = budget != null && budget > 0 && spent > budget
@@ -369,11 +396,26 @@ export function ExpenseView() {
                       </div>
                     )
                   })}
-                  {expenseCategories.length === 0 && (
-                    <p className="text-[12px] text-muted">No expense categories yet.</p>
-                  )}
-                </div>
-              </div>
+                      {expenseCategories.length === 0 && (
+                        <p className="text-[12px] text-muted">No expense categories yet.</p>
+                      )}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="mb-4 text-[12px] text-muted">
+                    Filter categories and compare spending across the month
+                  </p>
+                  <ExpenseReport
+                    year={year}
+                    month={month}
+                    expenseCategories={expenseCategories}
+                    transactions={transactions}
+                    monthOutTotal={monthOutTotal}
+                  />
+                </>
+              )}
             </div>
 
             <div className="rounded-2xl border border-[#EAD7C4] bg-[#FBF7F2] px-4 py-3 text-[12px] text-[#5C4033]">
@@ -383,14 +425,6 @@ export function ExpenseView() {
               <span className="font-semibold">Show spending</span> to see brown heat on your days
               (with photos).
             </div>
-
-            <ExpenseReport
-              year={year}
-              month={month}
-              expenseCategories={expenseCategories}
-              transactions={transactions}
-              monthOutTotal={monthOutTotal}
-            />
 
             <div className="rounded-2xl border border-hairline bg-white p-4 shadow-sm sm:p-5">
               <h2 className="mb-3 text-[16px] font-semibold text-[#1C1C1E]">

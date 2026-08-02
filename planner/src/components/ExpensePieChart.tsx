@@ -11,16 +11,25 @@ interface ExpensePieChartProps {
   emptyLabel?: string
 }
 
-function polar(cx: number, cy: number, r: number, angle: number) {
-  const rad = ((angle - 90) * Math.PI) / 180
+function polar(cx: number, cy: number, r: number, angleDeg: number) {
+  const rad = ((angleDeg - 90) * Math.PI) / 180
   return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) }
 }
 
-function arcPath(cx: number, cy: number, r: number, start: number, end: number) {
-  const s = polar(cx, cy, r, end)
-  const e = polar(cx, cy, r, start)
-  const large = end - start > 180 ? 1 : 0
-  return `M ${cx} ${cy} L ${e.x} ${e.y} A ${r} ${r} 0 ${large} 0 ${s.x} ${s.y} Z`
+function slicePath(cx: number, cy: number, r: number, startAngle: number, endAngle: number) {
+  const start = polar(cx, cy, r, startAngle)
+  const end = polar(cx, cy, r, endAngle)
+  const sweep = endAngle - startAngle
+  if (sweep >= 359.99) {
+    return null
+  }
+  const largeArc = sweep > 180 ? 1 : 0
+  return [
+    `M ${cx} ${cy}`,
+    `L ${start.x} ${start.y}`,
+    `A ${r} ${r} 0 ${largeArc} 1 ${end.x} ${end.y}`,
+    'Z',
+  ].join(' ')
 }
 
 export function ExpensePieChart({
@@ -28,10 +37,12 @@ export function ExpensePieChart({
   size = 200,
   emptyLabel = 'No spending yet this month',
 }: ExpensePieChartProps) {
-  const total = slices.reduce((a, s) => a + s.value, 0)
+  const active = slices.filter((s) => s.value > 0)
+  const total = active.reduce((a, s) => a + s.value, 0)
   const cx = size / 2
   const cy = size / 2
   const r = size / 2 - 4
+  const holeR = r * 0.52
 
   if (total <= 0) {
     return (
@@ -44,33 +55,56 @@ export function ExpensePieChart({
     )
   }
 
+  if (active.length === 1) {
+    return (
+      <svg
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        className="shrink-0 overflow-visible"
+        role="img"
+        aria-label="Spending breakdown chart"
+      >
+        <circle cx={cx} cy={cy} r={r} fill={active[0]!.color} />
+        <circle cx={cx} cy={cy} r={holeR} fill="white" />
+        <ChartCenter cx={cx} cy={cy} total={total} />
+      </svg>
+    )
+  }
+
   let angle = 0
-  const paths = slices
-    .filter((s) => s.value > 0)
-    .map((slice) => {
-      const sweep = (slice.value / total) * 360
-      const start = angle
-      const end = angle + sweep
-      angle = end
-      // Full circle edge case
-      if (sweep >= 359.9) {
-        return (
-          <circle key={slice.id} cx={cx} cy={cy} r={r} fill={slice.color} />
-        )
-      }
-      return (
-        <path
-          key={slice.id}
-          d={arcPath(cx, cy, r, start, end)}
-          fill={slice.color}
-        />
-      )
-    })
+  const paths = active.map((slice, index) => {
+    const start = angle
+    const isLast = index === active.length - 1
+    const end = isLast ? 360 : angle + (slice.value / total) * 360
+    angle = end
+
+    const d = slicePath(cx, cy, r, start, end)
+    if (!d) {
+      return <circle key={slice.id} cx={cx} cy={cy} r={r} fill={slice.color} />
+    }
+    return <path key={slice.id} d={d} fill={slice.color} />
+  })
 
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      className="shrink-0 overflow-visible"
+      role="img"
+      aria-label="Spending breakdown chart"
+    >
       {paths}
-      <circle cx={cx} cy={cy} r={r * 0.52} fill="white" />
+      <circle cx={cx} cy={cy} r={holeR} fill="white" />
+      <ChartCenter cx={cx} cy={cy} total={total} />
+    </svg>
+  )
+}
+
+function ChartCenter({ cx, cy, total }: { cx: number; cy: number; total: number }) {
+  return (
+    <>
       <text
         x={cx}
         y={cy - 4}
@@ -89,6 +123,6 @@ export function ExpensePieChart({
       >
         {Math.round(total).toLocaleString()}
       </text>
-    </svg>
+    </>
   )
 }
