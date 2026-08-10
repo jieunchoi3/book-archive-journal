@@ -45,7 +45,9 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
   const [budgetDrafts, setBudgetDrafts] = useState<Record<string, string>>({})
   const [editingCatId, setEditingCatId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
-  const [overviewPanel, setOverviewPanel] = useState<'category' | 'report'>('category')
+  const [overviewPanel, setOverviewPanel] = useState<'category' | 'report' | 'log'>(
+    'category',
+  )
   const [highlightedCategoryId, setHighlightedCategoryId] = useState<string | null>(null)
   /** null = all categories selected for the month log. */
   const [logFilterIds, setLogFilterIds] = useState<Set<string> | null>(null)
@@ -285,29 +287,27 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
           <div className="space-y-4">
             <div className="rounded-2xl border border-hairline bg-white p-4 shadow-sm sm:p-5">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <div className="inline-flex rounded-full bg-[#F2F2F7] p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setOverviewPanel('category')}
-                    className={`rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors ${
-                      overviewPanel === 'category'
-                        ? 'bg-white text-[#1C1C1E] shadow-sm'
-                        : 'text-muted hover:text-[#48484A]'
-                    }`}
-                  >
-                    By category
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setOverviewPanel('report')}
-                    className={`rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors ${
-                      overviewPanel === 'report'
-                        ? 'bg-white text-[#1C1C1E] shadow-sm'
-                        : 'text-muted hover:text-[#48484A]'
-                    }`}
-                  >
-                    Report
-                  </button>
+                <div className="inline-flex max-w-full flex-wrap rounded-full bg-[#F2F2F7] p-0.5">
+                  {(
+                    [
+                      ['category', 'By category'],
+                      ['report', 'Report'],
+                      ['log', 'This month’s log'],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setOverviewPanel(id)}
+                      className={`rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors ${
+                        overviewPanel === id
+                          ? 'bg-white text-[#1C1C1E] shadow-sm'
+                          : 'text-muted hover:text-[#48484A]'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -487,7 +487,7 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
                     </div>
                   </div>
                 </>
-              ) : (
+              ) : overviewPanel === 'report' ? (
                 <>
                   <p className="mb-4 text-[12px] text-muted">
                     Filter categories and compare spending across the month
@@ -500,6 +500,112 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
                     monthOutTotal={monthOutTotal}
                   />
                 </>
+              ) : (
+                <>
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-[12px] text-muted">
+                      Day-by-day log — filter by category
+                    </p>
+                    <div className="flex items-center gap-1 text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() => setLogFilterIds(null)}
+                        className="rounded-lg px-2.5 py-1 font-medium text-[#8B5A2B] hover:bg-[#F3E5D8]"
+                      >
+                        All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLogFilterIds(new Set())}
+                        className="rounded-lg px-2.5 py-1 font-medium text-muted hover:bg-[#F2F2F7]"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mb-4 flex flex-wrap gap-1.5">
+                    {logFilterCategories.map((cat) => {
+                      const on = activeLogFilterIds.has(cat.id)
+                      return (
+                        <CategoryFilterPill
+                          key={cat.id}
+                          category={cat}
+                          active={on}
+                          onClick={() => toggleLogFilter(cat.id)}
+                        />
+                      )
+                    })}
+                  </div>
+
+                  {loading && <p className="text-[12px] text-muted">Loading…</p>}
+                  {!loading && monthTransactions.length === 0 && (
+                    <p className="text-[12px] text-muted">No transactions this month yet.</p>
+                  )}
+                  {!loading && monthTransactions.length > 0 && logDays.length === 0 && (
+                    <p className="text-[12px] text-muted">No logs in the selected filters.</p>
+                  )}
+
+                  <div className="max-h-[28rem] space-y-4 overflow-y-auto">
+                    {logDays.map(({ dateKey, transactions: dayTxns, dayOut, dayIn }) => (
+                      <section key={dateKey}>
+                        <div className="sticky top-0 z-10 mb-1.5 flex items-baseline justify-between gap-2 bg-white/95 py-1 backdrop-blur-sm">
+                          <h3 className="text-[12px] font-semibold text-[#1C1C1E]">
+                            {formatLogDayHeading(dateKey)}
+                          </h3>
+                          <p className="text-[11px] tabular-nums text-muted">
+                            {dayOut > 0 && (
+                              <span className="text-[#8B5A2B]">−{formatMoney(dayOut)}</span>
+                            )}
+                            {dayOut > 0 && dayIn > 0 && <span className="mx-1">·</span>}
+                            {dayIn > 0 && (
+                              <span className="text-[#3D7A5A]">+{formatMoney(dayIn)}</span>
+                            )}
+                          </p>
+                        </div>
+                        <ul className="divide-y divide-hairline rounded-xl bg-[#FAFAFA] px-3">
+                          {dayTxns.map((t) => {
+                            const cat = catById.get(t.categoryId)
+                            return (
+                              <li key={t.id} className="flex items-center gap-3 py-2.5">
+                                <span
+                                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                                  style={{ backgroundColor: cat?.color ?? '#8E8E93' }}
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-[13px] font-medium text-[#1C1C1E]">
+                                    <span style={{ color: cat?.color ?? undefined }}>
+                                      {cat?.name ?? 'Unknown'}
+                                    </span>
+                                    {t.note ? (
+                                      <span className="font-normal text-muted"> · {t.note}</span>
+                                    ) : null}
+                                  </p>
+                                </div>
+                                <span
+                                  className={`shrink-0 text-[13px] font-semibold tabular-nums ${
+                                    t.flow === 'in' ? 'text-[#3D7A5A]' : 'text-[#8B5A2B]'
+                                  }`}
+                                >
+                                  {t.flow === 'in' ? '+' : '−'}
+                                  {formatMoney(t.amount)}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteTransaction(t.id)}
+                                  className="rounded-md p-1.5 text-muted hover:bg-white hover:text-[#FF3B30]"
+                                  aria-label="Delete"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      </section>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
 
@@ -509,112 +615,6 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
               open <span className="font-semibold">Diary</span> and turn on{' '}
               <span className="font-semibold">Show spending</span> to see brown heat on your days
               (with photos).
-            </div>
-
-            <div className="rounded-2xl border border-hairline bg-white p-4 shadow-sm sm:p-5">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-[16px] font-semibold text-[#1C1C1E]">
-                  This month’s log
-                </h2>
-                <div className="flex items-center gap-1 text-[11px]">
-                  <button
-                    type="button"
-                    onClick={() => setLogFilterIds(null)}
-                    className="rounded-lg px-2.5 py-1 font-medium text-[#8B5A2B] hover:bg-[#F3E5D8]"
-                  >
-                    All
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setLogFilterIds(new Set())}
-                    className="rounded-lg px-2.5 py-1 font-medium text-muted hover:bg-[#F2F2F7]"
-                  >
-                    Clear
-                  </button>
-                </div>
-              </div>
-
-              <div className="mb-4 flex flex-wrap gap-1.5">
-                {logFilterCategories.map((cat) => {
-                  const on = activeLogFilterIds.has(cat.id)
-                  return (
-                    <CategoryFilterPill
-                      key={cat.id}
-                      category={cat}
-                      active={on}
-                      onClick={() => toggleLogFilter(cat.id)}
-                    />
-                  )
-                })}
-              </div>
-
-              {loading && <p className="text-[12px] text-muted">Loading…</p>}
-              {!loading && monthTransactions.length === 0 && (
-                <p className="text-[12px] text-muted">No transactions this month yet.</p>
-              )}
-              {!loading && monthTransactions.length > 0 && logDays.length === 0 && (
-                <p className="text-[12px] text-muted">No logs in the selected filters.</p>
-              )}
-
-              <div className="max-h-[28rem] space-y-4 overflow-y-auto">
-                {logDays.map(({ dateKey, transactions: dayTxns, dayOut, dayIn }) => (
-                  <section key={dateKey}>
-                    <div className="sticky top-0 z-10 mb-1.5 flex items-baseline justify-between gap-2 bg-white/95 py-1 backdrop-blur-sm">
-                      <h3 className="text-[12px] font-semibold text-[#1C1C1E]">
-                        {formatLogDayHeading(dateKey)}
-                      </h3>
-                      <p className="text-[11px] tabular-nums text-muted">
-                        {dayOut > 0 && (
-                          <span className="text-[#8B5A2B]">−{formatMoney(dayOut)}</span>
-                        )}
-                        {dayOut > 0 && dayIn > 0 && <span className="mx-1">·</span>}
-                        {dayIn > 0 && (
-                          <span className="text-[#3D7A5A]">+{formatMoney(dayIn)}</span>
-                        )}
-                      </p>
-                    </div>
-                    <ul className="divide-y divide-hairline rounded-xl bg-[#FAFAFA] px-3">
-                      {dayTxns.map((t) => {
-                        const cat = catById.get(t.categoryId)
-                        return (
-                          <li key={t.id} className="flex items-center gap-3 py-2.5">
-                            <span
-                              className="h-2.5 w-2.5 shrink-0 rounded-full"
-                              style={{ backgroundColor: cat?.color ?? '#8E8E93' }}
-                            />
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-[13px] font-medium text-[#1C1C1E]">
-                                <span style={{ color: cat?.color ?? undefined }}>
-                                  {cat?.name ?? 'Unknown'}
-                                </span>
-                                {t.note ? (
-                                  <span className="font-normal text-muted"> · {t.note}</span>
-                                ) : null}
-                              </p>
-                            </div>
-                            <span
-                              className={`shrink-0 text-[13px] font-semibold tabular-nums ${
-                                t.flow === 'in' ? 'text-[#3D7A5A]' : 'text-[#8B5A2B]'
-                              }`}
-                            >
-                              {t.flow === 'in' ? '+' : '−'}
-                              {formatMoney(t.amount)}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => deleteTransaction(t.id)}
-                              className="rounded-md p-1.5 text-muted hover:bg-white hover:text-[#FF3B30]"
-                              aria-label="Delete"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </li>
-                        )
-                      })}
-                    </ul>
-                  </section>
-                ))}
-              </div>
             </div>
           </div>
         </div>
