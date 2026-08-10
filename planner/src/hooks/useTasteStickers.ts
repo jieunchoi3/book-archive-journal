@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { TasteKind, TasteSticker, TasteStore } from '../types/taste'
-import { emptyTasteStore, tasteKindMeta } from '../types/taste'
+import type { TasteCategory, TasteSticker, TasteStore } from '../types/taste'
+import {
+  DEFAULT_TASTE_CATEGORIES,
+  emptyTasteStore,
+  nextCategoryAccent,
+  parseYouTubeId,
+  randomPolaroidStripColor,
+  stripColorFromId,
+  tasteCategoryMeta,
+} from '../types/taste'
 import { loadTasteStore, saveTasteStore } from '../lib/tasteStorage'
 import { generateId, getTodayKey } from '../lib/weekUtils'
 import { useAuth } from './useAuth'
@@ -8,7 +16,7 @@ import { useAuth } from './useAuth'
 export type TasteBrowseMode = 'month' | 'atlas'
 
 export type TasteStickerInput = {
-  kind: TasteKind
+  categoryId: string
   title: string
   subtitle?: string
   note?: string
@@ -20,25 +28,29 @@ export type TasteStickerInput = {
 export type TasteStickerPatch = Partial<
   Pick<
     TasteSticker,
-    'title' | 'subtitle' | 'note' | 'link' | 'kind' | 'dateKey' | 'imageDataUrl'
+    'title' | 'subtitle' | 'note' | 'link' | 'categoryId' | 'dateKey' | 'imageDataUrl'
   >
 >
 
 export interface TasteActions {
   loading: boolean
   stickers: TasteSticker[]
+  categories: TasteCategory[]
   year: number
   month: number
   setViewMonth: (year: number, month: number) => void
   browseMode: TasteBrowseMode
   setBrowseMode: (mode: TasteBrowseMode) => void
-  kindFilter: TasteKind | 'all'
-  setKindFilter: (kind: TasteKind | 'all') => void
+  kindFilter: string | 'all'
+  setKindFilter: (kind: string | 'all') => void
   visibleStickers: TasteSticker[]
   monthCount: number
   addSticker: (input: TasteStickerInput) => TasteSticker | null
   updateSticker: (id: string, patch: TasteStickerPatch) => void
   deleteSticker: (id: string) => void
+  addCategory: (name: string) => TasteCategory | null
+  renameCategory: (id: string, name: string) => void
+  deleteCategory: (id: string) => void
 }
 
 function randomTilt() {
@@ -46,14 +58,53 @@ function randomTilt() {
   return options[Math.floor(Math.random() * options.length)] ?? 2
 }
 
-function normalizeSticker(raw: TasteSticker): TasteSticker {
+type LegacySticker = Omit<TasteSticker, 'stripColor' | 'categoryId'> & {
+  kind?: string
+  categoryId?: string
+  stripColor?: string
+}
+
+function normalizeCategories(raw: TasteCategory[] | undefined): TasteCategory[] {
+  if (!raw || raw.length === 0) {
+    return DEFAULT_TASTE_CATEGORIES.map((c) => ({ ...c }))
+  }
+  return raw.map((c) => ({
+    id: c.id,
+    name: (c.name || 'Untitled').trim() || 'Untitled',
+    accent: c.accent || '#AF52DE',
+    youtube: Boolean(c.youtube) || c.id === 'music' || c.name.trim().toLowerCase() === 'music',
+  }))
+}
+
+function normalizeSticker(raw: LegacySticker, categories: TasteCategory[]): TasteSticker {
+  let categoryId = raw.categoryId || raw.kind || 'other'
+  if (categoryId === 'song') categoryId = 'music'
+  if (!categories.some((c) => c.id === categoryId)) {
+    categoryId = categories[categories.length - 1]?.id ?? 'other'
+  }
+  const meta = tasteCategoryMeta(categories, categoryId)
   return {
-    ...raw,
-    imageDataUrl: raw.imageDataUrl ?? '',
+    id: raw.id,
+    categoryId,
+    title: raw.title ?? '',
     subtitle: raw.subtitle ?? '',
     note: raw.note ?? '',
     link: raw.link ?? '',
+    imageDataUrl: raw.imageDataUrl ?? '',
+    dateKey: raw.dateKey,
+    createdAt: raw.createdAt,
+    tilt: raw.tilt ?? randomTilt(),
+    stripColor: raw.stripColor || stripColorFromId(raw.id),
+    accent: meta.accent,
   }
+}
+
+function normalizeStore(loaded: TasteStore): TasteStore {
+  const categories = normalizeCategories(loaded.categories)
+  const stickers = (loaded.stickers as LegacySticker[])
+    .map((s) => normalizeSticker(s, categories))
+    .filter((s) => s.imageDataUrl || Boolean(parseYouTubeId(s.link)))
+  return { categories, stickers }
 }
 
 export function useTasteStickers(): TasteActions {
@@ -67,7 +118,7 @@ export function useTasteStickers(): TasteActions {
     month: today.getMonth(),
   }))
   const [browseMode, setBrowseMode] = useState<TasteBrowseMode>('month')
-  const [kindFilter, setKindFilter] = useState<TasteKind | 'all'>('all')
+  const [kindFilter, setKindFilter] = useState<string | 'all'>('all')
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -77,14 +128,18 @@ export function useTasteStickers(): TasteActions {
       try {
         const loaded = await loadTasteStore(userId)
         if (cancelled) return
-        const normalized = loaded.stickers.map(normalizeSticker)
-        // Polaroid redesign: drop legacy text-only demo cards (no photo).
-        const stickers = normalized.filter((s) => s.imageDataUrl)
-        const next = { stickers }
+        const next = normalizeStore(loaded)
         setStore(next)
-        if (stickers.length !== normalized.length) {
-          void saveTasteStore(userId, next)
-        }
+        const needsSave =
+          !loaded.categories?.length ||
+          next.stickers.length !== loaded.stickers.length ||
+          (loaded.stickers as LegacySticker[]).some((s) => !s.stripColor || !s.categoryId) ||
+          loaded.stickers.some((s, i) => {
+            const n = next.stickers[i]
+            const legacy = s as LegacySticker
+            return !n || n.categoryId !== (legacy.categoryId || legacy.kind)
+          })
+        if (needsSave) void saveTasteStore(userId, next)
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -121,7 +176,7 @@ export function useTasteStickers(): TasteActions {
       list = list.filter((s) => s.dateKey.startsWith(monthPrefix))
     }
     if (kindFilter !== 'all') {
-      list = list.filter((s) => s.kind === kindFilter)
+      list = list.filter((s) => s.categoryId === kindFilter)
     }
     return [...list].sort(
       (a, b) => b.dateKey.localeCompare(a.dateKey) || b.createdAt.localeCompare(a.createdAt),
@@ -134,12 +189,13 @@ export function useTasteStickers(): TasteActions {
   )
 
   const addSticker: TasteActions['addSticker'] = useCallback(
-    ({ kind, title, subtitle, note, link, dateKey, imageDataUrl }) => {
+    ({ categoryId, title, subtitle, note, link, dateKey, imageDataUrl }) => {
       const trimmed = title.trim()
       if (!trimmed) return null
+      const meta = tasteCategoryMeta(store.categories, categoryId)
       const sticker: TasteSticker = {
         id: generateId(),
-        kind,
+        categoryId: meta.id,
         title: trimmed,
         subtitle: subtitle?.trim() ?? '',
         note: note?.trim() ?? '',
@@ -148,21 +204,25 @@ export function useTasteStickers(): TasteActions {
         dateKey: dateKey || getTodayKey(),
         createdAt: new Date().toISOString(),
         tilt: randomTilt(),
-        accent: tasteKindMeta(kind).accent,
+        stripColor: randomPolaroidStripColor(),
+        accent: meta.accent,
       }
-      persist({ stickers: [sticker, ...store.stickers] })
+      persist({ ...store, stickers: [sticker, ...store.stickers] })
       return sticker
     },
-    [persist, store.stickers],
+    [persist, store],
   )
 
   const updateSticker: TasteActions['updateSticker'] = useCallback(
     (id, patch) => {
       persist({
+        ...store,
         stickers: store.stickers.map((s) => {
           if (s.id !== id) return s
           const next = { ...s, ...patch }
-          if (patch.kind) next.accent = tasteKindMeta(patch.kind).accent
+          if (patch.categoryId) {
+            next.accent = tasteCategoryMeta(store.categories, patch.categoryId).accent
+          }
           if (patch.title != null) next.title = patch.title.trim()
           if (patch.subtitle != null) next.subtitle = patch.subtitle.trim()
           if (patch.note != null) next.note = patch.note.trim()
@@ -171,14 +231,80 @@ export function useTasteStickers(): TasteActions {
         }),
       })
     },
-    [persist, store.stickers],
+    [persist, store],
   )
 
   const deleteSticker = useCallback(
     (id: string) => {
-      persist({ stickers: store.stickers.filter((s) => s.id !== id) })
+      persist({ ...store, stickers: store.stickers.filter((s) => s.id !== id) })
     },
-    [persist, store.stickers],
+    [persist, store],
+  )
+
+  const addCategory = useCallback(
+    (name: string) => {
+      const trimmed = name.trim()
+      if (!trimmed) return null
+      if (store.categories.some((c) => c.name.toLowerCase() === trimmed.toLowerCase())) {
+        return null
+      }
+      const category: TasteCategory = {
+        id: generateId(),
+        name: trimmed,
+        accent: nextCategoryAccent(store.categories),
+        youtube: trimmed.toLowerCase() === 'music',
+      }
+      persist({ ...store, categories: [...store.categories, category] })
+      return category
+    },
+    [persist, store],
+  )
+
+  const renameCategory = useCallback(
+    (id: string, name: string) => {
+      const trimmed = name.trim()
+      if (!trimmed) return
+      if (
+        store.categories.some(
+          (c) => c.id !== id && c.name.toLowerCase() === trimmed.toLowerCase(),
+        )
+      ) {
+        return
+      }
+      persist({
+        ...store,
+        categories: store.categories.map((c) =>
+          c.id === id
+            ? {
+                ...c,
+                name: trimmed,
+                youtube: c.youtube || trimmed.toLowerCase() === 'music',
+              }
+            : c,
+        ),
+      })
+    },
+    [persist, store],
+  )
+
+  const deleteCategory = useCallback(
+    (id: string) => {
+      if (store.categories.length <= 1) return
+      const fallback =
+        store.categories.find((c) => c.id !== id)?.id ?? store.categories[0]!.id
+      const nextCategories = store.categories.filter((c) => c.id !== id)
+      const fallbackMeta = tasteCategoryMeta(nextCategories, fallback)
+      persist({
+        categories: nextCategories,
+        stickers: store.stickers.map((s) =>
+          s.categoryId === id
+            ? { ...s, categoryId: fallbackMeta.id, accent: fallbackMeta.accent }
+            : s,
+        ),
+      })
+      if (kindFilter === id) setKindFilter('all')
+    },
+    [persist, store, kindFilter],
   )
 
   const setViewMonth = useCallback((year: number, month: number) => {
@@ -188,6 +314,7 @@ export function useTasteStickers(): TasteActions {
   return {
     loading,
     stickers: store.stickers,
+    categories: store.categories,
     year: viewMonth.year,
     month: viewMonth.month,
     setViewMonth,
@@ -200,5 +327,8 @@ export function useTasteStickers(): TasteActions {
     addSticker,
     updateSticker,
     deleteSticker,
+    addCategory,
+    renameCategory,
+    deleteCategory,
   }
 }

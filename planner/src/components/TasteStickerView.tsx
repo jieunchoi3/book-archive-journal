@@ -1,16 +1,46 @@
-import { useRef, useState, type ReactNode } from 'react'
-import { ChevronLeft, ChevronRight, ImagePlus, Plus, Trash2, X } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  ImagePlus,
+  Pencil,
+  Plus,
+  Settings2,
+  Trash2,
+  Volume2,
+  X,
+} from 'lucide-react'
 import { useTasteStickers } from '../hooks/useTasteStickers'
 import { compressImageSource } from '../lib/diaryImage'
 import { getTodayKey } from '../lib/weekUtils'
-import { TASTE_KINDS, tasteKindMeta, type TasteKind, type TasteSticker } from '../types/taste'
+import {
+  categoryAllowsYoutube,
+  isLightPolaroidStrip,
+  parseYouTubeId,
+  tasteCategoryMeta,
+  youtubeEmbedUrl,
+  youtubeThumbUrl,
+  type TasteCategory,
+  type TasteSticker,
+} from '../types/taste'
 
-const POLAROID_FRAMES = ['#fffac0', '#42240f', '#947762', '#662a00'] as const
+/** Browsers block unmuted autoplay until the page gets a real gesture. */
+let tasteSoundUnlocked = false
 
-const CATEGORY_PILLS: { id: TasteKind | 'all'; label: string }[] = [
-  { id: 'all', label: 'All' },
-  ...TASTE_KINDS.map((k) => ({ id: k.id, label: k.label })),
-]
+function useTasteSoundUnlock() {
+  const [unlocked, setUnlocked] = useState(tasteSoundUnlocked)
+  useEffect(() => {
+    if (tasteSoundUnlocked) return
+    const unlock = () => {
+      tasteSoundUnlocked = true
+      setUnlocked(true)
+    }
+    window.addEventListener('pointerdown', unlock, { once: true })
+    return () => window.removeEventListener('pointerdown', unlock)
+  }, [])
+  return unlocked
+}
 
 function monthTitle(year: number, month: number) {
   return new Date(year, month, 1).toLocaleDateString('en-US', { month: 'long' })
@@ -24,21 +54,15 @@ function formatPolaroidDate(dateKey: string) {
 
 export function TasteStickerView() {
   const taste = useTasteStickers()
+  const soundUnlocked = useTasteSoundUnlock()
   const [showAdd, setShowAdd] = useState(false)
   const [selected, setSelected] = useState<TasteSticker | null>(null)
+  const [showCategories, setShowCategories] = useState(false)
 
   const shiftMonth = (delta: number) => {
     taste.setBrowseMode('month')
     const d = new Date(taste.year, taste.month + delta, 1)
     taste.setViewMonth(d.getFullYear(), d.getMonth())
-  }
-
-  const selectAllTime = () => {
-    taste.setBrowseMode('atlas')
-  }
-
-  const selectMonthMode = () => {
-    taste.setBrowseMode('month')
   }
 
   return (
@@ -66,7 +90,7 @@ export function TasteStickerView() {
             {taste.browseMode === 'atlas' ? (
               <button
                 type="button"
-                onClick={selectMonthMode}
+                onClick={() => taste.setBrowseMode('month')}
                 className="taste-month-title text-[42px] leading-none tracking-[0.06em] text-[#fffac0] drop-shadow-[0_2px_0_rgba(40,20,10,0.45)] sm:text-[50px]"
               >
                 All
@@ -74,7 +98,7 @@ export function TasteStickerView() {
             ) : (
               <button
                 type="button"
-                onClick={selectMonthMode}
+                onClick={() => taste.setBrowseMode('month')}
                 className="taste-month-title text-[40px] leading-[0.95] tracking-[0.05em] text-[#fffac0] drop-shadow-[0_2px_0_rgba(40,20,10,0.45)] sm:text-[50px]"
               >
                 <span className="block">{monthTitle(taste.year, taste.month)}</span>
@@ -93,10 +117,10 @@ export function TasteStickerView() {
           </button>
         </header>
 
-        <div className="mb-4 flex justify-center">
+        <div className="mb-4 flex justify-center gap-2">
           <button
             type="button"
-            onClick={selectAllTime}
+            onClick={() => taste.setBrowseMode('atlas')}
             className={`rounded-full px-4 py-1.5 text-[12px] font-semibold tracking-wide transition ${
               taste.browseMode === 'atlas'
                 ? 'bg-[#fffac0] text-[#3a2010] shadow-sm'
@@ -105,26 +129,30 @@ export function TasteStickerView() {
           >
             View all
           </button>
+          <button
+            type="button"
+            onClick={() => setShowCategories(true)}
+            className="inline-flex items-center gap-1.5 rounded-full bg-[#fffde8]/35 px-3 py-1.5 text-[12px] font-semibold text-[#fffac0] ring-1 ring-[#fffac0]/35 hover:bg-[#fffde8]/50"
+          >
+            <Settings2 size={13} />
+            Categories
+          </button>
         </div>
 
         <div className="mb-5 flex gap-2 overflow-x-auto px-0.5 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] sm:gap-2.5 [&::-webkit-scrollbar]:hidden">
-          {CATEGORY_PILLS.map((pill) => {
-            const active = taste.kindFilter === pill.id
-            return (
-              <button
-                key={pill.id}
-                type="button"
-                onClick={() => taste.setKindFilter(pill.id)}
-                className={`h-11 shrink-0 rounded-full px-3.5 text-[13px] font-semibold tracking-wide transition sm:h-12 sm:min-w-0 sm:flex-1 ${
-                  active
-                    ? 'bg-[#fffac0] text-[#3a2010] shadow-[0_4px_14px_rgba(0,0,0,0.18)]'
-                    : 'bg-[#fffde8]/35 text-[#2b2118]/80 ring-1 ring-white/25 backdrop-blur-[2px] hover:bg-[#fffde8]/50'
-                }`}
-              >
-                {pill.label}
-              </button>
-            )
-          })}
+          <FilterPill
+            label="All"
+            active={taste.kindFilter === 'all'}
+            onClick={() => taste.setKindFilter('all')}
+          />
+          {taste.categories.map((cat) => (
+            <FilterPill
+              key={cat.id}
+              label={cat.name}
+              active={taste.kindFilter === cat.id}
+              onClick={() => taste.setKindFilter(cat.id)}
+            />
+          ))}
         </div>
 
         {taste.loading ? (
@@ -137,8 +165,9 @@ export function TasteStickerView() {
               <PolaroidCard
                 key={sticker.id}
                 sticker={sticker}
-                frame={POLAROID_FRAMES[i % POLAROID_FRAMES.length]!}
+                category={tasteCategoryMeta(taste.categories, sticker.categoryId)}
                 delayMs={Math.min(i * 30, 240)}
+                soundUnlocked={soundUnlocked}
                 onClick={() => setSelected(sticker)}
               />
             ))}
@@ -155,9 +184,20 @@ export function TasteStickerView() {
         Add
       </button>
 
+      {showCategories && (
+        <CategoryManager
+          categories={taste.categories}
+          onClose={() => setShowCategories(false)}
+          onAdd={(name) => taste.addCategory(name)}
+          onRename={(id, name) => taste.renameCategory(id, name)}
+          onDelete={(id) => taste.deleteCategory(id)}
+        />
+      )}
+
       {showAdd && (
         <PolaroidEditor
           mode="create"
+          categories={taste.categories}
           onClose={() => setShowAdd(false)}
           onSave={async (input) => {
             const created = taste.addSticker(input)
@@ -176,6 +216,7 @@ export function TasteStickerView() {
         <PolaroidEditor
           mode="edit"
           sticker={selected}
+          categories={taste.categories}
           onClose={() => setSelected(null)}
           onSave={async (input) => {
             taste.updateSticker(selected.id, input)
@@ -191,41 +232,230 @@ export function TasteStickerView() {
   )
 }
 
+function FilterPill({
+  label,
+  active,
+  onClick,
+}: {
+  label: string
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`h-11 shrink-0 rounded-full px-3.5 text-[13px] font-semibold tracking-wide transition sm:h-12 sm:min-w-0 sm:flex-1 ${
+        active
+          ? 'bg-[#fffac0] text-[#3a2010] shadow-[0_4px_14px_rgba(0,0,0,0.18)]'
+          : 'bg-[#fffde8]/35 text-[#2b2118]/80 ring-1 ring-white/25 backdrop-blur-[2px] hover:bg-[#fffde8]/50'
+      }`}
+    >
+      {label}
+    </button>
+  )
+}
+
+function CategoryManager({
+  categories,
+  onClose,
+  onAdd,
+  onRename,
+  onDelete,
+}: {
+  categories: TasteCategory[]
+  onClose: () => void
+  onAdd: (name: string) => TasteCategory | null
+  onRename: (id: string, name: string) => void
+  onDelete: (id: string) => void
+}) {
+  const [draft, setDraft] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  const add = () => {
+    const created = onAdd(draft)
+    if (!created) {
+      setError(draft.trim() ? 'That name is already used.' : 'Enter a category name.')
+      return
+    }
+    setDraft('')
+    setError(null)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-6">
+      <button type="button" className="absolute inset-0" aria-label="Close" onClick={onClose} />
+      <div className="relative z-10 max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-[#fffaf0] shadow-2xl sm:rounded-3xl">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-black/5 bg-[#fffaf0]/95 px-5 py-4 backdrop-blur">
+          <h2 className="text-[16px] font-semibold text-[#2b2118]">Categories</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-[#8A7A6A] hover:bg-black/5"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="space-y-3 px-5 py-5">
+          <ul className="space-y-2">
+            {categories.map((cat) => (
+              <li
+                key={cat.id}
+                className="flex items-center gap-2 rounded-2xl bg-white px-3 py-2.5 ring-1 ring-black/5"
+              >
+                <span
+                  className="h-3 w-3 shrink-0 rounded-full"
+                  style={{ backgroundColor: cat.accent }}
+                />
+                {editingId === cat.id ? (
+                  <>
+                    <input
+                      value={editingName}
+                      onChange={(e) => setEditingName(e.target.value)}
+                      className="min-w-0 flex-1 rounded-lg border border-black/10 px-2 py-1.5 text-[13px] outline-none focus:border-[#3a2010]/30"
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          onRename(cat.id, editingName)
+                          setEditingId(null)
+                        }
+                        if (e.key === 'Escape') setEditingId(null)
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onRename(cat.id, editingName)
+                        setEditingId(null)
+                      }}
+                      className="rounded-lg p-1.5 text-[#34C759] hover:bg-[#34C759]/10"
+                      aria-label="Save name"
+                    >
+                      <Check size={16} />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#2b2118]">
+                      {cat.name}
+                      {categoryAllowsYoutube(cat) ? (
+                        <span className="ml-1.5 text-[10px] font-normal text-[#8A7A6A]">
+                          · YouTube
+                        </span>
+                      ) : null}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingId(cat.id)
+                        setEditingName(cat.name)
+                      }}
+                      className="rounded-lg p-1.5 text-[#8A7A6A] hover:bg-black/5"
+                      aria-label={`Rename ${cat.name}`}
+                    >
+                      <Pencil size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={categories.length <= 1}
+                      onClick={() => {
+                        if (
+                          confirm(
+                            `Delete “${cat.name}”? Polaroids in it move to another category.`,
+                          )
+                        ) {
+                          onDelete(cat.id)
+                        }
+                      }}
+                      className="rounded-lg p-1.5 text-[#C44] hover:bg-[#C44]/10 disabled:opacity-30"
+                      aria-label={`Delete ${cat.name}`}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+
+          <div className="flex gap-2 pt-1">
+            <input
+              value={draft}
+              onChange={(e) => {
+                setDraft(e.target.value)
+                setError(null)
+              }}
+              placeholder="New category name"
+              className="min-w-0 flex-1 rounded-xl border border-black/10 bg-white px-3 py-2.5 text-[14px] outline-none focus:border-[#3a2010]/30"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') add()
+              }}
+            />
+            <button
+              type="button"
+              onClick={add}
+              className="inline-flex items-center gap-1 rounded-xl bg-[#3a2010] px-3 py-2.5 text-[13px] font-semibold text-[#fffac0]"
+            >
+              <Plus size={15} />
+              Add
+            </button>
+          </div>
+          {error && <p className="text-[12px] text-[#FF3B30]">{error}</p>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function PolaroidCard({
   sticker,
-  frame,
+  category,
   delayMs,
+  soundUnlocked,
   onClick,
 }: {
   sticker: TasteSticker
-  frame: string
+  category: TasteCategory
   delayMs: number
+  soundUnlocked: boolean
   onClick: () => void
 }) {
-  const meta = tasteKindMeta(sticker.kind)
-  const lightFrame = frame === '#fffac0'
+  const strip = sticker.stripColor || '#fffac0'
+  const lightFrame = isLightPolaroidStrip(strip)
   const titleColor = lightFrame ? '#000' : '#fffac0'
   const noteColor = lightFrame ? 'rgba(53,42,42,0.62)' : 'rgba(255,250,192,0.7)'
   const dateColor = lightFrame ? 'rgba(112,105,105,0.79)' : 'rgba(255,250,192,0.55)'
+  const youtubeId = categoryAllowsYoutube(category)
+    ? parseYouTubeId(sticker.link)
+    : null
+  const coverSrc =
+    sticker.imageDataUrl || (youtubeId ? youtubeThumbUrl(youtubeId) : '')
+  const [hovering, setHovering] = useState(false)
+  const playOnHover = Boolean(youtubeId && hovering)
 
   return (
     <div style={{ animation: `taste-pop 420ms ease-out ${delayMs}ms both` }}>
-      <button
-        type="button"
-        onClick={onClick}
+      <div
         className="group w-full text-left transition-transform duration-200 hover:-translate-y-1"
         style={{ transform: `rotate(${sticker.tilt}deg)` }}
+        onMouseEnter={() => setHovering(true)}
+        onMouseLeave={() => setHovering(false)}
       >
         <div
           className="flex aspect-[293/425] flex-col gap-2.5 overflow-hidden p-2.5 shadow-[0_10px_28px_-12px_rgba(0,0,0,0.45)] ring-1 ring-black/20"
-          style={{ backgroundColor: frame }}
+          style={{ backgroundColor: strip }}
         >
           <div className="relative min-h-0 flex-[1.15] overflow-hidden bg-white">
-            {sticker.imageDataUrl ? (
+            {coverSrc ? (
               <img
-                src={sticker.imageDataUrl}
+                src={coverSrc}
                 alt=""
-                className="h-full w-full object-cover"
+                className={`h-full w-full object-cover transition-opacity ${
+                  playOnHover ? 'opacity-0' : 'opacity-100'
+                }`}
                 draggable={false}
               />
             ) : (
@@ -233,8 +463,35 @@ function PolaroidCard({
                 <ImagePlus size={22} />
               </div>
             )}
+
+            {playOnHover && youtubeId && (
+              <iframe
+                key={`${youtubeId}-${soundUnlocked ? 'loud' : 'soft'}`}
+                title={sticker.title}
+                src={youtubeEmbedUrl(youtubeId, {
+                  autoplay: true,
+                  mute: !soundUnlocked,
+                })}
+                className="absolute inset-0 h-full w-full border-0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+                referrerPolicy="strict-origin-when-cross-origin"
+              />
+            )}
+
+            {youtubeId && !playOnHover && (
+              <span className="pointer-events-none absolute bottom-2 left-2 inline-flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 text-[10px] font-semibold text-white backdrop-blur-sm">
+                <Volume2 size={11} />
+                Hover to play
+              </span>
+            )}
           </div>
-          <div className="relative flex min-h-[5.5rem] flex-col px-0.5 pb-1 pt-0.5">
+
+          <button
+            type="button"
+            onClick={onClick}
+            className="relative flex min-h-[5.5rem] flex-col px-0.5 pb-1 pt-0.5 text-left"
+          >
             <p
               className="line-clamp-2 text-[12px] font-medium leading-snug"
               style={{ color: titleColor }}
@@ -256,15 +513,15 @@ function PolaroidCard({
                     : { backgroundColor: 'rgba(255,250,192,0.2)', color: '#fffac0' }
                 }
               >
-                {meta.label}
+                {category.name}
               </span>
               <p className="text-right text-[10px] tabular-nums" style={{ color: dateColor }}>
                 {formatPolaroidDate(sticker.dateKey)}
               </p>
             </div>
-          </div>
+          </button>
         </div>
-      </button>
+      </div>
     </div>
   )
 }
@@ -285,7 +542,7 @@ function EmptyState({ onAdd, allTime }: { onAdd: () => void; allTime: boolean })
         {allTime ? 'No polaroids yet' : 'No polaroids this month'}
       </p>
       <p className="mt-1 max-w-sm text-[13px] text-[#fffac0]/75">
-        Upload a photo and capture a song, film, place, food — whatever you’re into.
+        Upload a photo and capture whatever you’re into.
       </p>
       <button
         type="button"
@@ -302,32 +559,40 @@ function EmptyState({ onAdd, allTime }: { onAdd: () => void; allTime: boolean })
 function PolaroidEditor({
   mode,
   sticker,
+  categories,
   onClose,
   onSave,
   onDelete,
 }: {
   mode: 'create' | 'edit'
   sticker?: TasteSticker
+  categories: TasteCategory[]
   onClose: () => void
   onSave: (input: {
-    kind: TasteKind
+    categoryId: string
     title: string
     subtitle?: string
     note?: string
+    link?: string
     dateKey?: string
     imageDataUrl?: string
   }) => void | Promise<void>
   onDelete?: () => void
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
-  const [kind, setKind] = useState<TasteKind>(sticker?.kind ?? 'song')
+  const defaultId = sticker?.categoryId ?? categories[0]?.id ?? 'other'
+  const [categoryId, setCategoryId] = useState(defaultId)
   const [title, setTitle] = useState(sticker?.title ?? '')
   const [subtitle, setSubtitle] = useState(sticker?.subtitle ?? '')
   const [note, setNote] = useState(sticker?.note ?? '')
+  const [link, setLink] = useState(sticker?.link ?? '')
   const [dateKey, setDateKey] = useState(sticker?.dateKey ?? getTodayKey())
   const [imageDataUrl, setImageDataUrl] = useState(sticker?.imageDataUrl ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const activeCategory = tasteCategoryMeta(categories, categoryId)
+  const youtubeEnabled = categoryAllowsYoutube(activeCategory)
 
   const onPickFile = async (file: File | null) => {
     if (!file) return
@@ -352,9 +617,30 @@ function PolaroidEditor({
       setError('Add a title.')
       return
     }
+    const trimmedLink = link.trim()
+    if (youtubeEnabled && trimmedLink && !parseYouTubeId(trimmedLink)) {
+      setError('Paste a valid YouTube link (or leave it blank).')
+      return
+    }
+    if (youtubeEnabled && !imageDataUrl && !parseYouTubeId(trimmedLink)) {
+      setError('Add a photo or a YouTube link.')
+      return
+    }
+    if (!youtubeEnabled && !imageDataUrl) {
+      setError('Add a photo.')
+      return
+    }
     setBusy(true)
     try {
-      await onSave({ kind, title, subtitle, note, dateKey, imageDataUrl })
+      await onSave({
+        categoryId,
+        title,
+        subtitle,
+        note,
+        link: youtubeEnabled ? trimmedLink : '',
+        dateKey,
+        imageDataUrl,
+      })
     } finally {
       setBusy(false)
     }
@@ -413,7 +699,7 @@ function PolaroidEditor({
                   {title.trim() || 'Title…'}
                 </p>
                 <p className="truncate text-[11px] text-black/50">
-                  {note.trim() || tasteKindMeta(kind).label}
+                  {note.trim() || activeCategory.name}
                 </p>
               </div>
             </div>
@@ -428,18 +714,18 @@ function PolaroidEditor({
           />
 
           <div className="flex flex-wrap gap-1.5">
-            {TASTE_KINDS.map((k) => (
+            {categories.map((k) => (
               <button
                 key={k.id}
                 type="button"
-                onClick={() => setKind(k.id)}
+                onClick={() => setCategoryId(k.id)}
                 className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
-                  kind === k.id
+                  categoryId === k.id
                     ? 'bg-[#3a2010] text-[#fffac0]'
                     : 'bg-[#f0e6d4] text-[#3a2010] hover:bg-[#e8dcc8]'
                 }`}
               >
-                {k.label}
+                {k.name}
               </button>
             ))}
           </div>
@@ -471,6 +757,20 @@ function PolaroidEditor({
               className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-[14px] outline-none focus:border-[#3a2010]/30"
             />
           </Field>
+
+          {youtubeEnabled && (
+            <Field label="YouTube link">
+              <input
+                value={link}
+                onChange={(e) => setLink(e.target.value)}
+                placeholder="https://www.youtube.com/watch?v=…"
+                className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-[14px] outline-none focus:border-[#3a2010]/30"
+              />
+              <p className="mt-1 text-[11px] text-[#8A7A6A]">
+                Hover the polaroid to play. Click anywhere once on the page first so sound can unmute.
+              </p>
+            </Field>
+          )}
 
           <Field label="Date">
             <input
