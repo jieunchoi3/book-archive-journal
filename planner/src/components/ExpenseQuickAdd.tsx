@@ -149,6 +149,22 @@ export function ExpenseQuickAdd({
         </div>
       </label>
 
+      <label className="mb-3 block">
+        <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted">
+          Note <span className="font-normal normal-case text-muted/80">(optional)</span>
+        </span>
+        <input
+          type="text"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="What was this for?"
+          className="w-full rounded-xl border border-hairline bg-[#FAFAFA] px-3.5 py-2.5 text-[14px] text-[#1C1C1E] outline-none focus:border-[#8B5A2B]/50 focus:bg-white"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') submit()
+          }}
+        />
+      </label>
+
       <div className="mb-3">
         <div className="mb-1.5 flex items-center justify-between">
           <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">
@@ -276,7 +292,7 @@ export function ExpenseQuickAdd({
         )}
       </div>
 
-      <label className="mb-3 block">
+      <label className="mb-4 block">
         <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted">
           Date
         </span>
@@ -285,22 +301,6 @@ export function ExpenseQuickAdd({
           value={dateKey}
           onChange={(e) => setDateKey(e.target.value)}
           className="w-full rounded-xl border border-hairline bg-[#FAFAFA] px-3.5 py-2.5 text-[14px] text-[#1C1C1E] outline-none focus:border-[#8B5A2B]/50 focus:bg-white"
-        />
-      </label>
-
-      <label className="mb-4 block">
-        <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted">
-          Note <span className="font-normal normal-case text-muted/80">(optional)</span>
-        </span>
-        <input
-          type="text"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="What was this for?"
-          className="w-full rounded-xl border border-hairline bg-[#FAFAFA] px-3.5 py-2.5 text-[14px] text-[#1C1C1E] outline-none focus:border-[#8B5A2B]/50 focus:bg-white"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') submit()
-          }}
         />
       </label>
 
