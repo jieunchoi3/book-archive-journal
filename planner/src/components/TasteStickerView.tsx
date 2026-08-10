@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   Check,
   ChevronLeft,
@@ -594,7 +594,7 @@ function PolaroidEditor({
   const activeCategory = tasteCategoryMeta(categories, categoryId)
   const youtubeEnabled = categoryAllowsYoutube(activeCategory)
 
-  const onPickFile = async (file: File | null) => {
+  const onPickFile = useCallback(async (file: File | null) => {
     if (!file) return
     if (!file.type.startsWith('image/')) {
       setError('Please choose an image file.')
@@ -610,7 +610,24 @@ function PolaroidEditor({
     } finally {
       setBusy(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items
+      if (!items?.length) return
+      for (const item of items) {
+        if (!item.type.startsWith('image/')) continue
+        const file = item.getAsFile()
+        if (!file) continue
+        e.preventDefault()
+        void onPickFile(file)
+        return
+      }
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [onPickFile])
 
   const submit = async () => {
     if (!title.trim()) {
@@ -686,6 +703,7 @@ function PolaroidEditor({
                   <div className="flex flex-col items-center gap-2 text-[#8A7A6A]">
                     <ImagePlus size={28} />
                     <span className="text-[12px] font-medium">Upload photo</span>
+                    <span className="text-[10px] text-[#8A7A6A]/80">or paste (⌘V)</span>
                   </div>
                 )}
                 {imageDataUrl && (
@@ -703,6 +721,9 @@ function PolaroidEditor({
                 </p>
               </div>
             </div>
+            <p className="mt-2 text-center text-[10px] text-[#8A7A6A]">
+              Tip: copy an image and paste it here
+            </p>
           </div>
 
           <input
