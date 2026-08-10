@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
-import { BookHeart, Calendar, CalendarDays, Wallet } from 'lucide-react'
+import { BookHeart, Calendar, CalendarDays, Sticker, Wallet } from 'lucide-react'
 
-export type AppView = 'diary' | 'expenses' | 'monthly' | 'weekly'
+export type AppView = 'diary' | 'expenses' | 'taste' | 'monthly' | 'weekly'
 
 interface BottomNavProps {
   active: AppView
@@ -13,7 +13,7 @@ interface BottomNavProps {
 export function BottomNav({ active, onChange, badges }: BottomNavProps) {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-hairline bg-white/95 backdrop-blur-md">
-      <div className="mx-auto flex max-w-xl justify-around px-2 py-2 sm:px-4">
+      <div className="mx-auto flex max-w-xl justify-around px-1 py-2 sm:px-3">
         <NavButton
           label="Diary"
           icon={<BookHeart size={20} />}
@@ -27,6 +27,13 @@ export function BottomNav({ active, onChange, badges }: BottomNavProps) {
           active={active === 'expenses'}
           badge={badges?.expenses}
           onClick={() => onChange('expenses')}
+        />
+        <NavButton
+          label="취향"
+          icon={<Sticker size={20} />}
+          active={active === 'taste'}
+          badge={badges?.taste}
+          onClick={() => onChange('taste')}
         />
         <NavButton
           label="Monthly"
@@ -65,7 +72,7 @@ function NavButton({
     <button
       type="button"
       onClick={onClick}
-      className={`relative flex flex-col items-center gap-0.5 rounded-lg px-3 py-1.5 transition-colors sm:px-4 ${
+      className={`relative flex flex-col items-center gap-0.5 rounded-lg px-2 py-1.5 transition-colors sm:px-3 ${
         active ? 'text-[#007AFF]' : 'text-muted hover:text-[#48484A]'
       }`}
     >

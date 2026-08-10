@@ -11,6 +11,7 @@ import { WeekView } from './components/WeekView'
 import { MonthCalendarView } from './components/MonthCalendarView'
 import { DiaryView } from './components/DiaryView'
 import { ExpenseView } from './components/ExpenseView'
+import { TasteStickerView } from './components/TasteStickerView'
 import { BottomNav, type AppView } from './components/BottomNav'
 
 function AppContent() {
@@ -27,6 +28,8 @@ function AppContent() {
         <DiaryView expenses={expenses} />
       ) : view === 'expenses' ? (
         <ExpenseView expenses={expenses} />
+      ) : view === 'taste' ? (
+        <TasteStickerView />
       ) : view === 'weekly' ? (
         <WeekView
           template={planner.template}
