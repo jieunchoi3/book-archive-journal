@@ -439,13 +439,13 @@ function PolaroidCard({
   return (
     <div style={{ animation: `taste-pop 420ms ease-out ${delayMs}ms both` }}>
       <div
-        className="group w-full text-left transition-transform duration-200 hover:-translate-y-1"
+        className="group w-full text-left transition-transform duration-200 hover:-translate-y-1.5"
         style={{ transform: `rotate(${sticker.tilt}deg)` }}
         onMouseEnter={() => setHovering(true)}
         onMouseLeave={() => setHovering(false)}
       >
         <div
-          className="flex aspect-[293/425] flex-col gap-2.5 overflow-hidden p-2.5 shadow-[0_10px_28px_-12px_rgba(0,0,0,0.45)] ring-1 ring-black/20"
+          className="flex aspect-[293/425] flex-col gap-2.5 overflow-hidden p-2.5 ring-1 ring-black/15 transition-[box-shadow] duration-200 [box-shadow:0_1px_2px_rgba(20,10,0,0.18),0_8px_16px_-4px_rgba(20,10,0,0.35),0_22px_40px_-12px_rgba(20,10,0,0.45)] group-hover:[box-shadow:0_2px_4px_rgba(20,10,0,0.2),0_14px_28px_-6px_rgba(20,10,0,0.4),0_36px_56px_-16px_rgba(20,10,0,0.5)]"
           style={{ backgroundColor: strip }}
         >
           <div className="relative min-h-0 flex-[1.15] overflow-hidden bg-white">
