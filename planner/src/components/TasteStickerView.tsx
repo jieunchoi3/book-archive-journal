@@ -198,6 +198,9 @@ export function TasteStickerView() {
         <PolaroidEditor
           mode="create"
           categories={taste.categories}
+          initialCategoryId={
+            taste.kindFilter !== 'all' ? taste.kindFilter : undefined
+          }
           onClose={() => setShowAdd(false)}
           onSave={async (input) => {
             const created = taste.addSticker(input)
@@ -560,6 +563,7 @@ function PolaroidEditor({
   mode,
   sticker,
   categories,
+  initialCategoryId,
   onClose,
   onSave,
   onDelete,
@@ -567,6 +571,8 @@ function PolaroidEditor({
   mode: 'create' | 'edit'
   sticker?: TasteSticker
   categories: TasteCategory[]
+  /** Prefill category when adding from a filtered category view. */
+  initialCategoryId?: string
   onClose: () => void
   onSave: (input: {
     categoryId: string
@@ -580,8 +586,14 @@ function PolaroidEditor({
   onDelete?: () => void
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
-  const defaultId = sticker?.categoryId ?? categories[0]?.id ?? 'other'
-  const [categoryId, setCategoryId] = useState(defaultId)
+  const preferredId =
+    sticker?.categoryId ||
+    (initialCategoryId && categories.some((c) => c.id === initialCategoryId)
+      ? initialCategoryId
+      : undefined) ||
+    categories[0]?.id ||
+    'other'
+  const [categoryId, setCategoryId] = useState(preferredId)
   const [title, setTitle] = useState(sticker?.title ?? '')
   const [subtitle, setSubtitle] = useState(sticker?.subtitle ?? '')
   const [note, setNote] = useState(sticker?.note ?? '')
