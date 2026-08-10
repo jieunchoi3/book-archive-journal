@@ -129,6 +129,18 @@ export function ExpenseQuickAdd({
 
       <label className="mb-3 block">
         <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted">
+          Date
+        </span>
+        <input
+          type="date"
+          value={dateKey}
+          onChange={(e) => setDateKey(e.target.value)}
+          className="w-full rounded-xl border border-hairline bg-[#FAFAFA] px-3.5 py-2.5 text-[14px] text-[#1C1C1E] outline-none focus:border-[#8B5A2B]/50 focus:bg-white"
+        />
+      </label>
+
+      <label className="mb-3 block">
+        <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted">
           Amount
         </span>
         <div className="relative">
@@ -291,18 +303,6 @@ export function ExpenseQuickAdd({
           </div>
         )}
       </div>
-
-      <label className="mb-4 block">
-        <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted">
-          Date
-        </span>
-        <input
-          type="date"
-          value={dateKey}
-          onChange={(e) => setDateKey(e.target.value)}
-          className="w-full rounded-xl border border-hairline bg-[#FAFAFA] px-3.5 py-2.5 text-[14px] text-[#1C1C1E] outline-none focus:border-[#8B5A2B]/50 focus:bg-white"
-        />
-      </label>
 
       <button
         type="button"
