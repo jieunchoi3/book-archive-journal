@@ -29,7 +29,7 @@ export function BottomNav({ active, onChange, badges }: BottomNavProps) {
           onClick={() => onChange('expenses')}
         />
         <NavButton
-          label="취향"
+          label="Taste"
           icon={<Sticker size={20} />}
           active={active === 'taste'}
           badge={badges?.taste}

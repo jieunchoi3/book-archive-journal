@@ -7,13 +7,9 @@ import { TASTE_KINDS, tasteKindMeta, type TasteKind, type TasteSticker } from '.
 
 const POLAROID_FRAMES = ['#fffac0', '#42240f', '#947762', '#662a00'] as const
 
-/** Five pills to match the Figma row (기타 shows under 전체). */
 const CATEGORY_PILLS: { id: TasteKind | 'all'; label: string }[] = [
-  { id: 'all', label: '전체' },
-  { id: 'song', label: '노래' },
-  { id: 'music', label: '음악' },
-  { id: 'movie', label: '영화' },
-  { id: 'place', label: '장소' },
+  { id: 'all', label: 'All' },
+  ...TASTE_KINDS.map((k) => ({ id: k.id, label: k.label })),
 ]
 
 function monthTitle(year: number, month: number) {
@@ -56,7 +52,6 @@ export function TasteStickerView() {
       <div aria-hidden className="pointer-events-none absolute inset-0 bg-[#2b1508]/20" />
 
       <div className="relative z-10 mx-auto w-full max-w-[1240px] px-4 pt-4 sm:px-6 sm:pt-6">
-        {/* Month / 전체 */}
         <header className="mb-2 flex items-center justify-center gap-2 sm:gap-4">
           <button
             type="button"
@@ -74,7 +69,7 @@ export function TasteStickerView() {
                 onClick={selectMonthMode}
                 className="taste-month-title text-[42px] leading-none tracking-[0.06em] text-[#fffac0] drop-shadow-[0_2px_0_rgba(40,20,10,0.45)] sm:text-[50px]"
               >
-                전체
+                All
               </button>
             ) : (
               <button
@@ -108,12 +103,11 @@ export function TasteStickerView() {
                 : 'bg-[#fffde8]/35 text-[#fffac0] ring-1 ring-[#fffac0]/35 hover:bg-[#fffde8]/50'
             }`}
           >
-            전체 보기
+            View all
           </button>
         </div>
 
-        {/* Category pills — below month */}
-        <div className="mb-5 flex gap-2 overflow-x-auto px-0.5 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] sm:gap-3 sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden">
+        <div className="mb-5 flex gap-2 overflow-x-auto px-0.5 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] sm:gap-2.5 [&::-webkit-scrollbar]:hidden">
           {CATEGORY_PILLS.map((pill) => {
             const active = taste.kindFilter === pill.id
             return (
@@ -121,7 +115,7 @@ export function TasteStickerView() {
                 key={pill.id}
                 type="button"
                 onClick={() => taste.setKindFilter(pill.id)}
-                className={`h-11 min-w-[4.5rem] flex-1 rounded-full px-3 text-[13px] font-semibold tracking-wide transition sm:h-12 sm:min-w-0 ${
+                className={`h-11 shrink-0 rounded-full px-3.5 text-[13px] font-semibold tracking-wide transition sm:h-12 sm:min-w-0 sm:flex-1 ${
                   active
                     ? 'bg-[#fffac0] text-[#3a2010] shadow-[0_4px_14px_rgba(0,0,0,0.18)]'
                     : 'bg-[#fffde8]/35 text-[#2b2118]/80 ring-1 ring-white/25 backdrop-blur-[2px] hover:bg-[#fffde8]/50'
@@ -134,7 +128,7 @@ export function TasteStickerView() {
         </div>
 
         {taste.loading ? (
-          <p className="py-24 text-center text-sm text-[#fffac0]/80">불러오는 중…</p>
+          <p className="py-24 text-center text-sm text-[#fffac0]/80">Loading…</p>
         ) : taste.visibleStickers.length === 0 ? (
           <EmptyState onAdd={() => setShowAdd(true)} allTime={taste.browseMode === 'atlas'} />
         ) : (
@@ -158,7 +152,7 @@ export function TasteStickerView() {
         className="fixed bottom-20 right-4 z-30 inline-flex items-center gap-1.5 rounded-full bg-[#fffac0] px-4 py-3 text-[13px] font-semibold text-[#3a2010] shadow-lg sm:bottom-24 sm:right-6"
       >
         <Plus size={16} />
-        붙이기
+        Add
       </button>
 
       {showAdd && (
@@ -245,7 +239,7 @@ function PolaroidCard({
               className="line-clamp-2 text-[12px] font-medium leading-snug"
               style={{ color: titleColor }}
             >
-              {meta.label} {sticker.title}
+              {sticker.title}
               {sticker.subtitle ? ` ${sticker.subtitle}` : ''}
             </p>
             {sticker.note ? (
@@ -253,12 +247,21 @@ function PolaroidCard({
                 {sticker.note}
               </p>
             ) : null}
-            <p
-              className="mt-auto pt-2 text-right text-[10px] tabular-nums"
-              style={{ color: dateColor }}
-            >
-              {formatPolaroidDate(sticker.dateKey)}
-            </p>
+            <div className="mt-auto flex items-end justify-between gap-2 pt-2">
+              <span
+                className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                style={
+                  lightFrame
+                    ? { backgroundColor: 'rgba(255,255,255,0.95)', color: '#3a2010' }
+                    : { backgroundColor: 'rgba(255,250,192,0.2)', color: '#fffac0' }
+                }
+              >
+                {meta.label}
+              </span>
+              <p className="text-right text-[10px] tabular-nums" style={{ color: dateColor }}>
+                {formatPolaroidDate(sticker.dateKey)}
+              </p>
+            </div>
           </div>
         </div>
       </button>
@@ -276,13 +279,13 @@ function EmptyState({ onAdd, allTime }: { onAdd: () => void; allTime: boolean })
         <div className="flex aspect-square items-center justify-center bg-white text-[#C7C7CC]">
           <ImagePlus size={28} />
         </div>
-        <p className="px-0.5 py-3 text-left text-[12px] text-black/80">사진 올리기</p>
+        <p className="px-0.5 py-3 text-left text-[12px] text-black/80">Add a photo</p>
       </div>
       <p className="text-[15px] font-semibold text-[#fffac0]">
-        {allTime ? '아직 폴라로이드가 없어요' : '이번 달 폴라로이드가 없어요'}
+        {allTime ? 'No polaroids yet' : 'No polaroids this month'}
       </p>
       <p className="mt-1 max-w-sm text-[13px] text-[#fffac0]/75">
-        사진을 올리고 노래·영화·장소 취향을 붙여보세요
+        Upload a photo and capture a song, film, place, food — whatever you’re into.
       </p>
       <button
         type="button"
@@ -290,7 +293,7 @@ function EmptyState({ onAdd, allTime }: { onAdd: () => void; allTime: boolean })
         className="mt-5 inline-flex items-center gap-1.5 rounded-full bg-[#fffac0] px-4 py-2.5 text-[13px] font-semibold text-[#3a2010]"
       >
         <Plus size={15} />
-        붙이기
+        Add polaroid
       </button>
     </div>
   )
@@ -329,7 +332,7 @@ function PolaroidEditor({
   const onPickFile = async (file: File | null) => {
     if (!file) return
     if (!file.type.startsWith('image/')) {
-      setError('이미지 파일을 선택해 주세요.')
+      setError('Please choose an image file.')
       return
     }
     setBusy(true)
@@ -338,7 +341,7 @@ function PolaroidEditor({
       const compressed = await compressImageSource(file, 1200, 0.86)
       setImageDataUrl(compressed)
     } catch {
-      setError('사진을 읽지 못했어요. 다른 파일을 시도해 주세요.')
+      setError('Couldn’t read that photo. Try another file.')
     } finally {
       setBusy(false)
     }
@@ -346,7 +349,7 @@ function PolaroidEditor({
 
   const submit = async () => {
     if (!title.trim()) {
-      setError('제목을 입력해 주세요.')
+      setError('Add a title.')
       return
     }
     setBusy(true)
@@ -363,7 +366,7 @@ function PolaroidEditor({
       <div className="relative z-10 max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-[#fffaf0] shadow-2xl sm:rounded-3xl">
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-black/5 bg-[#fffaf0]/95 px-5 py-4 backdrop-blur">
           <h2 className="text-[16px] font-semibold text-[#2b2118]">
-            {mode === 'create' ? '폴라로이드 붙이기' : '폴라로이드 수정'}
+            {mode === 'create' ? 'New polaroid' : 'Edit polaroid'}
           </h2>
           <button
             type="button"
@@ -396,18 +399,18 @@ function PolaroidEditor({
                 ) : (
                   <div className="flex flex-col items-center gap-2 text-[#8A7A6A]">
                     <ImagePlus size={28} />
-                    <span className="text-[12px] font-medium">사진 업로드</span>
+                    <span className="text-[12px] font-medium">Upload photo</span>
                   </div>
                 )}
                 {imageDataUrl && (
                   <span className="absolute bottom-2 right-2 rounded-full bg-black/55 px-2 py-1 text-[10px] font-medium text-white">
-                    변경
+                    Change
                   </span>
                 )}
               </button>
               <div className="px-0.5 py-3">
                 <p className="truncate text-[12px] font-medium text-black">
-                  {title.trim() || '제목…'}
+                  {title.trim() || 'Title…'}
                 </p>
                 <p className="truncate text-[11px] text-black/50">
                   {note.trim() || tasteKindMeta(kind).label}
@@ -441,35 +444,35 @@ function PolaroidEditor({
             ))}
           </div>
 
-          <Field label="제목">
+          <Field label="Title">
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="예: Doja Cat Woman"
+              placeholder="e.g. Doja Cat — Woman"
               className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-[14px] outline-none focus:border-[#3a2010]/30"
               autoFocus
             />
           </Field>
 
-          <Field label="부제 (선택)">
+          <Field label="Subtitle (optional)">
             <input
               value={subtitle}
               onChange={(e) => setSubtitle(e.target.value)}
-              placeholder="아티스트 / 감독 / 동네"
+              placeholder="Artist, director, neighborhood…"
               className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-[14px] outline-none focus:border-[#3a2010]/30"
             />
           </Field>
 
-          <Field label="메모 (선택)">
+          <Field label="Note (optional)">
             <input
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="왜 마음에 들었는지"
+              placeholder="Why it stuck with you"
               className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-[14px] outline-none focus:border-[#3a2010]/30"
             />
           </Field>
 
-          <Field label="날짜">
+          <Field label="Date">
             <input
               type="date"
               value={dateKey}
@@ -486,7 +489,7 @@ function PolaroidEditor({
             onClick={() => void submit()}
             className="w-full rounded-2xl bg-[#3a2010] py-3 text-[14px] font-semibold text-[#fffac0] disabled:opacity-40"
           >
-            {busy ? '저장 중…' : mode === 'create' ? '붙이기' : '저장'}
+            {busy ? 'Saving…' : mode === 'create' ? 'Save polaroid' : 'Save changes'}
           </button>
 
           {mode === 'edit' && onDelete && (
@@ -496,7 +499,7 @@ function PolaroidEditor({
               className="inline-flex w-full items-center justify-center gap-1.5 py-2 text-[12px] font-medium text-[#C44]"
             >
               <Trash2 size={14} />
-              떼어내기
+              Delete polaroid
             </button>
           )}
         </div>

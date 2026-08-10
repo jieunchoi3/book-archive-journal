@@ -1,4 +1,4 @@
-export type TasteKind = 'song' | 'music' | 'movie' | 'place' | 'other'
+export type TasteKind = 'song' | 'music' | 'movie' | 'place' | 'food' | 'other'
 
 export interface TasteSticker {
   id: string
@@ -28,11 +28,12 @@ export const TASTE_KINDS: {
   emoji: string
   accent: string
 }[] = [
-  { id: 'song', label: '노래', emoji: '🎵', accent: '#FF2D55' },
-  { id: 'music', label: '음악', emoji: '💿', accent: '#5856D6' },
-  { id: 'movie', label: '영화', emoji: '🎬', accent: '#007AFF' },
-  { id: 'place', label: '장소', emoji: '📍', accent: '#34C759' },
-  { id: 'other', label: '기타', emoji: '✨', accent: '#AF52DE' },
+  { id: 'song', label: 'Song', emoji: '🎵', accent: '#FF2D55' },
+  { id: 'music', label: 'Music', emoji: '💿', accent: '#5856D6' },
+  { id: 'movie', label: 'Movie', emoji: '🎬', accent: '#007AFF' },
+  { id: 'place', label: 'Place', emoji: '📍', accent: '#34C759' },
+  { id: 'food', label: 'Food', emoji: '🍽️', accent: '#FF9500' },
+  { id: 'other', label: 'Other', emoji: '✨', accent: '#AF52DE' },
 ]
 
 export function emptyTasteStore(): TasteStore {
@@ -40,7 +41,7 @@ export function emptyTasteStore(): TasteStore {
 }
 
 export function tasteKindMeta(kind: TasteKind) {
-  return TASTE_KINDS.find((k) => k.id === kind) ?? TASTE_KINDS[4]!
+  return TASTE_KINDS.find((k) => k.id === kind) ?? TASTE_KINDS[TASTE_KINDS.length - 1]!
 }
 
 export function monthKeyFromDateKey(dateKey: string): string {
