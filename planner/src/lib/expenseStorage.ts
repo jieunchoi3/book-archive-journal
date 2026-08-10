@@ -122,5 +122,9 @@ export async function saveExpenseStore(userId: string, store: ExpenseStore): Pro
 }
 
 export function ensureExpenseStore(store: ExpenseStore | null): ExpenseStore {
-  return store ?? emptyExpenseStore()
+  if (!store) return emptyExpenseStore()
+  return {
+    ...store,
+    dayMarks: store.dayMarks ?? {},
+  }
 }

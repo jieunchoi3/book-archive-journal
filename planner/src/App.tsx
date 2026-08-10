@@ -4,6 +4,7 @@ import { useAuth } from './hooks/useAuth'
 import { PlannerDataProvider } from './context/PlannerDataContext'
 import { usePlanner } from './hooks/usePlanner'
 import { useItems } from './hooks/useItems'
+import { useExpenses } from './hooks/useExpenses'
 import { useLinkedApps } from './hooks/useLinkedApps'
 import { ImportLocalDataBanner } from './components/ImportLocalDataBanner'
 import { WeekView } from './components/WeekView'
@@ -16,15 +17,16 @@ function AppContent() {
   const [view, setView] = useState<AppView>('weekly')
   const planner = usePlanner()
   const items = useItems(planner.weekStart)
+  const expenses = useExpenses()
   const linkedApps = useLinkedApps()
 
   return (
     <>
       <ImportLocalDataBanner />
       {view === 'diary' ? (
-        <DiaryView />
+        <DiaryView expenses={expenses} />
       ) : view === 'expenses' ? (
-        <ExpenseView />
+        <ExpenseView expenses={expenses} />
       ) : view === 'weekly' ? (
         <WeekView
           template={planner.template}
@@ -41,7 +43,11 @@ function AppContent() {
           onOpenWeekly={() => setView('weekly')}
         />
       )}
-      <BottomNav active={view} onChange={setView} />
+      <BottomNav
+        active={view}
+        onChange={setView}
+        badges={{ expenses: expenses.missingLogDays.length }}
+      />
     </>
   )
 }

@@ -20,9 +20,14 @@ export interface MoneyTransaction {
   createdAt: string
 }
 
+/** Explicit day status when there is no transaction to log. */
+export type ExpenseDayMarkKind = 'no_spend'
+
 export interface ExpenseStore {
   categories: ExpenseCategory[]
   transactions: MoneyTransaction[]
+  /** dateKey → mark; cleared when a transaction is later added for that day. */
+  dayMarks?: Record<string, ExpenseDayMarkKind>
 }
 
 export const EXPENSE_COLORS = [
@@ -57,7 +62,7 @@ export const DEFAULT_INCOME_SOURCES: Omit<ExpenseCategory, 'id'>[] = [
 ]
 
 export function emptyExpenseStore(): ExpenseStore {
-  return { categories: [], transactions: [] }
+  return { categories: [], transactions: [], dayMarks: {} }
 }
 
 export function formatMoney(amount: number, currency = '£'): string {

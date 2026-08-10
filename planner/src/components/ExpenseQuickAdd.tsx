@@ -18,6 +18,8 @@ interface ExpenseQuickAddProps {
   onAddCategory: (input: { name: string; color: string; kind: MoneyFlow }) => string
   onRenameCategory: (categoryId: string, name: string) => void
   onDeleteCategory: (categoryId: string) => void
+  /** Mark the selected date as no spending (past days only). */
+  onMarkNoSpend?: (dateKey: string) => void
 }
 
 export function ExpenseQuickAdd({
@@ -28,6 +30,7 @@ export function ExpenseQuickAdd({
   onAddCategory,
   onRenameCategory,
   onDeleteCategory,
+  onMarkNoSpend,
 }: ExpenseQuickAddProps) {
   const [flow, setFlow] = useState<MoneyFlow>('out')
   const [amount, setAmount] = useState('')
@@ -310,6 +313,20 @@ export function ExpenseQuickAdd({
         Log {flow === 'out' ? 'expense' : 'income'}
         {amount && Number(amount) > 0 ? ` · ${formatMoney(Number(amount))}` : ''}
       </button>
+
+      {onMarkNoSpend && dateKey < getTodayKey() && (
+        <button
+          type="button"
+          onClick={() => {
+            onMarkNoSpend(dateKey)
+            setSavedFlash(true)
+            window.setTimeout(() => setSavedFlash(false), 1200)
+          }}
+          className="mt-2 w-full rounded-xl border border-dashed border-[#8B5A2B]/35 bg-[#FBF6F0] py-2.5 text-[13px] font-medium text-[#8B5A2B] hover:bg-[#F5EBE0]"
+        >
+          이 날은 지출 없음
+        </button>
+      )}
     </div>
   )
 }

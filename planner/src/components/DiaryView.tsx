@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { BookHeart, ChevronLeft, ChevronRight, Wallet } from 'lucide-react'
 import { useDiary } from '../hooks/useDiary'
-import { useExpenses } from '../hooks/useExpenses'
+import type { ExpenseActions } from '../hooks/useExpenses'
 import { useAuth } from '../hooks/useAuth'
 import { loadAllDiaryEntriesLocal } from '../lib/diaryStorage'
 import {
@@ -23,7 +23,11 @@ import { PageSearch, type SearchSuggestion } from './PageSearch'
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const SPEND_TOGGLE_KEY = 'planner:diaryShowSpending'
 
-export function DiaryView() {
+interface DiaryViewProps {
+  expenses: ExpenseActions
+}
+
+export function DiaryView({ expenses }: DiaryViewProps) {
   const diary = useDiary()
   const {
     year,
@@ -37,7 +41,6 @@ export function DiaryView() {
     syncError,
     refreshMonth,
   } = diary
-  const expenses = useExpenses()
   const { user } = useAuth()
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null)
   const [searchIndex, setSearchIndex] = useState<Record<string, DiaryEntry>>({})

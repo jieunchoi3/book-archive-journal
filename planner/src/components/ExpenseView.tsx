@@ -1,15 +1,19 @@
 import { useMemo, useState } from 'react'
 import { Check, ChevronLeft, ChevronRight, Pencil, Trash2, Wallet, X } from 'lucide-react'
-import { useExpenses } from '../hooks/useExpenses'
+import type { ExpenseActions } from '../hooks/useExpenses'
 import { formatMoney } from '../types/expense'
 import { formatMonthYear, getTodayKey, parseDateKey } from '../lib/weekUtils'
 import { ExpenseQuickAdd } from './ExpenseQuickAdd'
 import { ExpensePieChart } from './ExpensePieChart'
 import { ExpenseReport } from './ExpenseReport'
+import { MissingExpenseDaysSection } from './MissingExpenseDaysSection'
 import { PageSearch, type SearchSuggestion } from './PageSearch'
 
-export function ExpenseView() {
-  const expenses = useExpenses()
+interface ExpenseViewProps {
+  expenses: ExpenseActions
+}
+
+export function ExpenseView({ expenses }: ExpenseViewProps) {
   const {
     loading,
     expenseCategories,
@@ -17,6 +21,9 @@ export function ExpenseView() {
     transactions,
     addTransaction,
     deleteTransaction,
+    markDayNoSpend,
+    markDaysNoSpend,
+    missingLogDays,
     setCategoryBudget,
     addCategory,
     renameCategory,
@@ -187,6 +194,17 @@ export function ExpenseView() {
           />
         </div>
 
+        <MissingExpenseDaysSection
+          missingDays={missingLogDays}
+          onSelectDate={(dateKey) => {
+            const d = parseDateKey(dateKey)
+            setMonthKey(d.getFullYear(), d.getMonth())
+            setSelectedDateKey(dateKey)
+          }}
+          onMarkNoSpend={markDayNoSpend}
+          onMarkAllNoSpend={() => markDaysNoSpend(missingLogDays)}
+        />
+
         <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
           <StatCard label="Spent" value={formatMoney(monthOutTotal)} tone="out" />
           <StatCard label="Income" value={formatMoney(monthInTotal)} tone="in" />
@@ -207,6 +225,7 @@ export function ExpenseView() {
             onAddCategory={addCategory}
             onRenameCategory={renameCategory}
             onDeleteCategory={deleteCategory}
+            onMarkNoSpend={markDayNoSpend}
           />
 
           <div className="space-y-4">

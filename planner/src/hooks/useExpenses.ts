@@ -5,6 +5,7 @@ import {
   DEFAULT_INCOME_SOURCES,
   emptyExpenseStore,
 } from '../types/expense'
+import { getMissingExpenseLogDays } from '../lib/expenseMissingDays'
 import { ensureExpenseStore, loadExpenseStore, saveExpenseStore } from '../lib/expenseStorage'
 import { generateId, getTodayKey } from '../lib/weekUtils'
 import { useAuth } from './useAuth'
@@ -30,6 +31,12 @@ export interface ExpenseActions {
     note?: string
   }) => void
   deleteTransaction: (id: string) => void
+  /** Mark a day as intentionally empty (no spending to record). */
+  markDayNoSpend: (dateKey: string) => void
+  clearDayMark: (dateKey: string) => void
+  markDaysNoSpend: (dateKeys: string[]) => void
+  /** Unglogged days this month through yesterday (newest first). */
+  missingLogDays: string[]
   setCategoryBudget: (categoryId: string, budget: number | null) => void
   addCategory: (input: { name: string; color: string; kind: MoneyFlow }) => string
   renameCategory: (categoryId: string, name: string) => void
@@ -151,21 +158,30 @@ export function useExpenses(): ExpenseActions {
     [store.categories],
   )
 
+  const missingLogDays = useMemo(
+    () => getMissingExpenseLogDays(store),
+    [store],
+  )
+
   const addTransaction: ExpenseActions['addTransaction'] = useCallback(
     ({ amount, flow, categoryId, dateKey, note }) => {
       if (!(amount > 0)) return
+      const key = dateKey || getTodayKey()
       const tx: MoneyTransaction = {
         id: generateId(),
         amount,
         flow,
         categoryId,
-        dateKey: dateKey || getTodayKey(),
+        dateKey: key,
         note: note?.trim() ?? '',
         createdAt: new Date().toISOString(),
       }
+      const dayMarks = { ...(store.dayMarks ?? {}) }
+      delete dayMarks[key]
       persist({
         ...store,
         transactions: [tx, ...store.transactions],
+        dayMarks,
       })
     },
     [persist, store],
@@ -177,6 +193,45 @@ export function useExpenses(): ExpenseActions {
         ...store,
         transactions: store.transactions.filter((t) => t.id !== id),
       })
+    },
+    [persist, store],
+  )
+
+  const markDayNoSpend = useCallback(
+    (dateKey: string) => {
+      if (!dateKey || dateKey >= getTodayKey()) return
+      if (store.transactions.some((t) => t.dateKey === dateKey)) return
+      persist({
+        ...store,
+        dayMarks: { ...(store.dayMarks ?? {}), [dateKey]: 'no_spend' },
+      })
+    },
+    [persist, store],
+  )
+
+  const clearDayMark = useCallback(
+    (dateKey: string) => {
+      const dayMarks = { ...(store.dayMarks ?? {}) }
+      if (!(dateKey in dayMarks)) return
+      delete dayMarks[dateKey]
+      persist({ ...store, dayMarks })
+    },
+    [persist, store],
+  )
+
+  const markDaysNoSpend = useCallback(
+    (dateKeys: string[]) => {
+      const todayKey = getTodayKey()
+      const logged = new Set(store.transactions.map((t) => t.dateKey))
+      const dayMarks = { ...(store.dayMarks ?? {}) }
+      let changed = false
+      for (const key of dateKeys) {
+        if (!key || key >= todayKey || logged.has(key)) continue
+        if (dayMarks[key] === 'no_spend') continue
+        dayMarks[key] = 'no_spend'
+        changed = true
+      }
+      if (changed) persist({ ...store, dayMarks })
     },
     [persist, store],
   )
@@ -245,6 +300,10 @@ export function useExpenses(): ExpenseActions {
     incomeCategories,
     addTransaction,
     deleteTransaction,
+    markDayNoSpend,
+    clearDayMark,
+    markDaysNoSpend,
+    missingLogDays,
     setCategoryBudget,
     addCategory,
     renameCategory,
