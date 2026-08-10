@@ -208,12 +208,12 @@ export function DiaryView({ expenses }: DiaryViewProps) {
           <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px] text-muted">
             <span>Spend heat</span>
             <span
-              className="h-2.5 w-20 rounded-full"
+              className="h-2.5 w-20 rounded-full ring-1 ring-black/5"
               style={{
-                background: `linear-gradient(90deg, ${spendHeatColor(0.08)}, ${spendHeatColor(1)})`,
+                background: `linear-gradient(90deg, #FFFFFF, ${spendHeatColor(1)})`,
               }}
             />
-            <span>darker = spent more that day</span>
+            <span>on white — darker = spent more (photos hidden)</span>
           </div>
         )}
 
@@ -242,6 +242,12 @@ export function DiaryView({ expenses }: DiaryViewProps) {
                     showSpending && maxSpend > 0 && spent > 0 ? spent / maxSpend : 0
                   const hasPhoto = diaryEntryHasPhoto(entry)
                   const gridSrc = diaryGridImageUrl(entry)
+                  // Heat mode paints on white only — photos hide so dark images don't skew the map.
+                  const heatMode = showSpending && inMonth
+                  const showHeat = heatMode && spent > 0
+                  const showPhoto = Boolean(hasPhoto && gridSrc && !heatMode)
+                  const heatOnWhite = showHeat
+                  const darkTextOnHeat = heatOnWhite && intensity <= 0.55
 
                   return (
                     <button
@@ -252,14 +258,14 @@ export function DiaryView({ expenses }: DiaryViewProps) {
                         !inMonth ? 'bg-[#FAFAFA]/70' : 'bg-white hover:bg-[#FAFAFA]'
                       } ${selectedDateKey === dateKey ? 'ring-2 ring-inset ring-[#FF2D55]/45' : ''}`}
                       style={
-                        showSpending && inMonth && !hasPhoto && spent > 0
+                        heatOnWhite
                           ? { backgroundColor: spendHeatColor(0.12 + intensity * 0.88) }
                           : undefined
                       }
                     >
-                      {hasPhoto && gridSrc ? (
+                      {showPhoto ? (
                         <img
-                          src={gridSrc}
+                          src={gridSrc!}
                           alt=""
                           loading="lazy"
                           decoding="async"
@@ -267,41 +273,27 @@ export function DiaryView({ expenses }: DiaryViewProps) {
                             inMonth ? 'opacity-100' : 'opacity-40'
                           }`}
                         />
-                      ) : hasPhoto ? (
+                      ) : hasPhoto && !heatMode ? (
                         <div
                           className={`absolute inset-0 animate-pulse bg-[#E8E8ED] ${
                             inMonth ? 'opacity-100' : 'opacity-40'
                           }`}
                         />
-                      ) : (
+                      ) : !heatOnWhite ? (
                         <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/[0.02]" />
-                      )}
-
-                      {showSpending && inMonth && hasPhoto && spent > 0 && (
-                        <div
-                          className="absolute inset-0 mix-blend-multiply"
-                          style={{
-                            backgroundColor: spendHeatColor(0.25 + intensity * 0.75),
-                            opacity: 0.35 + intensity * 0.35,
-                          }}
-                        />
-                      )}
+                      ) : null}
 
                       <div
-                        className={`absolute inset-x-0 bottom-0 bg-gradient-to-t px-1.5 pb-1.5 pt-8 ${
-                          hasPhoto
-                            ? 'from-black/55 via-black/20 to-transparent'
-                            : showSpending && spent > 0
-                              ? 'from-black/25 to-transparent'
-                              : 'from-black/[0.04] to-transparent'
+                        className={`absolute inset-x-0 bottom-0 px-1.5 pb-1.5 pt-8 ${
+                          showPhoto
+                            ? 'bg-gradient-to-t from-black/55 via-black/20 to-transparent'
+                            : ''
                         }`}
                       >
-                        {showSpending && inMonth && spent > 0 && (
+                        {showHeat && (
                           <p
                             className={`mb-0.5 text-[10px] font-semibold tabular-nums sm:text-[11px] ${
-                              hasPhoto || intensity > 0.55
-                                ? 'text-white'
-                                : 'text-[#5C4033]'
+                              darkTextOnHeat ? 'text-[#5C4033]' : 'text-white'
                             }`}
                           >
                             {formatMoney(spent)}
@@ -310,9 +302,13 @@ export function DiaryView({ expenses }: DiaryViewProps) {
                         {entry?.title && (
                           <p
                             className={`line-clamp-2 text-[10px] font-semibold leading-tight sm:text-[11px] ${
-                              hasPhoto || (showSpending && intensity > 0.55)
+                              showPhoto
                                 ? 'text-white'
-                                : 'text-[#1C1C1E]'
+                                : darkTextOnHeat
+                                  ? 'text-[#1C1C1E]'
+                                  : heatOnWhite
+                                    ? 'text-white'
+                                    : 'text-[#1C1C1E]'
                             }`}
                           >
                             {entry.title}
@@ -324,10 +320,10 @@ export function DiaryView({ expenses }: DiaryViewProps) {
                         className={`relative z-10 m-1.5 flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums sm:text-[12px] ${
                           isToday
                             ? 'bg-[#FF2D55] text-white'
-                            : hasPhoto
+                            : showPhoto
                               ? 'bg-black/35 text-white backdrop-blur-sm'
-                              : showSpending && intensity > 0.55
-                                ? 'bg-black/25 text-white'
+                              : heatOnWhite && !darkTextOnHeat
+                                ? 'bg-black/20 text-white'
                                 : inMonth
                                   ? 'text-[#1C1C1E]'
                                   : 'text-[#C7C7CC]'
@@ -336,8 +332,14 @@ export function DiaryView({ expenses }: DiaryViewProps) {
                         {dayNum}
                       </span>
 
-                      {hasContent && !hasPhoto && !(showSpending && spent > 0) && (
+                      {hasContent && !showPhoto && !showHeat && (
                         <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[#FF2D55]" />
+                      )}
+                      {heatMode && hasPhoto && (
+                        <span
+                          className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[#FF2D55]/80"
+                          title="Has diary photo"
+                        />
                       )}
                     </button>
                   )
