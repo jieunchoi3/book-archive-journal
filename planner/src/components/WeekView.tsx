@@ -22,7 +22,9 @@ import {
 } from '../lib/taskDnd'
 import {
   formatWeekRange,
+  getDayKeyFromDate,
   getWeekStartDate,
+  parseDateKey,
   shiftWeekStart,
 } from '../lib/weekUtils'
 import { PlannerSidebar } from './PlannerSidebar'
@@ -30,6 +32,7 @@ import { DayColumn } from './DayColumn'
 import { DayFocusView } from './DayFocusView'
 import { WeekSummary } from './WeekSummary'
 import { MonthCalendarTrigger } from './MonthCalendarPopover'
+import { OverdueEventsSection } from './OverdueEventsSection'
 import { PageSearch, type SearchSuggestion } from './PageSearch'
 import type { LinkedAppsActions } from '../hooks/useLinkedApps'
 
@@ -254,6 +257,16 @@ export function WeekView({ template, weekStart, planner, items, linkedApps }: We
             }}
           />
         </div>
+
+        <OverdueEventsSection
+          items={items}
+          onSelectDate={(dateKey) => {
+            const d = parseDateKey(dateKey)
+            void planner.goToWeek(getWeekStartDate(d)).then(() => {
+              setFocusedDayKey(getDayKeyFromDate(d))
+            })
+          }}
+        />
 
         <div className="relative min-h-[320px]">
           <div

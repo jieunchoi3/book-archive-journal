@@ -16,6 +16,7 @@ import {
 import { EventQuickAddForm, type EventAddPayload } from './EventQuickAddForm'
 import { ItemChip } from './ItemChip'
 import { EditItemModal } from './ItemModals'
+import { OverdueEventsSection } from './OverdueEventsSection'
 import { PlannerSidebar } from './PlannerSidebar'
 import { PageSearch, type SearchSuggestion } from './PageSearch'
 import type { LinkedAppsActions } from '../hooks/useLinkedApps'
@@ -374,6 +375,15 @@ export function MonthCalendarView({
             }}
           />
         </div>
+
+        <OverdueEventsSection
+          items={items}
+          onSelectDate={(dateKey) => {
+            const d = parseDateKey(dateKey)
+            setViewMonth({ year: d.getFullYear(), month: d.getMonth() })
+            setSelectedDateKey(dateKey)
+          }}
+        />
 
         {items.categories.length > 0 && (
           <div className="mb-3 flex flex-wrap items-center gap-2">
