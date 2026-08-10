@@ -196,10 +196,14 @@ export function TasteStickerView() {
 
       {showAdd && (
         <PolaroidEditor
+          key={`create-${taste.kindFilter}`}
           mode="create"
           categories={taste.categories}
           initialCategoryId={
-            taste.kindFilter !== 'all' ? taste.kindFilter : undefined
+            taste.kindFilter !== 'all' &&
+            taste.categories.some((c) => c.id === taste.kindFilter)
+              ? taste.kindFilter
+              : undefined
           }
           onClose={() => setShowAdd(false)}
           onSave={async (input) => {
@@ -586,14 +590,21 @@ function PolaroidEditor({
   onDelete?: () => void
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
-  const preferredId =
-    sticker?.categoryId ||
-    (initialCategoryId && categories.some((c) => c.id === initialCategoryId)
-      ? initialCategoryId
-      : undefined) ||
-    categories[0]?.id ||
-    'other'
-  const [categoryId, setCategoryId] = useState(preferredId)
+
+  const resolveCategoryId = () => {
+    if (sticker?.categoryId && categories.some((c) => c.id === sticker.categoryId)) {
+      return sticker.categoryId
+    }
+    if (
+      initialCategoryId &&
+      categories.some((c) => c.id === initialCategoryId)
+    ) {
+      return initialCategoryId
+    }
+    return categories[0]?.id ?? 'other'
+  }
+
+  const [categoryId, setCategoryId] = useState(resolveCategoryId)
   const [title, setTitle] = useState(sticker?.title ?? '')
   const [subtitle, setSubtitle] = useState(sticker?.subtitle ?? '')
   const [note, setNote] = useState(sticker?.note ?? '')
@@ -602,6 +613,14 @@ function PolaroidEditor({
   const [imageDataUrl, setImageDataUrl] = useState(sticker?.imageDataUrl ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Keep create-form category in sync with the filter tab the user added from.
+  useEffect(() => {
+    if (mode !== 'create' || !initialCategoryId) return
+    if (categories.some((c) => c.id === initialCategoryId)) {
+      setCategoryId(initialCategoryId)
+    }
+  }, [mode, initialCategoryId, categories])
 
   const activeCategory = tasteCategoryMeta(categories, categoryId)
   const youtubeEnabled = categoryAllowsYoutube(activeCategory)
