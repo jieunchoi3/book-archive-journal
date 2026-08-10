@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import { Check, ChevronLeft, ChevronRight, Pencil, Trash2, Wallet, X } from 'lucide-react'
 import type { ExpenseActions } from '../hooks/useExpenses'
+import type { ExpenseCategory, MoneyTransaction } from '../types/expense'
 import { formatMoney } from '../types/expense'
-import { formatMonthYear, getTodayKey, parseDateKey } from '../lib/weekUtils'
+import { formatDateKey, formatMonthYear, getTodayKey, parseDateKey } from '../lib/weekUtils'
 import { ExpenseQuickAdd } from './ExpenseQuickAdd'
 import { ExpensePieChart } from './ExpensePieChart'
 import { ExpenseReport } from './ExpenseReport'
@@ -46,6 +47,18 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
   const [editingName, setEditingName] = useState('')
   const [overviewPanel, setOverviewPanel] = useState<'category' | 'report'>('category')
   const [highlightedCategoryId, setHighlightedCategoryId] = useState<string | null>(null)
+  /** null = all categories selected for the month log. */
+  const [logFilterIds, setLogFilterIds] = useState<Set<string> | null>(null)
+
+  const logFilterCategories = useMemo(
+    () => [...expenseCategories, ...incomeCategories],
+    [expenseCategories, incomeCategories],
+  )
+
+  const activeLogFilterIds = useMemo(() => {
+    if (logFilterIds === null) return new Set(logFilterCategories.map((c) => c.id))
+    return logFilterIds
+  }, [logFilterIds, logFilterCategories])
 
   const pieSlices = useMemo(
     () =>
@@ -75,13 +88,53 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
     setSelectedDateKey(getTodayKey())
   }
 
-  const recent = monthTransactions.slice(0, 12)
   const catById = useMemo(() => {
     const map = new Map(
       [...expenseCategories, ...incomeCategories].map((c) => [c.id, c] as const),
     )
     return map
   }, [expenseCategories, incomeCategories])
+
+  const logDays = useMemo(() => {
+    const filtered = monthTransactions.filter((t) => activeLogFilterIds.has(t.categoryId))
+    const byDay = new Map<string, MoneyTransaction[]>()
+    for (const t of filtered) {
+      const list = byDay.get(t.dateKey) ?? []
+      list.push(t)
+      byDay.set(t.dateKey, list)
+    }
+    return [...byDay.entries()]
+      .sort(([a], [b]) => b.localeCompare(a))
+      .map(([dateKey, txns]) => {
+        const sorted = [...txns].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        const dayOut = sorted
+          .filter((t) => t.flow === 'out')
+          .reduce((sum, t) => sum + t.amount, 0)
+        const dayIn = sorted
+          .filter((t) => t.flow === 'in')
+          .reduce((sum, t) => sum + t.amount, 0)
+        return { dateKey, transactions: sorted, dayOut, dayIn }
+      })
+  }, [monthTransactions, activeLogFilterIds])
+
+  const toggleLogFilter = (id: string) => {
+    setLogFilterIds((prev) => {
+      const base =
+        prev === null
+          ? new Set(logFilterCategories.map((c) => c.id))
+          : new Set(prev)
+      if (base.has(id)) base.delete(id)
+      else base.add(id)
+      if (base.size === 0) return new Set()
+      if (
+        logFilterCategories.length > 0 &&
+        logFilterCategories.every((c) => base.has(c.id))
+      ) {
+        return null
+      }
+      return base
+    })
+  }
 
   const searchSuggestions = useMemo((): SearchSuggestion[] => {
     const txnSuggestions = transactions.map((t) => {
@@ -459,56 +512,109 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
             </div>
 
             <div className="rounded-2xl border border-hairline bg-white p-4 shadow-sm sm:p-5">
-              <h2 className="mb-3 text-[16px] font-semibold text-[#1C1C1E]">
-                This month’s log
-              </h2>
-              {loading && (
-                <p className="text-[12px] text-muted">Loading…</p>
-              )}
-              {!loading && recent.length === 0 && (
-                <p className="text-[12px] text-muted">No transactions this month yet.</p>
-              )}
-              <ul className="divide-y divide-hairline">
-                {recent.map((t) => {
-                  const cat = catById.get(t.categoryId)
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-[16px] font-semibold text-[#1C1C1E]">
+                  This month’s log
+                </h2>
+                <div className="flex items-center gap-1 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => setLogFilterIds(null)}
+                    className="rounded-lg px-2.5 py-1 font-medium text-[#8B5A2B] hover:bg-[#F3E5D8]"
+                  >
+                    All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLogFilterIds(new Set())}
+                    className="rounded-lg px-2.5 py-1 font-medium text-muted hover:bg-[#F2F2F7]"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              <div className="mb-4 flex flex-wrap gap-1.5">
+                {logFilterCategories.map((cat) => {
+                  const on = activeLogFilterIds.has(cat.id)
                   return (
-                    <li
-                      key={t.id}
-                      className="flex items-center gap-3 py-2.5"
-                    >
-                      <span
-                        className="h-2.5 w-2.5 shrink-0 rounded-full"
-                        style={{ backgroundColor: cat?.color ?? '#8E8E93' }}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[13px] font-medium text-[#1C1C1E]">
-                          {cat?.name ?? 'Unknown'}
-                          {t.note ? (
-                            <span className="font-normal text-muted"> · {t.note}</span>
-                          ) : null}
-                        </p>
-                        <p className="text-[11px] text-muted">{t.dateKey}</p>
-                      </div>
-                      <span
-                        className={`shrink-0 text-[13px] font-semibold tabular-nums ${
-                          t.flow === 'in' ? 'text-[#3D7A5A]' : 'text-[#8B5A2B]'
-                        }`}
-                      >
-                        {t.flow === 'in' ? '+' : '−'}
-                        {formatMoney(t.amount)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => deleteTransaction(t.id)}
-                        className="rounded-md p-1.5 text-muted hover:bg-[#F2F2F7] hover:text-[#FF3B30]"
-                        aria-label="Delete"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </li>
+                    <CategoryFilterPill
+                      key={cat.id}
+                      category={cat}
+                      active={on}
+                      onClick={() => toggleLogFilter(cat.id)}
+                    />
                   )
                 })}
-              </ul>
+              </div>
+
+              {loading && <p className="text-[12px] text-muted">Loading…</p>}
+              {!loading && monthTransactions.length === 0 && (
+                <p className="text-[12px] text-muted">No transactions this month yet.</p>
+              )}
+              {!loading && monthTransactions.length > 0 && logDays.length === 0 && (
+                <p className="text-[12px] text-muted">No logs in the selected filters.</p>
+              )}
+
+              <div className="max-h-[28rem] space-y-4 overflow-y-auto">
+                {logDays.map(({ dateKey, transactions: dayTxns, dayOut, dayIn }) => (
+                  <section key={dateKey}>
+                    <div className="sticky top-0 z-10 mb-1.5 flex items-baseline justify-between gap-2 bg-white/95 py-1 backdrop-blur-sm">
+                      <h3 className="text-[12px] font-semibold text-[#1C1C1E]">
+                        {formatLogDayHeading(dateKey)}
+                      </h3>
+                      <p className="text-[11px] tabular-nums text-muted">
+                        {dayOut > 0 && (
+                          <span className="text-[#8B5A2B]">−{formatMoney(dayOut)}</span>
+                        )}
+                        {dayOut > 0 && dayIn > 0 && <span className="mx-1">·</span>}
+                        {dayIn > 0 && (
+                          <span className="text-[#3D7A5A]">+{formatMoney(dayIn)}</span>
+                        )}
+                      </p>
+                    </div>
+                    <ul className="divide-y divide-hairline rounded-xl bg-[#FAFAFA] px-3">
+                      {dayTxns.map((t) => {
+                        const cat = catById.get(t.categoryId)
+                        return (
+                          <li key={t.id} className="flex items-center gap-3 py-2.5">
+                            <span
+                              className="h-2.5 w-2.5 shrink-0 rounded-full"
+                              style={{ backgroundColor: cat?.color ?? '#8E8E93' }}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-[13px] font-medium text-[#1C1C1E]">
+                                <span style={{ color: cat?.color ?? undefined }}>
+                                  {cat?.name ?? 'Unknown'}
+                                </span>
+                                {t.note ? (
+                                  <span className="font-normal text-muted"> · {t.note}</span>
+                                ) : null}
+                              </p>
+                            </div>
+                            <span
+                              className={`shrink-0 text-[13px] font-semibold tabular-nums ${
+                                t.flow === 'in' ? 'text-[#3D7A5A]' : 'text-[#8B5A2B]'
+                              }`}
+                            >
+                              {t.flow === 'in' ? '+' : '−'}
+                              {formatMoney(t.amount)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => deleteTransaction(t.id)}
+                              className="rounded-md p-1.5 text-muted hover:bg-white hover:text-[#FF3B30]"
+                              aria-label="Delete"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </section>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -542,4 +648,48 @@ function StatCard({
       </p>
     </div>
   )
+}
+
+function CategoryFilterPill({
+  category,
+  active,
+  onClick,
+}: {
+  category: ExpenseCategory
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[12px] font-medium transition-colors ${
+        active
+          ? 'text-white shadow-sm'
+          : 'bg-[#F2F2F7] text-[#8E8E93] line-through decoration-[#C7C7CC]'
+      }`}
+      style={active ? { backgroundColor: category.color } : undefined}
+    >
+      <span
+        className="h-2 w-2 rounded-full"
+        style={{
+          backgroundColor: active ? 'rgba(255,255,255,0.85)' : category.color,
+        }}
+      />
+      {category.name}
+    </button>
+  )
+}
+
+function formatLogDayHeading(dateKey: string): string {
+  const today = getTodayKey()
+  if (dateKey === today) return 'Today'
+  const yesterday = parseDateKey(today)
+  yesterday.setDate(yesterday.getDate() - 1)
+  if (dateKey === formatDateKey(yesterday)) return 'Yesterday'
+  return parseDateKey(dateKey).toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  })
 }
