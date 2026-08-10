@@ -170,8 +170,6 @@ export function TasteStickerView() {
 
         {taste.loading ? (
           <p className="py-24 text-center text-sm text-[#fffac0]/80">Loading…</p>
-        ) : taste.visibleStickers.length === 0 ? (
-          <EmptyState onAdd={() => setShowAdd(true)} allTime={taste.browseMode === 'atlas'} />
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 md:gap-3">
             {taste.visibleStickers.map((sticker, i) => (
@@ -184,18 +182,13 @@ export function TasteStickerView() {
                 onClick={() => setSelected(sticker)}
               />
             ))}
+            <AddPolaroidCard
+              delayMs={Math.min(taste.visibleStickers.length * 30, 240)}
+              onClick={() => setShowAdd(true)}
+            />
           </div>
         )}
       </div>
-
-      <button
-        type="button"
-        onClick={() => setShowAdd(true)}
-        className="fixed bottom-20 right-4 z-30 inline-flex items-center gap-1.5 rounded-full bg-[#fffac0] px-4 py-3 text-[13px] font-semibold text-[#3a2010] shadow-lg sm:bottom-24 sm:right-6"
-      >
-        <Plus size={16} />
-        Add
-      </button>
 
       {showCategories && (
         <CategoryManager
@@ -703,31 +696,28 @@ function PolaroidCard({
   )
 }
 
-function EmptyState({ onAdd, allTime }: { onAdd: () => void; allTime: boolean }) {
+function AddPolaroidCard({ delayMs, onClick }: { delayMs: number; onClick: () => void }) {
   return (
-    <div className="flex min-h-[45vh] flex-col items-center justify-center px-4 py-16 text-center">
-      <div
-        className="mb-5 w-40 rotate-[-2deg] p-2.5 shadow-[0_14px_36px_-14px_rgba(0,0,0,0.5)] ring-1 ring-black/25"
-        style={{ backgroundColor: '#fffac0' }}
-      >
-        <div className="flex aspect-square items-center justify-center bg-white text-[#C7C7CC]">
-          <ImagePlus size={28} />
-        </div>
-        <p className="px-0.5 py-3 text-left text-[12px] text-black/80">Add a photo</p>
-      </div>
-      <p className="text-[15px] font-semibold text-[#fffac0]">
-        {allTime ? 'No polaroids yet' : 'No polaroids this month'}
-      </p>
-      <p className="mt-1 max-w-sm text-[13px] text-[#fffac0]/75">
-        Upload a photo and capture whatever you’re into.
-      </p>
+    <div style={{ animation: `taste-pop 420ms ease-out ${delayMs}ms both` }}>
       <button
         type="button"
-        onClick={onAdd}
-        className="mt-5 inline-flex items-center gap-1.5 rounded-full bg-[#fffac0] px-4 py-2.5 text-[13px] font-semibold text-[#3a2010]"
+        onClick={onClick}
+        aria-label="Add polaroid"
+        className="group w-full text-left transition-transform duration-200 hover:-translate-y-1.5"
       >
-        <Plus size={15} />
-        Add polaroid
+        <div
+          className="flex aspect-[293/425] flex-col gap-2.5 overflow-hidden p-2.5 ring-1 ring-black/15 transition-[box-shadow] duration-200 [box-shadow:0_1px_2px_rgba(20,10,0,0.18),0_8px_16px_-4px_rgba(20,10,0,0.35),0_22px_40px_-12px_rgba(20,10,0,0.45)] group-hover:[box-shadow:0_2px_4px_rgba(20,10,0,0.2),0_14px_28px_-6px_rgba(20,10,0,0.4),0_36px_56px_-16px_rgba(20,10,0,0.5)]"
+          style={{ backgroundColor: '#4a3428' }}
+        >
+          <div className="relative min-h-0 flex-[1.15] overflow-hidden bg-white">
+            <span className="absolute inset-0 flex items-center justify-center">
+              <span className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#d8d8d8] text-[#2b2118] transition group-hover:bg-[#cfcfcf] sm:h-12 sm:w-12">
+                <Plus size={22} strokeWidth={2.25} />
+              </span>
+            </span>
+          </div>
+          <div className="relative min-h-[5.5rem] px-0.5 pb-1 pt-0.5" aria-hidden />
+        </div>
       </button>
     </div>
   )
