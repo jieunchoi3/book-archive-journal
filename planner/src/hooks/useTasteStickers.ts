@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { TasteCategory, TasteSticker, TasteStore } from '../types/taste'
 import {
+  DEFAULT_TASTE_BACKGROUND,
   DEFAULT_TASTE_CATEGORIES,
   emptyTasteStore,
+  monthKeyFromParts,
   nextCategoryAccent,
   parseYouTubeId,
   randomPolaroidStripColor,
@@ -38,6 +40,10 @@ export interface TasteActions {
   categories: TasteCategory[]
   year: number
   month: number
+  monthKey: string
+  /** Resolved background for the viewed month (custom or default stripe). */
+  backgroundUrl: string
+  hasCustomBackground: boolean
   setViewMonth: (year: number, month: number) => void
   browseMode: TasteBrowseMode
   setBrowseMode: (mode: TasteBrowseMode) => void
@@ -51,6 +57,8 @@ export interface TasteActions {
   addCategory: (name: string) => TasteCategory | null
   renameCategory: (id: string, name: string) => void
   deleteCategory: (id: string) => void
+  setMonthBackground: (monthKey: string, dataUrl: string) => void
+  clearMonthBackground: (monthKey: string) => void
 }
 
 function randomTilt() {
@@ -104,7 +112,11 @@ function normalizeStore(loaded: TasteStore): TasteStore {
   const stickers = (loaded.stickers as LegacySticker[])
     .map((s) => normalizeSticker(s, categories))
     .filter((s) => s.imageDataUrl || Boolean(parseYouTubeId(s.link)))
-  return { categories, stickers }
+  const monthBackgrounds =
+    loaded.monthBackgrounds && typeof loaded.monthBackgrounds === 'object'
+      ? { ...loaded.monthBackgrounds }
+      : {}
+  return { categories, stickers, monthBackgrounds }
 }
 
 export function useTasteStickers(): TasteActions {
@@ -168,7 +180,11 @@ export function useTasteStickers(): TasteActions {
     [userId],
   )
 
-  const monthPrefix = `${viewMonth.year}-${String(viewMonth.month + 1).padStart(2, '0')}`
+  const monthKey = monthKeyFromParts(viewMonth.year, viewMonth.month)
+  const monthPrefix = monthKey
+  const customBackground = store.monthBackgrounds[monthKey] ?? ''
+  const backgroundUrl = customBackground || DEFAULT_TASTE_BACKGROUND
+  const hasCustomBackground = Boolean(customBackground)
 
   const visibleStickers = useMemo(() => {
     let list = store.stickers
@@ -295,6 +311,7 @@ export function useTasteStickers(): TasteActions {
       const nextCategories = store.categories.filter((c) => c.id !== id)
       const fallbackMeta = tasteCategoryMeta(nextCategories, fallback)
       persist({
+        ...store,
         categories: nextCategories,
         stickers: store.stickers.map((s) =>
           s.categoryId === id
@@ -307,6 +324,27 @@ export function useTasteStickers(): TasteActions {
     [persist, store, kindFilter],
   )
 
+  const setMonthBackground = useCallback(
+    (key: string, dataUrl: string) => {
+      if (!key || !dataUrl) return
+      persist({
+        ...store,
+        monthBackgrounds: { ...store.monthBackgrounds, [key]: dataUrl },
+      })
+    },
+    [persist, store],
+  )
+
+  const clearMonthBackground = useCallback(
+    (key: string) => {
+      if (!key || !store.monthBackgrounds[key]) return
+      const next = { ...store.monthBackgrounds }
+      delete next[key]
+      persist({ ...store, monthBackgrounds: next })
+    },
+    [persist, store],
+  )
+
   const setViewMonth = useCallback((year: number, month: number) => {
     setViewMonthState({ year, month })
   }, [])
@@ -317,6 +355,9 @@ export function useTasteStickers(): TasteActions {
     categories: store.categories,
     year: viewMonth.year,
     month: viewMonth.month,
+    monthKey,
+    backgroundUrl,
+    hasCustomBackground,
     setViewMonth,
     browseMode,
     setBrowseMode,
@@ -330,5 +371,7 @@ export function useTasteStickers(): TasteActions {
     addCategory,
     renameCategory,
     deleteCategory,
+    setMonthBackground,
+    clearMonthBackground,
   }
 }

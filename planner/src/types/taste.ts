@@ -30,7 +30,12 @@ export interface TasteSticker {
 export interface TasteStore {
   categories: TasteCategory[]
   stickers: TasteSticker[]
+  /** Per-month full-bleed backgrounds keyed by YYYY-MM (compressed data URLs). */
+  monthBackgrounds: Record<string, string>
 }
+
+/** Built-in scrapbook stripe used when a month has no custom background. */
+export const DEFAULT_TASTE_BACKGROUND = '/taste/stripe-bg.png'
 
 const CATEGORY_ACCENTS = [
   '#FF2D55',
@@ -95,7 +100,12 @@ export function emptyTasteStore(): TasteStore {
   return {
     categories: DEFAULT_TASTE_CATEGORIES.map((c) => ({ ...c })),
     stickers: [],
+    monthBackgrounds: {},
   }
+}
+
+export function monthKeyFromParts(year: number, monthIndex: number): string {
+  return `${year}-${String(monthIndex + 1).padStart(2, '0')}`
 }
 
 export function nextCategoryAccent(categories: TasteCategory[]): string {

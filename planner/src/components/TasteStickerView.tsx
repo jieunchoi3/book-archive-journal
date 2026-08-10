@@ -3,6 +3,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  ImageIcon,
   ImagePlus,
   Pencil,
   Plus,
@@ -58,6 +59,7 @@ export function TasteStickerView() {
   const [showAdd, setShowAdd] = useState(false)
   const [selected, setSelected] = useState<TasteSticker | null>(null)
   const [showCategories, setShowCategories] = useState(false)
+  const [showBackground, setShowBackground] = useState(false)
 
   const shiftMonth = (delta: number) => {
     taste.setBrowseMode('month')
@@ -69,9 +71,12 @@ export function TasteStickerView() {
     <div className="relative min-h-screen overflow-x-hidden pb-24">
       <img
         aria-hidden
-        src="/taste/stripe-bg.png"
+        key={taste.backgroundUrl.slice(0, 64)}
+        src={taste.backgroundUrl}
         alt=""
-        className="pointer-events-none absolute inset-0 h-full w-full object-fill"
+        className={`pointer-events-none absolute inset-0 h-full w-full ${
+          taste.hasCustomBackground ? 'object-cover' : 'object-fill'
+        }`}
       />
       <div aria-hidden className="pointer-events-none absolute inset-0 bg-[#2b1508]/20" />
 
@@ -117,7 +122,7 @@ export function TasteStickerView() {
           </button>
         </header>
 
-        <div className="mb-4 flex justify-center gap-2">
+        <div className="mb-4 flex flex-wrap justify-center gap-2">
           <button
             type="button"
             onClick={() => taste.setBrowseMode('atlas')}
@@ -128,6 +133,14 @@ export function TasteStickerView() {
             }`}
           >
             View all
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowBackground(true)}
+            className="inline-flex items-center gap-1.5 rounded-full bg-[#fffde8]/35 px-3 py-1.5 text-[12px] font-semibold text-[#fffac0] ring-1 ring-[#fffac0]/35 hover:bg-[#fffde8]/50"
+          >
+            <ImageIcon size={13} />
+            Background
           </button>
           <button
             type="button"
@@ -191,6 +204,24 @@ export function TasteStickerView() {
           onAdd={(name) => taste.addCategory(name)}
           onRename={(id, name) => taste.renameCategory(id, name)}
           onDelete={(id) => taste.deleteCategory(id)}
+        />
+      )}
+
+      {showBackground && (
+        <BackgroundEditor
+          monthLabel={`${monthTitle(taste.year, taste.month)} ${taste.year}`}
+          monthKey={taste.monthKey}
+          previewUrl={taste.backgroundUrl}
+          hasCustom={taste.hasCustomBackground}
+          onClose={() => setShowBackground(false)}
+          onSave={(dataUrl) => {
+            taste.setMonthBackground(taste.monthKey, dataUrl)
+            setShowBackground(false)
+          }}
+          onReset={() => {
+            taste.clearMonthBackground(taste.monthKey)
+            setShowBackground(false)
+          }}
         />
       )}
 
@@ -260,6 +291,145 @@ function FilterPill({
     >
       {label}
     </button>
+  )
+}
+
+function BackgroundEditor({
+  monthLabel,
+  monthKey,
+  previewUrl,
+  hasCustom,
+  onClose,
+  onSave,
+  onReset,
+}: {
+  monthLabel: string
+  monthKey: string
+  previewUrl: string
+  hasCustom: boolean
+  onClose: () => void
+  onSave: (dataUrl: string) => void
+  onReset: () => void
+}) {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [draftUrl, setDraftUrl] = useState(hasCustom ? previewUrl : '')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const applyFile = useCallback(async (file: File | null) => {
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      setError('Please paste or choose an image file.')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      // Wide scrapbook backgrounds — keep detail but cap size for IndexedDB.
+      const compressed = await compressImageSource(file, 2000, 0.82)
+      setDraftUrl(compressed)
+    } catch {
+      setError('Couldn’t read that image. Try another one.')
+    } finally {
+      setBusy(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items
+      if (!items?.length) return
+      for (const item of items) {
+        if (!item.type.startsWith('image/')) continue
+        const file = item.getAsFile()
+        if (!file) continue
+        e.preventDefault()
+        void applyFile(file)
+        return
+      }
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [applyFile])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-6">
+      <button type="button" className="absolute inset-0" aria-label="Close" onClick={onClose} />
+      <div className="relative z-10 max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-[#fffaf0] shadow-2xl sm:rounded-3xl">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-black/5 bg-[#fffaf0]/95 px-5 py-4 backdrop-blur">
+          <div>
+            <h2 className="text-[16px] font-semibold text-[#2b2118]">Month background</h2>
+            <p className="text-[12px] text-[#8A7A6A]">
+              {monthLabel} · {monthKey}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-[#8A7A6A] hover:bg-black/5"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="space-y-4 px-5 py-5">
+          <div className="overflow-hidden rounded-2xl ring-1 ring-black/10">
+            <img
+              src={draftUrl || previewUrl}
+              alt=""
+              className="aspect-[16/10] w-full object-cover"
+            />
+          </div>
+
+          <p className="text-[13px] leading-relaxed text-[#5C4E40]">
+            Copy any image and paste it here (⌘V), or upload a file. August can keep the default
+            stripe — other months can each have their own look.
+          </p>
+
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => void applyFile(e.target.files?.[0] ?? null)}
+          />
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => fileRef.current?.click()}
+              className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#3a2010] px-3 py-2.5 text-[13px] font-semibold text-[#fffac0] disabled:opacity-40"
+            >
+              <ImagePlus size={15} />
+              {busy ? 'Working…' : 'Upload image'}
+            </button>
+            {hasCustom || draftUrl ? (
+              <button
+                type="button"
+                onClick={onReset}
+                className="rounded-xl bg-[#f0e6d4] px-3 py-2.5 text-[13px] font-semibold text-[#3a2010]"
+              >
+                Use default stripe
+              </button>
+            ) : null}
+          </div>
+
+          {error && <p className="text-[12px] text-[#FF3B30]">{error}</p>}
+
+          <button
+            type="button"
+            disabled={busy || !draftUrl}
+            onClick={() => {
+              if (draftUrl) onSave(draftUrl)
+            }}
+            className="w-full rounded-2xl bg-[#3a2010] py-3 text-[14px] font-semibold text-[#fffac0] disabled:opacity-40"
+          >
+            Save background for this month
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
