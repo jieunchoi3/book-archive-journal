@@ -45,6 +45,7 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
   const [editingCatId, setEditingCatId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
   const [overviewPanel, setOverviewPanel] = useState<'category' | 'report'>('category')
+  const [highlightedCategoryId, setHighlightedCategoryId] = useState<string | null>(null)
 
   const pieSlices = useMemo(
     () =>
@@ -264,12 +265,18 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
                   </p>
 
                   <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-start">
-                    <ExpensePieChart slices={pieSlices} size={200} />
+                    <ExpensePieChart
+                      slices={pieSlices}
+                      size={200}
+                      highlightedId={highlightedCategoryId}
+                      onHighlightChange={setHighlightedCategoryId}
+                    />
                     <div className="min-w-0 flex-1 space-y-2">
                       {expenseCategories.map((cat) => {
                     const spent = spentByCategory[cat.id] ?? 0
                     const budget = cat.budget
                     const over = budget != null && budget > 0 && spent > budget
+                    const highlighted = highlightedCategoryId === cat.id
                     const pct =
                       budget != null && budget > 0
                         ? Math.min(100, Math.round((spent / budget) * 100))
@@ -281,8 +288,14 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
                     return (
                       <div
                         key={cat.id}
-                        className={`rounded-xl px-3 py-2.5 ${
-                          over ? 'bg-[#FFF1F0] ring-1 ring-[#FF3B30]/20' : 'bg-[#FAFAFA]'
+                        onPointerEnter={() => setHighlightedCategoryId(cat.id)}
+                        onPointerLeave={() => setHighlightedCategoryId(null)}
+                        className={`rounded-xl px-3 py-2.5 transition-all duration-150 ${
+                          highlighted
+                            ? 'bg-white shadow-md ring-2 ring-[#8B5A2B]/45'
+                            : over
+                              ? 'bg-[#FFF1F0] ring-1 ring-[#FF3B30]/20'
+                              : 'bg-[#FAFAFA]'
                         }`}
                       >
                         <div className="mb-1.5 flex items-center justify-between gap-2">
