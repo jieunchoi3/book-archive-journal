@@ -172,20 +172,17 @@ export function TasteStickerView() {
           <p className="py-24 text-center text-sm text-[#fffac0]/80">Loading…</p>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 md:gap-3">
+            <AddPolaroidCard delayMs={0} onClick={() => setShowAdd(true)} />
             {taste.visibleStickers.map((sticker, i) => (
               <PolaroidCard
                 key={sticker.id}
                 sticker={sticker}
                 category={tasteCategoryMeta(taste.categories, sticker.categoryId)}
-                delayMs={Math.min(i * 30, 240)}
+                delayMs={Math.min((i + 1) * 30, 240)}
                 soundUnlocked={soundUnlocked}
                 onClick={() => setSelected(sticker)}
               />
             ))}
-            <AddPolaroidCard
-              delayMs={Math.min(taste.visibleStickers.length * 30, 240)}
-              onClick={() => setShowAdd(true)}
-            />
           </div>
         )}
       </div>
