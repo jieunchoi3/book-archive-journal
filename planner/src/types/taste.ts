@@ -17,7 +17,7 @@ export interface TasteSticker {
   link: string
   /** Compressed JPEG data URL for the polaroid photo. */
   imageDataUrl: string
-  /** YYYY-MM-DD when this taste felt true */
+  /** YYYY-MM-DD when this taste felt true; empty = undated (View all only). */
   dateKey: string
   createdAt: string
   /** Stable visual tilt for polaroid feel (-4..4). */
@@ -131,6 +131,11 @@ export function categoryAllowsYoutube(category: TasteCategory | undefined): bool
 
 export function monthKeyFromDateKey(dateKey: string): string {
   return dateKey.slice(0, 7)
+}
+
+/** True when the polaroid is tied to a calendar day (shows in month views). */
+export function hasTasteDate(dateKey: string | undefined | null): boolean {
+  return Boolean(dateKey && /^\d{4}-\d{2}-\d{2}$/.test(dateKey))
 }
 
 /** Extract an 11-char YouTube video id from a URL or bare id. */

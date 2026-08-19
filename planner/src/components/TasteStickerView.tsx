@@ -17,6 +17,7 @@ import { compressImageSource } from '../lib/diaryImage'
 import { getTodayKey } from '../lib/weekUtils'
 import {
   categoryAllowsYoutube,
+  hasTasteDate,
   isLightPolaroidStrip,
   parseYouTubeId,
   tasteCategoryMeta,
@@ -48,6 +49,7 @@ function monthTitle(year: number, month: number) {
 }
 
 function formatPolaroidDate(dateKey: string) {
+  if (!hasTasteDate(dateKey)) return ''
   const [y, m, d] = dateKey.split('-')
   if (!y || !m || !d) return dateKey
   return `${y}.${Number(m)}.${Number(d)}`
@@ -231,7 +233,9 @@ export function TasteStickerView() {
             const created = taste.addSticker(input)
             if (created) {
               setShowAdd(false)
-              if (taste.browseMode === 'month') {
+              if (!hasTasteDate(created.dateKey)) {
+                taste.setBrowseMode('atlas')
+              } else if (taste.browseMode === 'month') {
                 const [y, m] = created.dateKey.split('-').map(Number)
                 if (y && m) taste.setViewMonth(y, m - 1)
               }
@@ -682,9 +686,11 @@ function PolaroidCard({
               >
                 {category.name}
               </span>
-              <p className="text-right text-[10px] tabular-nums" style={{ color: dateColor }}>
-                {formatPolaroidDate(sticker.dateKey)}
-              </p>
+              {hasTasteDate(sticker.dateKey) ? (
+                <p className="text-right text-[10px] tabular-nums" style={{ color: dateColor }}>
+                  {formatPolaroidDate(sticker.dateKey)}
+                </p>
+              ) : null}
             </div>
           </button>
         </div>
@@ -767,6 +773,9 @@ function PolaroidEditor({
   const [note, setNote] = useState(sticker?.note ?? '')
   const [link, setLink] = useState(sticker?.link ?? '')
   const [dateKey, setDateKey] = useState(sticker?.dateKey ?? getTodayKey())
+  const [noDate, setNoDate] = useState(() =>
+    sticker ? !hasTasteDate(sticker.dateKey) : false,
+  )
   const [imageDataUrl, setImageDataUrl] = useState(sticker?.imageDataUrl ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -843,7 +852,7 @@ function PolaroidEditor({
         subtitle,
         note,
         link: youtubeEnabled ? trimmedLink : '',
-        dateKey,
+        dateKey: noDate ? '' : dateKey,
         imageDataUrl,
       })
     } finally {
@@ -981,14 +990,36 @@ function PolaroidEditor({
             </Field>
           )}
 
-          <Field label="Date">
+          <div>
+            <span className="mb-1.5 block text-[11px] font-medium text-[#8A7A6A]">
+              Date (optional)
+            </span>
             <input
               type="date"
-              value={dateKey}
-              onChange={(e) => setDateKey(e.target.value)}
-              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-[14px] outline-none focus:border-[#3a2010]/30"
+              value={noDate ? '' : dateKey}
+              disabled={noDate}
+              onChange={(e) => {
+                setNoDate(false)
+                setDateKey(e.target.value)
+              }}
+              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-[14px] outline-none focus:border-[#3a2010]/30 disabled:bg-[#f0e6d4]/60 disabled:text-[#8A7A6A]"
             />
-          </Field>
+            <label className="mt-2 flex cursor-pointer items-start gap-2">
+              <input
+                type="checkbox"
+                checked={noDate}
+                onChange={(e) => {
+                  const next = e.target.checked
+                  setNoDate(next)
+                  if (!next && !hasTasteDate(dateKey)) setDateKey(getTodayKey())
+                }}
+                className="mt-0.5 h-3.5 w-3.5 accent-[#3a2010]"
+              />
+              <span className="text-[12px] leading-snug text-[#5c4a3a]">
+                No date — only show in <span className="font-semibold">View all</span>
+              </span>
+            </label>
+          </div>
 
           {error && <p className="text-[12px] text-[#FF3B30]">{error}</p>}
 

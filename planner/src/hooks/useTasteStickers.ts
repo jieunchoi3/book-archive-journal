@@ -8,6 +8,7 @@ import {
   nextCategoryAccent,
   parseYouTubeId,
   randomPolaroidStripColor,
+  hasTasteDate,
   stripColorFromId,
   tasteCategoryMeta,
 } from '../types/taste'
@@ -99,7 +100,7 @@ function normalizeSticker(raw: LegacySticker, categories: TasteCategory[]): Tast
     note: raw.note ?? '',
     link: raw.link ?? '',
     imageDataUrl: raw.imageDataUrl ?? '',
-    dateKey: raw.dateKey,
+    dateKey: typeof raw.dateKey === 'string' ? raw.dateKey : '',
     createdAt: raw.createdAt,
     tilt: raw.tilt ?? randomTilt(),
     stripColor: raw.stripColor || stripColorFromId(raw.id),
@@ -189,18 +190,29 @@ export function useTasteStickers(): TasteActions {
   const visibleStickers = useMemo(() => {
     let list = store.stickers
     if (browseMode === 'month') {
-      list = list.filter((s) => s.dateKey.startsWith(monthPrefix))
+      // Undated stickers only live in View all.
+      list = list.filter((s) => hasTasteDate(s.dateKey) && s.dateKey.startsWith(monthPrefix))
     }
     if (kindFilter !== 'all') {
       list = list.filter((s) => s.categoryId === kindFilter)
     }
-    return [...list].sort(
-      (a, b) => b.dateKey.localeCompare(a.dateKey) || b.createdAt.localeCompare(a.createdAt),
-    )
+    return [...list].sort((a, b) => {
+      const aDated = hasTasteDate(a.dateKey)
+      const bDated = hasTasteDate(b.dateKey)
+      if (aDated && bDated) {
+        return b.dateKey.localeCompare(a.dateKey) || b.createdAt.localeCompare(a.createdAt)
+      }
+      if (!aDated && !bDated) return b.createdAt.localeCompare(a.createdAt)
+      // Undated “liked” items float above dated ones in View all.
+      return aDated ? 1 : -1
+    })
   }, [store.stickers, browseMode, monthPrefix, kindFilter])
 
   const monthCount = useMemo(
-    () => store.stickers.filter((s) => s.dateKey.startsWith(monthPrefix)).length,
+    () =>
+      store.stickers.filter(
+        (s) => hasTasteDate(s.dateKey) && s.dateKey.startsWith(monthPrefix),
+      ).length,
     [store.stickers, monthPrefix],
   )
 
@@ -217,7 +229,12 @@ export function useTasteStickers(): TasteActions {
         note: note?.trim() ?? '',
         link: link?.trim() ?? '',
         imageDataUrl: imageDataUrl ?? '',
-        dateKey: dateKey || getTodayKey(),
+        dateKey:
+          dateKey === undefined
+            ? getTodayKey()
+            : hasTasteDate(dateKey.trim())
+              ? dateKey.trim()
+              : '',
         createdAt: new Date().toISOString(),
         tilt: randomTilt(),
         stripColor: randomPolaroidStripColor(),
@@ -243,6 +260,10 @@ export function useTasteStickers(): TasteActions {
           if (patch.subtitle != null) next.subtitle = patch.subtitle.trim()
           if (patch.note != null) next.note = patch.note.trim()
           if (patch.link != null) next.link = patch.link.trim()
+          if (patch.dateKey != null) {
+            const trimmed = patch.dateKey.trim()
+            next.dateKey = hasTasteDate(trimmed) ? trimmed : ''
+          }
           return next
         }),
       })
