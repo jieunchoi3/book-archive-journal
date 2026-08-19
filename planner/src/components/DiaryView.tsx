@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BookHeart, ChevronLeft, ChevronRight, Wallet } from 'lucide-react'
+import { BookHeart, BookOpen, ChevronLeft, ChevronRight, LayoutGrid, Wallet } from 'lucide-react'
 import { useDiary } from '../hooks/useDiary'
 import type { ExpenseActions } from '../hooks/useExpenses'
 import { useAuth } from '../hooks/useAuth'
@@ -18,10 +18,14 @@ import {
 } from '../types/diary'
 import { formatMoney, spendHeatColor } from '../types/expense'
 import { DiaryDayEditor } from './DiaryDayEditor'
+import { DiaryFlipBook } from './DiaryFlipBook'
 import { PageSearch, type SearchSuggestion } from './PageSearch'
 
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const SPEND_TOGGLE_KEY = 'planner:diaryShowSpending'
+const VIEW_MODE_KEY = 'planner:diaryViewMode'
+
+type DiaryViewMode = 'grid' | 'flip'
 
 interface DiaryViewProps {
   expenses: ExpenseActions
@@ -44,6 +48,13 @@ export function DiaryView({ expenses }: DiaryViewProps) {
   const { user } = useAuth()
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null)
   const [searchIndex, setSearchIndex] = useState<Record<string, DiaryEntry>>({})
+  const [viewMode, setViewMode] = useState<DiaryViewMode>(() => {
+    try {
+      return localStorage.getItem(VIEW_MODE_KEY) === 'flip' ? 'flip' : 'grid'
+    } catch {
+      return 'grid'
+    }
+  })
   const [showSpending, setShowSpending] = useState(() => {
     try {
       return localStorage.getItem(SPEND_TOGGLE_KEY) === '1'
@@ -97,6 +108,14 @@ export function DiaryView({ expenses }: DiaryViewProps) {
   }, [showSpending])
 
   useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_MODE_KEY, viewMode)
+    } catch {
+      // ignore
+    }
+  }, [viewMode])
+
+  useEffect(() => {
     if (!selectedDateKey) return
     void ensureHydrated(selectedDateKey)
   }, [selectedDateKey, ensureHydrated])
@@ -140,24 +159,41 @@ export function DiaryView({ expenses }: DiaryViewProps) {
             <div>
               <h1 className="text-[22px] font-semibold tracking-tight text-[#1C1C1E]">Diary</h1>
               <p className="text-[13px] text-muted">
-                Your photo diary — one square for each day
+                {viewMode === 'flip'
+                  ? 'Flip through your photo diary like an open book'
+                  : 'Your photo diary — one square for each day'}
               </p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => setShowSpending((v) => !v)}
+              onClick={() => setViewMode((m) => (m === 'flip' ? 'grid' : 'flip'))}
               className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors ${
-                showSpending
-                  ? 'bg-[#8B5A2B] text-white shadow-sm'
+                viewMode === 'flip'
+                  ? 'bg-[#C4A574] text-white shadow-sm'
                   : 'bg-[#F3E5D8] text-[#5C4033] hover:bg-[#EAD7C4]'
               }`}
-              aria-pressed={showSpending}
+              aria-pressed={viewMode === 'flip'}
             >
-              <Wallet size={14} />
-              Show spending
+              {viewMode === 'flip' ? <LayoutGrid size={14} /> : <BookOpen size={14} />}
+              {viewMode === 'flip' ? 'Calendar' : 'Flip book style'}
             </button>
+            {viewMode === 'grid' && (
+              <button
+                type="button"
+                onClick={() => setShowSpending((v) => !v)}
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors ${
+                  showSpending
+                    ? 'bg-[#8B5A2B] text-white shadow-sm'
+                    : 'bg-[#F3E5D8] text-[#5C4033] hover:bg-[#EAD7C4]'
+                }`}
+                aria-pressed={showSpending}
+              >
+                <Wallet size={14} />
+                Show spending
+              </button>
+            )}
             <div className="flex items-center gap-1">
               <button
                 type="button"
@@ -204,7 +240,7 @@ export function DiaryView({ expenses }: DiaryViewProps) {
           />
         </div>
 
-        {showSpending && (
+        {viewMode === 'grid' && showSpending && (
           <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px] text-muted">
             <span>Spend heat</span>
             <span
@@ -217,6 +253,15 @@ export function DiaryView({ expenses }: DiaryViewProps) {
           </div>
         )}
 
+        {viewMode === 'flip' ? (
+          <DiaryFlipBook
+            year={year}
+            month={month}
+            entriesByDate={entriesByDate}
+            ensureHydrated={ensureHydrated}
+            onOpenDay={setSelectedDateKey}
+          />
+        ) : (
         <div className="overflow-hidden rounded-2xl border border-hairline bg-white shadow-sm">
           <div className="grid grid-cols-7 border-b border-hairline bg-[#FAFAFA]">
             {WEEKDAY_LABELS.map((label) => (
@@ -348,6 +393,7 @@ export function DiaryView({ expenses }: DiaryViewProps) {
             ))}
           </div>
         </div>
+        )}
 
         {loading && (
           <p className="mt-3 text-center text-[12px] text-muted">Loading diary…</p>

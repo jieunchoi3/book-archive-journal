@@ -68,3 +68,25 @@ body {
 .taste-month-title {
   font-family: "Abril Fatface", Georgia, serif;
 }
+
+@keyframes diary-flip-next {
+  0% {
+    opacity: 0.55;
+    transform: translateX(18px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes diary-flip-prev {
+  0% {
+    opacity: 0.55;
+    transform: translateX(-18px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
