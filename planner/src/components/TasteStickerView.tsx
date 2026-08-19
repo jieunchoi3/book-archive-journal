@@ -21,10 +21,12 @@ import {
   isLightPolaroidStrip,
   parseYouTubeId,
   tasteCategoryMeta,
+  tasteTagLabel,
   youtubeEmbedUrl,
   youtubeThumbUrl,
   type TasteCategory,
   type TasteSticker,
+  type TasteSubcategory,
 } from '../types/taste'
 
 /** Browsers block unmuted autoplay until the page gets a real gesture. */
@@ -154,21 +156,55 @@ export function TasteStickerView() {
           </button>
         </div>
 
-        <div className="mb-5 flex gap-2 overflow-x-auto px-0.5 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] sm:gap-2.5 [&::-webkit-scrollbar]:hidden">
-          <FilterPill
-            label="All"
-            active={taste.kindFilter === 'all'}
-            onClick={() => taste.setKindFilter('all')}
-          />
-          {taste.categories.map((cat) => (
-            <FilterPill
-              key={cat.id}
-              label={cat.name}
-              active={taste.kindFilter === cat.id}
-              onClick={() => taste.setKindFilter(cat.id)}
-            />
-          ))}
-        </div>
+        {(() => {
+          const activeCat =
+            taste.kindFilter === 'all'
+              ? null
+              : taste.categories.find((c) => c.id === taste.kindFilter)
+          const hasSubs = Boolean(activeCat && activeCat.subcategories.length > 0)
+          return (
+            <>
+              <div
+                className={`flex gap-2 overflow-x-auto px-0.5 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] sm:gap-2.5 [&::-webkit-scrollbar]:hidden ${
+                  hasSubs ? 'mb-2' : 'mb-5'
+                }`}
+              >
+                <FilterPill
+                  label="All"
+                  active={taste.kindFilter === 'all'}
+                  onClick={() => taste.setKindFilter('all')}
+                />
+                {taste.categories.map((cat) => (
+                  <FilterPill
+                    key={cat.id}
+                    label={cat.name}
+                    active={taste.kindFilter === cat.id}
+                    onClick={() => taste.setKindFilter(cat.id)}
+                  />
+                ))}
+              </div>
+              {hasSubs && activeCat ? (
+                <div className="mb-5 flex gap-2 overflow-x-auto px-0.5 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] sm:gap-2 [&::-webkit-scrollbar]:hidden">
+                  <FilterPill
+                    label="All"
+                    compact
+                    active={taste.subFilter === 'all'}
+                    onClick={() => taste.setSubFilter('all')}
+                  />
+                  {activeCat.subcategories.map((sub) => (
+                    <FilterPill
+                      key={sub.id}
+                      label={sub.name}
+                      compact
+                      active={taste.subFilter === sub.id}
+                      onClick={() => taste.setSubFilter(sub.id)}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </>
+          )
+        })()}
 
         {taste.loading ? (
           <p className="py-24 text-center text-sm text-[#fffac0]/80">Loading…</p>
@@ -196,6 +232,11 @@ export function TasteStickerView() {
           onAdd={(name) => taste.addCategory(name)}
           onRename={(id, name) => taste.renameCategory(id, name)}
           onDelete={(id) => taste.deleteCategory(id)}
+          onAddSub={(categoryId, name) => taste.addSubcategory(categoryId, name)}
+          onRenameSub={(categoryId, subId, name) =>
+            taste.renameSubcategory(categoryId, subId, name)
+          }
+          onDeleteSub={(categoryId, subId) => taste.deleteSubcategory(categoryId, subId)}
         />
       )}
 
@@ -219,13 +260,22 @@ export function TasteStickerView() {
 
       {showAdd && (
         <PolaroidEditor
-          key={`create-${taste.kindFilter}`}
+          key={`create-${taste.kindFilter}-${taste.subFilter}`}
           mode="create"
           categories={taste.categories}
           initialCategoryId={
             taste.kindFilter !== 'all' &&
             taste.categories.some((c) => c.id === taste.kindFilter)
               ? taste.kindFilter
+              : undefined
+          }
+          initialSubcategoryId={
+            taste.kindFilter !== 'all' &&
+            taste.subFilter !== 'all' &&
+            taste.categories
+              .find((c) => c.id === taste.kindFilter)
+              ?.subcategories.some((s) => s.id === taste.subFilter)
+              ? taste.subFilter
               : undefined
           }
           onClose={() => setShowAdd(false)}
@@ -268,16 +318,22 @@ function FilterPill({
   label,
   active,
   onClick,
+  compact = false,
 }: {
   label: string
   active: boolean
   onClick: () => void
+  compact?: boolean
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`h-11 shrink-0 rounded-full px-3.5 text-[13px] font-semibold tracking-wide transition sm:h-12 sm:min-w-0 sm:flex-1 ${
+      className={`shrink-0 rounded-full px-3.5 font-semibold tracking-wide transition ${
+        compact
+          ? 'h-9 text-[12px] sm:h-10'
+          : 'h-11 text-[13px] sm:h-12 sm:min-w-0 sm:flex-1'
+      } ${
         active
           ? 'bg-[#fffac0] text-[#3a2010] shadow-[0_4px_14px_rgba(0,0,0,0.18)]'
           : 'bg-[#fffde8]/35 text-[#2b2118]/80 ring-1 ring-white/25 backdrop-blur-[2px] hover:bg-[#fffde8]/50'
@@ -433,16 +489,25 @@ function CategoryManager({
   onAdd,
   onRename,
   onDelete,
+  onAddSub,
+  onRenameSub,
+  onDeleteSub,
 }: {
   categories: TasteCategory[]
   onClose: () => void
   onAdd: (name: string) => TasteCategory | null
   onRename: (id: string, name: string) => void
   onDelete: (id: string) => void
+  onAddSub: (categoryId: string, name: string) => TasteSubcategory | null
+  onRenameSub: (categoryId: string, subcategoryId: string, name: string) => void
+  onDeleteSub: (categoryId: string, subcategoryId: string) => void
 }) {
   const [draft, setDraft] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
+  const [subDraftByCat, setSubDraftByCat] = useState<Record<string, string>>({})
+  const [editingSubKey, setEditingSubKey] = useState<string | null>(null)
+  const [editingSubName, setEditingSubName] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   const add = () => {
@@ -452,6 +517,17 @@ function CategoryManager({
       return
     }
     setDraft('')
+    setError(null)
+  }
+
+  const addSub = (categoryId: string) => {
+    const name = subDraftByCat[categoryId] ?? ''
+    const created = onAddSub(categoryId, name)
+    if (!created) {
+      setError(name.trim() ? 'That subcategory name is already used.' : 'Enter a subcategory name.')
+      return
+    }
+    setSubDraftByCat((prev) => ({ ...prev, [categoryId]: '' }))
     setError(null)
   }
 
@@ -471,83 +547,177 @@ function CategoryManager({
         </div>
 
         <div className="space-y-3 px-5 py-5">
-          <ul className="space-y-2">
+          <p className="text-[12px] text-[#8A7A6A]">
+            Add subcategories under a category (e.g. Place → cafe, park) to use them as filters.
+          </p>
+          <ul className="space-y-3">
             {categories.map((cat) => (
               <li
                 key={cat.id}
-                className="flex items-center gap-2 rounded-2xl bg-white px-3 py-2.5 ring-1 ring-black/5"
+                className="rounded-2xl bg-white px-3 py-2.5 ring-1 ring-black/5"
               >
-                <span
-                  className="h-3 w-3 shrink-0 rounded-full"
-                  style={{ backgroundColor: cat.accent }}
-                />
-                {editingId === cat.id ? (
-                  <>
-                    <input
-                      value={editingName}
-                      onChange={(e) => setEditingName(e.target.value)}
-                      className="min-w-0 flex-1 rounded-lg border border-black/10 px-2 py-1.5 text-[13px] outline-none focus:border-[#3a2010]/30"
-                      autoFocus
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
+                <div className="flex items-center gap-2">
+                  <span
+                    className="h-3 w-3 shrink-0 rounded-full"
+                    style={{ backgroundColor: cat.accent }}
+                  />
+                  {editingId === cat.id ? (
+                    <>
+                      <input
+                        value={editingName}
+                        onChange={(e) => setEditingName(e.target.value)}
+                        className="min-w-0 flex-1 rounded-lg border border-black/10 px-2 py-1.5 text-[13px] outline-none focus:border-[#3a2010]/30"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            onRename(cat.id, editingName)
+                            setEditingId(null)
+                          }
+                          if (e.key === 'Escape') setEditingId(null)
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
                           onRename(cat.id, editingName)
                           setEditingId(null)
-                        }
-                        if (e.key === 'Escape') setEditingId(null)
+                        }}
+                        className="rounded-lg p-1.5 text-[#34C759] hover:bg-[#34C759]/10"
+                        aria-label="Save name"
+                      >
+                        <Check size={16} />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#2b2118]">
+                        {cat.name}
+                        {categoryAllowsYoutube(cat) ? (
+                          <span className="ml-1.5 text-[10px] font-normal text-[#8A7A6A]">
+                            · YouTube
+                          </span>
+                        ) : null}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingId(cat.id)
+                          setEditingName(cat.name)
+                        }}
+                        className="rounded-lg p-1.5 text-[#8A7A6A] hover:bg-black/5"
+                        aria-label={`Rename ${cat.name}`}
+                      >
+                        <Pencil size={15} />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={categories.length <= 1}
+                        onClick={() => {
+                          if (
+                            confirm(
+                              `Delete “${cat.name}”? Polaroids in it move to another category.`,
+                            )
+                          ) {
+                            onDelete(cat.id)
+                          }
+                        }}
+                        className="rounded-lg p-1.5 text-[#C44] hover:bg-[#C44]/10 disabled:opacity-30"
+                        aria-label={`Delete ${cat.name}`}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                <ul className="mt-2 space-y-1.5 border-t border-black/5 pt-2">
+                  {cat.subcategories.map((sub) => {
+                    const subKey = `${cat.id}:${sub.id}`
+                    return (
+                      <li key={sub.id} className="flex items-center gap-1.5 pl-5">
+                        <span className="text-[10px] text-[#C7C7CC]">↳</span>
+                        {editingSubKey === subKey ? (
+                          <>
+                            <input
+                              value={editingSubName}
+                              onChange={(e) => setEditingSubName(e.target.value)}
+                              className="min-w-0 flex-1 rounded-lg border border-black/10 px-2 py-1 text-[12px] outline-none focus:border-[#3a2010]/30"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  onRenameSub(cat.id, sub.id, editingSubName)
+                                  setEditingSubKey(null)
+                                }
+                                if (e.key === 'Escape') setEditingSubKey(null)
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onRenameSub(cat.id, sub.id, editingSubName)
+                                setEditingSubKey(null)
+                              }}
+                              className="rounded-lg p-1 text-[#34C759] hover:bg-[#34C759]/10"
+                              aria-label="Save subcategory"
+                            >
+                              <Check size={14} />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <span className="min-w-0 flex-1 truncate text-[12px] text-[#3a2010]">
+                              {sub.name}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingSubKey(subKey)
+                                setEditingSubName(sub.name)
+                              }}
+                              className="rounded-lg p-1 text-[#8A7A6A] hover:bg-black/5"
+                              aria-label={`Rename ${sub.name}`}
+                            >
+                              <Pencil size={13} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (confirm(`Delete subcategory “${sub.name}”?`)) {
+                                  onDeleteSub(cat.id, sub.id)
+                                }
+                              }}
+                              className="rounded-lg p-1 text-[#C44] hover:bg-[#C44]/10"
+                              aria-label={`Delete ${sub.name}`}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </>
+                        )}
+                      </li>
+                    )
+                  })}
+                  <li className="flex gap-1.5 pl-5 pt-0.5">
+                    <input
+                      value={subDraftByCat[cat.id] ?? ''}
+                      onChange={(e) => {
+                        setSubDraftByCat((prev) => ({ ...prev, [cat.id]: e.target.value }))
+                        setError(null)
+                      }}
+                      placeholder="Add subcategory…"
+                      className="min-w-0 flex-1 rounded-lg border border-black/10 bg-[#fffaf0] px-2 py-1.5 text-[12px] outline-none focus:border-[#3a2010]/30"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') addSub(cat.id)
                       }}
                     />
                     <button
                       type="button"
-                      onClick={() => {
-                        onRename(cat.id, editingName)
-                        setEditingId(null)
-                      }}
-                      className="rounded-lg p-1.5 text-[#34C759] hover:bg-[#34C759]/10"
-                      aria-label="Save name"
+                      onClick={() => addSub(cat.id)}
+                      className="inline-flex items-center rounded-lg bg-[#3a2010]/90 px-2 py-1.5 text-[11px] font-semibold text-[#fffac0]"
                     >
-                      <Check size={16} />
+                      <Plus size={13} />
                     </button>
-                  </>
-                ) : (
-                  <>
-                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#2b2118]">
-                      {cat.name}
-                      {categoryAllowsYoutube(cat) ? (
-                        <span className="ml-1.5 text-[10px] font-normal text-[#8A7A6A]">
-                          · YouTube
-                        </span>
-                      ) : null}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingId(cat.id)
-                        setEditingName(cat.name)
-                      }}
-                      className="rounded-lg p-1.5 text-[#8A7A6A] hover:bg-black/5"
-                      aria-label={`Rename ${cat.name}`}
-                    >
-                      <Pencil size={15} />
-                    </button>
-                    <button
-                      type="button"
-                      disabled={categories.length <= 1}
-                      onClick={() => {
-                        if (
-                          confirm(
-                            `Delete “${cat.name}”? Polaroids in it move to another category.`,
-                          )
-                        ) {
-                          onDelete(cat.id)
-                        }
-                      }}
-                      className="rounded-lg p-1.5 text-[#C44] hover:bg-[#C44]/10 disabled:opacity-30"
-                      aria-label={`Delete ${cat.name}`}
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </>
-                )}
+                  </li>
+                </ul>
               </li>
             ))}
           </ul>
@@ -684,7 +854,7 @@ function PolaroidCard({
                     : { backgroundColor: 'rgba(255,250,192,0.2)', color: '#fffac0' }
                 }
               >
-                {category.name}
+                {tasteTagLabel(category, sticker.subcategoryId)}
               </span>
               {hasTasteDate(sticker.dateKey) ? (
                 <p className="text-right text-[10px] tabular-nums" style={{ color: dateColor }}>
@@ -731,6 +901,7 @@ function PolaroidEditor({
   sticker,
   categories,
   initialCategoryId,
+  initialSubcategoryId,
   onClose,
   onSave,
   onDelete,
@@ -740,9 +911,12 @@ function PolaroidEditor({
   categories: TasteCategory[]
   /** Prefill category when adding from a filtered category view. */
   initialCategoryId?: string
+  /** Prefill subcategory when adding from a subcategory filter. */
+  initialSubcategoryId?: string
   onClose: () => void
   onSave: (input: {
     categoryId: string
+    subcategoryId?: string
     title: string
     subtitle?: string
     note?: string
@@ -767,7 +941,29 @@ function PolaroidEditor({
     return categories[0]?.id ?? 'other'
   }
 
+  const resolveSubcategoryId = (catId: string) => {
+    const cat = categories.find((c) => c.id === catId)
+    if (!cat) return ''
+    if (
+      sticker?.categoryId === catId &&
+      sticker.subcategoryId &&
+      cat.subcategories.some((s) => s.id === sticker.subcategoryId)
+    ) {
+      return sticker.subcategoryId
+    }
+    if (
+      initialSubcategoryId &&
+      cat.subcategories.some((s) => s.id === initialSubcategoryId)
+    ) {
+      return initialSubcategoryId
+    }
+    return ''
+  }
+
   const [categoryId, setCategoryId] = useState(resolveCategoryId)
+  const [subcategoryId, setSubcategoryId] = useState(() =>
+    resolveSubcategoryId(resolveCategoryId()),
+  )
   const [title, setTitle] = useState(sticker?.title ?? '')
   const [subtitle, setSubtitle] = useState(sticker?.subtitle ?? '')
   const [note, setNote] = useState(sticker?.note ?? '')
@@ -785,11 +981,14 @@ function PolaroidEditor({
     if (mode !== 'create' || !initialCategoryId) return
     if (categories.some((c) => c.id === initialCategoryId)) {
       setCategoryId(initialCategoryId)
+      setSubcategoryId(resolveSubcategoryId(initialCategoryId))
     }
-  }, [mode, initialCategoryId, categories])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when filter context changes
+  }, [mode, initialCategoryId, initialSubcategoryId, categories])
 
   const activeCategory = tasteCategoryMeta(categories, categoryId)
   const youtubeEnabled = categoryAllowsYoutube(activeCategory)
+  const subs = activeCategory.subcategories
 
   const onPickFile = useCallback(async (file: File | null) => {
     if (!file) return
@@ -848,6 +1047,7 @@ function PolaroidEditor({
     try {
       await onSave({
         categoryId,
+        subcategoryId,
         title,
         subtitle,
         note,
@@ -914,7 +1114,7 @@ function PolaroidEditor({
                   {title.trim() || 'Title…'}
                 </p>
                 <p className="truncate text-[11px] text-black/50">
-                  {note.trim() || activeCategory.name}
+                  {note.trim() || tasteTagLabel(activeCategory, subcategoryId)}
                 </p>
               </div>
             </div>
@@ -931,22 +1131,65 @@ function PolaroidEditor({
             onChange={(e) => void onPickFile(e.target.files?.[0] ?? null)}
           />
 
-          <div className="flex flex-wrap gap-1.5">
-            {categories.map((k) => (
-              <button
-                key={k.id}
-                type="button"
-                onClick={() => setCategoryId(k.id)}
-                className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
-                  categoryId === k.id
-                    ? 'bg-[#3a2010] text-[#fffac0]'
-                    : 'bg-[#f0e6d4] text-[#3a2010] hover:bg-[#e8dcc8]'
-                }`}
-              >
-                {k.name}
-              </button>
-            ))}
+          <div>
+            <span className="mb-1.5 block text-[11px] font-medium text-[#8A7A6A]">Category</span>
+            <div className="flex flex-wrap gap-1.5">
+              {categories.map((k) => (
+                <button
+                  key={k.id}
+                  type="button"
+                  onClick={() => {
+                    setCategoryId(k.id)
+                    setSubcategoryId((prev) =>
+                      k.subcategories.some((s) => s.id === prev) ? prev : '',
+                    )
+                  }}
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                    categoryId === k.id
+                      ? 'bg-[#3a2010] text-[#fffac0]'
+                      : 'bg-[#f0e6d4] text-[#3a2010] hover:bg-[#e8dcc8]'
+                  }`}
+                >
+                  {k.name}
+                </button>
+              ))}
+            </div>
           </div>
+
+          {subs.length > 0 && (
+            <div>
+              <span className="mb-1.5 block text-[11px] font-medium text-[#8A7A6A]">
+                Subcategory (optional)
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setSubcategoryId('')}
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                    !subcategoryId
+                      ? 'bg-[#3a2010] text-[#fffac0]'
+                      : 'bg-[#f0e6d4] text-[#3a2010] hover:bg-[#e8dcc8]'
+                  }`}
+                >
+                  None
+                </button>
+                {subs.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setSubcategoryId(s.id)}
+                    className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                      subcategoryId === s.id
+                        ? 'bg-[#3a2010] text-[#fffac0]'
+                        : 'bg-[#f0e6d4] text-[#3a2010] hover:bg-[#e8dcc8]'
+                    }`}
+                  >
+                    {s.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <Field label="Title">
             <input

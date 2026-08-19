@@ -1,15 +1,24 @@
+export interface TasteSubcategory {
+  id: string
+  name: string
+}
+
 export interface TasteCategory {
   id: string
   name: string
   accent: string
   /** When true, polaroids in this category can attach a YouTube link and hover-play. */
   youtube?: boolean
+  /** Optional nested filters (e.g. Place → cafe / park). */
+  subcategories: TasteSubcategory[]
 }
 
 export interface TasteSticker {
   id: string
   /** Category id (legacy field `kind` is migrated on load). */
   categoryId: string
+  /** Optional subcategory id within `categoryId`; empty = none. */
+  subcategoryId: string
   title: string
   /** Optional artist / director / neighborhood, etc. */
   subtitle: string
@@ -51,11 +60,11 @@ const CATEGORY_ACCENTS = [
 ] as const
 
 export const DEFAULT_TASTE_CATEGORIES: TasteCategory[] = [
-  { id: 'music', name: 'Music', accent: '#FF2D55', youtube: true },
-  { id: 'movie', name: 'Movie', accent: '#007AFF' },
-  { id: 'place', name: 'Place', accent: '#34C759' },
-  { id: 'food', name: 'Food', accent: '#FF9500' },
-  { id: 'other', name: 'Other', accent: '#AF52DE' },
+  { id: 'music', name: 'Music', accent: '#FF2D55', youtube: true, subcategories: [] },
+  { id: 'movie', name: 'Movie', accent: '#007AFF', subcategories: [] },
+  { id: 'place', name: 'Place', accent: '#34C759', subcategories: [] },
+  { id: 'food', name: 'Food', accent: '#FF9500', subcategories: [] },
+  { id: 'other', name: 'Other', accent: '#AF52DE', subcategories: [] },
 ]
 
 /** Figma scrapbook polaroid strip tones (cream + warm browns). */
@@ -98,7 +107,10 @@ export function isLightPolaroidStrip(color: string): boolean {
 
 export function emptyTasteStore(): TasteStore {
   return {
-    categories: DEFAULT_TASTE_CATEGORIES.map((c) => ({ ...c })),
+    categories: DEFAULT_TASTE_CATEGORIES.map((c) => ({
+      ...c,
+      subcategories: c.subcategories.map((s) => ({ ...s })),
+    })),
     stickers: [],
     monthBackgrounds: {},
   }
@@ -121,6 +133,23 @@ export function tasteCategoryMeta(
     categories[categories.length - 1] ??
     DEFAULT_TASTE_CATEGORIES[DEFAULT_TASTE_CATEGORIES.length - 1]!
   )
+}
+
+export function tasteSubcategoryMeta(
+  category: TasteCategory | undefined,
+  subcategoryId: string | undefined | null,
+): TasteSubcategory | null {
+  if (!category || !subcategoryId) return null
+  return category.subcategories.find((s) => s.id === subcategoryId) ?? null
+}
+
+/** Pill label: "Place · Cafe" or just "Place". */
+export function tasteTagLabel(
+  category: TasteCategory,
+  subcategoryId: string | undefined | null,
+): string {
+  const sub = tasteSubcategoryMeta(category, subcategoryId)
+  return sub ? `${category.name} · ${sub.name}` : category.name
 }
 
 export function categoryAllowsYoutube(category: TasteCategory | undefined): boolean {
