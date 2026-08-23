@@ -10,11 +10,37 @@ export interface ExpenseCategory {
   budget: number | null
 }
 
+/** Purpose axis for Sep+ logging (Social / For me / Others). */
+export interface ExpensePurpose {
+  id: string
+  name: string
+  color: string
+  budget: number | null
+}
+
+/** Shared spend-type axis (외식, 카페, …) — same kind can link to multiple purposes. */
+export interface ExpenseSpendKind {
+  id: string
+  name: string
+  color: string
+}
+
+/** Which spend kinds appear under a purpose in the picker. */
+export interface ExpensePurposeKindLink {
+  purposeId: string
+  spendKindId: string
+}
+
 export interface MoneyTransaction {
   id: string
   amount: number
   flow: MoneyFlow
+  /** Legacy flat category (pre-Sep out, and all income). */
   categoryId: string
+  /** Sep+ out: purpose axis. Empty on legacy / income. */
+  purposeId?: string
+  /** Sep+ out: spend-kind axis. Empty on legacy / income. */
+  spendKindId?: string
   dateKey: string
   note: string
   createdAt: string
@@ -28,6 +54,28 @@ export interface ExpenseStore {
   transactions: MoneyTransaction[]
   /** dateKey → mark; cleared when a transaction is later added for that day. */
   dayMarks?: Record<string, ExpenseDayMarkKind>
+  /** Sep+ purpose catalog (seeded once). */
+  purposes?: ExpensePurpose[]
+  /** Sep+ shared spend-kind catalog. */
+  spendKinds?: ExpenseSpendKind[]
+  /** Picker links: purpose ↔ spend kinds. */
+  purposeKindLinks?: ExpensePurposeKindLink[]
+}
+
+/** Dual-axis logging / filters start on this date (inclusive). */
+export const EXPENSE_HIERARCHY_START = '2026-09-01'
+
+export function isExpenseHierarchyDate(dateKey: string): boolean {
+  return Boolean(dateKey) && dateKey >= EXPENSE_HIERARCHY_START
+}
+
+/** monthKey is YYYY-MM */
+export function isExpenseHierarchyMonth(monthKey: string): boolean {
+  return Boolean(monthKey) && monthKey >= EXPENSE_HIERARCHY_START.slice(0, 7)
+}
+
+export function isDualAxisTransaction(t: MoneyTransaction): boolean {
+  return Boolean(t.purposeId && t.spendKindId && t.flow === 'out')
 }
 
 export const EXPENSE_COLORS = [
@@ -61,8 +109,127 @@ export const DEFAULT_INCOME_SOURCES: Omit<ExpenseCategory, 'id'>[] = [
   { name: 'Other', color: '#8FBC8F', kind: 'in', budget: null },
 ]
 
+/** Stable seed ids so links stay consistent across devices. */
+export const SEED_PURPOSE_IDS = {
+  social: 'purpose-social',
+  forMe: 'purpose-forme',
+  others: 'purpose-others',
+} as const
+
+export const SEED_KIND_IDS = {
+  gifts: 'kind-gifts',
+  dining: 'kind-dining',
+  cafe: 'kind-cafe',
+  culture: 'kind-culture',
+  snack: 'kind-snack',
+  beauty: 'kind-beauty',
+  clothes: 'kind-clothes',
+  misc: 'kind-misc',
+  hobby: 'kind-hobby',
+  tickets: 'kind-tickets',
+  bills: 'kind-bills',
+  subscriptions: 'kind-subscriptions',
+} as const
+
+export const DEFAULT_EXPENSE_PURPOSES: ExpensePurpose[] = [
+  { id: SEED_PURPOSE_IDS.social, name: 'Social / for others', color: '#8B5A2B', budget: null },
+  { id: SEED_PURPOSE_IDS.forMe, name: 'For me', color: '#D2691E', budget: null },
+  { id: SEED_PURPOSE_IDS.others, name: 'Others', color: '#6B4226', budget: null },
+]
+
+export const DEFAULT_EXPENSE_SPEND_KINDS: ExpenseSpendKind[] = [
+  { id: SEED_KIND_IDS.gifts, name: 'gifts', color: '#BC8F8F' },
+  { id: SEED_KIND_IDS.dining, name: '외식', color: '#C4A484' },
+  { id: SEED_KIND_IDS.cafe, name: '카페', color: '#DEB887' },
+  { id: SEED_KIND_IDS.culture, name: '문화생활', color: '#A67B5B' },
+  { id: SEED_KIND_IDS.snack, name: '간식', color: '#E8B923' },
+  { id: SEED_KIND_IDS.beauty, name: '화장품', color: '#CD853F' },
+  { id: SEED_KIND_IDS.clothes, name: '옷', color: '#A0522D' },
+  { id: SEED_KIND_IDS.misc, name: '기타 소비', color: '#5C4033' },
+  { id: SEED_KIND_IDS.hobby, name: '취미 활동', color: '#B87333' },
+  { id: SEED_KIND_IDS.tickets, name: '입장료', color: '#8B5A2B' },
+  { id: SEED_KIND_IDS.bills, name: 'bills', color: '#6B4226' },
+  { id: SEED_KIND_IDS.subscriptions, name: 'subscriptions', color: '#3D7A5A' },
+]
+
+/** Shared 외식 / 카페 ids appear under both Social and For me. */
+export const DEFAULT_PURPOSE_KIND_LINKS: ExpensePurposeKindLink[] = [
+  { purposeId: SEED_PURPOSE_IDS.social, spendKindId: SEED_KIND_IDS.gifts },
+  { purposeId: SEED_PURPOSE_IDS.social, spendKindId: SEED_KIND_IDS.dining },
+  { purposeId: SEED_PURPOSE_IDS.social, spendKindId: SEED_KIND_IDS.cafe },
+  { purposeId: SEED_PURPOSE_IDS.social, spendKindId: SEED_KIND_IDS.culture },
+  { purposeId: SEED_PURPOSE_IDS.forMe, spendKindId: SEED_KIND_IDS.snack },
+  { purposeId: SEED_PURPOSE_IDS.forMe, spendKindId: SEED_KIND_IDS.dining },
+  { purposeId: SEED_PURPOSE_IDS.forMe, spendKindId: SEED_KIND_IDS.cafe },
+  { purposeId: SEED_PURPOSE_IDS.forMe, spendKindId: SEED_KIND_IDS.beauty },
+  { purposeId: SEED_PURPOSE_IDS.forMe, spendKindId: SEED_KIND_IDS.clothes },
+  { purposeId: SEED_PURPOSE_IDS.forMe, spendKindId: SEED_KIND_IDS.misc },
+  { purposeId: SEED_PURPOSE_IDS.forMe, spendKindId: SEED_KIND_IDS.hobby },
+  { purposeId: SEED_PURPOSE_IDS.forMe, spendKindId: SEED_KIND_IDS.tickets },
+  { purposeId: SEED_PURPOSE_IDS.others, spendKindId: SEED_KIND_IDS.bills },
+  { purposeId: SEED_PURPOSE_IDS.others, spendKindId: SEED_KIND_IDS.subscriptions },
+]
+
 export function emptyExpenseStore(): ExpenseStore {
-  return { categories: [], transactions: [], dayMarks: {} }
+  return {
+    categories: [],
+    transactions: [],
+    dayMarks: {},
+    purposes: [],
+    spendKinds: [],
+    purposeKindLinks: [],
+  }
+}
+
+export function kindsForPurpose(
+  purposeId: string,
+  spendKinds: ExpenseSpendKind[],
+  links: ExpensePurposeKindLink[],
+): ExpenseSpendKind[] {
+  const ids = new Set(
+    links.filter((l) => l.purposeId === purposeId).map((l) => l.spendKindId),
+  )
+  return spendKinds.filter((k) => ids.has(k.id))
+}
+
+export function dualAxisLabel(
+  purpose: ExpensePurpose | undefined,
+  kind: ExpenseSpendKind | undefined,
+): string {
+  if (purpose && kind) return `${purpose.name} · ${kind.name}`
+  if (kind) return kind.name
+  if (purpose) return purpose.name
+  return 'Unknown'
+}
+
+/** Ensure Sep+ catalogs exist; never rewrite transactions. */
+export function ensureDualAxisCatalogs(store: ExpenseStore): ExpenseStore {
+  const hasPurposes = Array.isArray(store.purposes) && store.purposes.length > 0
+  if (hasPurposes) {
+    return {
+      ...store,
+      purposes: store.purposes ?? [],
+      spendKinds: store.spendKinds ?? [],
+      purposeKindLinks: store.purposeKindLinks ?? [],
+    }
+  }
+  return {
+    ...store,
+    purposes: DEFAULT_EXPENSE_PURPOSES.map((p) => ({ ...p })),
+    spendKinds: DEFAULT_EXPENSE_SPEND_KINDS.map((k) => ({ ...k })),
+    purposeKindLinks: DEFAULT_PURPOSE_KIND_LINKS.map((l) => ({ ...l })),
+  }
+}
+
+export function normalizeExpenseTransactions(
+  transactions: MoneyTransaction[],
+): MoneyTransaction[] {
+  return transactions.map((t) => ({
+    ...t,
+    categoryId: t.categoryId ?? '',
+    purposeId: t.purposeId ?? '',
+    spendKindId: t.spendKindId ?? '',
+  }))
 }
 
 export function formatMoney(amount: number, currency = '£'): string {

@@ -1,23 +1,43 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowDownLeft, ArrowUpRight, Check, Pencil, Plus, Trash2, X } from 'lucide-react'
-import type { ExpenseCategory, MoneyFlow } from '../types/expense'
-import { EXPENSE_COLORS, formatMoney } from '../types/expense'
+import type {
+  ExpenseCategory,
+  ExpensePurpose,
+  ExpenseSpendKind,
+  MoneyFlow,
+} from '../types/expense'
+import {
+  EXPENSE_COLORS,
+  formatMoney,
+  isExpenseHierarchyDate,
+} from '../types/expense'
 import { getTodayKey } from '../lib/weekUtils'
 
 interface ExpenseQuickAddProps {
   expenseCategories: ExpenseCategory[]
   incomeCategories: ExpenseCategory[]
+  purposes: ExpensePurpose[]
+  kindsForActivePurpose: (purposeId: string) => ExpenseSpendKind[]
   defaultDateKey?: string
   onAdd: (input: {
     amount: number
     flow: MoneyFlow
-    categoryId: string
+    categoryId?: string
+    purposeId?: string
+    spendKindId?: string
     dateKey: string
     note?: string
   }) => void
   onAddCategory: (input: { name: string; color: string; kind: MoneyFlow }) => string
   onRenameCategory: (categoryId: string, name: string) => void
   onDeleteCategory: (categoryId: string) => void
+  onAddSpendKind: (input: {
+    name: string
+    color?: string
+    purposeId: string
+  }) => string | null
+  onRenameSpendKind: (spendKindId: string, name: string) => void
+  onDeleteSpendKind: (spendKindId: string) => void
   /** Mark the selected date as no spending (past days only). */
   onMarkNoSpend?: (dateKey: string) => void
 }
@@ -25,16 +45,23 @@ interface ExpenseQuickAddProps {
 export function ExpenseQuickAdd({
   expenseCategories,
   incomeCategories,
+  purposes,
+  kindsForActivePurpose,
   defaultDateKey,
   onAdd,
   onAddCategory,
   onRenameCategory,
   onDeleteCategory,
+  onAddSpendKind,
+  onRenameSpendKind,
+  onDeleteSpendKind,
   onMarkNoSpend,
 }: ExpenseQuickAddProps) {
   const [flow, setFlow] = useState<MoneyFlow>('out')
   const [amount, setAmount] = useState('')
   const [categoryId, setCategoryId] = useState<string>('')
+  const [purposeId, setPurposeId] = useState<string>('')
+  const [spendKindId, setSpendKindId] = useState<string>('')
   const [dateKey, setDateKey] = useState(defaultDateKey ?? getTodayKey())
   const [note, setNote] = useState('')
   const [savedFlash, setSavedFlash] = useState(false)
@@ -47,25 +74,72 @@ export function ExpenseQuickAdd({
     if (defaultDateKey) setDateKey(defaultDateKey)
   }, [defaultDateKey])
 
+  const useDualAxis = flow === 'out' && isExpenseHierarchyDate(dateKey)
   const categories = flow === 'out' ? expenseCategories : incomeCategories
+  const purposeKinds = useMemo(
+    () => (purposeId ? kindsForActivePurpose(purposeId) : []),
+    [kindsForActivePurpose, purposeId],
+  )
 
   const activeCategoryId = useMemo(() => {
     if (categoryId && categories.some((c) => c.id === categoryId)) return categoryId
     return categories[0]?.id ?? ''
   }, [categories, categoryId])
 
+  const activePurposeId = useMemo(() => {
+    if (purposeId && purposes.some((p) => p.id === purposeId)) return purposeId
+    return purposes[0]?.id ?? ''
+  }, [purposes, purposeId])
+
+  const activeSpendKindId = useMemo(() => {
+    if (spendKindId && purposeKinds.some((k) => k.id === spendKindId)) return spendKindId
+    return purposeKinds[0]?.id ?? ''
+  }, [purposeKinds, spendKindId])
+
   const activeCategory = categories.find((c) => c.id === activeCategoryId)
+  const activePurpose = purposes.find((p) => p.id === activePurposeId)
+  const activeKind = purposeKinds.find((k) => k.id === activeSpendKindId)
+
+  // When purpose changes, drop kind if it isn't linked under the new purpose.
+  useEffect(() => {
+    if (!useDualAxis) return
+    if (purposeId !== activePurposeId && activePurposeId) {
+      setPurposeId(activePurposeId)
+    }
+  }, [useDualAxis, purposeId, activePurposeId])
+
+  useEffect(() => {
+    if (!useDualAxis) return
+    if (spendKindId && !purposeKinds.some((k) => k.id === spendKindId)) {
+      setSpendKindId(purposeKinds[0]?.id ?? '')
+    }
+  }, [useDualAxis, spendKindId, purposeKinds])
+
+  const canSubmit = useDualAxis
+    ? Boolean(activePurposeId && activeSpendKindId)
+    : Boolean(activeCategoryId)
 
   const submit = () => {
     const value = Number(amount.replace(/,/g, ''))
-    if (!(value > 0) || !activeCategoryId) return
-    onAdd({
-      amount: value,
-      flow,
-      categoryId: activeCategoryId,
-      dateKey,
-      note,
-    })
+    if (!(value > 0) || !canSubmit) return
+    if (useDualAxis) {
+      onAdd({
+        amount: value,
+        flow,
+        purposeId: activePurposeId,
+        spendKindId: activeSpendKindId,
+        dateKey,
+        note,
+      })
+    } else {
+      onAdd({
+        amount: value,
+        flow,
+        categoryId: activeCategoryId,
+        dateKey,
+        note,
+      })
+    }
     setAmount('')
     setNote('')
     setSavedFlash(true)
@@ -75,9 +149,15 @@ export function ExpenseQuickAdd({
   const createCategory = () => {
     const name = newCatName.trim()
     if (!name) return
-    const color = EXPENSE_COLORS[categories.length % EXPENSE_COLORS.length]
-    const id = onAddCategory({ name, color, kind: flow })
-    setCategoryId(id)
+    if (useDualAxis) {
+      if (!activePurposeId) return
+      const id = onAddSpendKind({ name, purposeId: activePurposeId })
+      if (id) setSpendKindId(id)
+    } else {
+      const color = EXPENSE_COLORS[categories.length % EXPENSE_COLORS.length]
+      const id = onAddCategory({ name, color, kind: flow })
+      setCategoryId(id)
+    }
     setNewCatName('')
     setShowNewCat(false)
   }
@@ -87,7 +167,11 @@ export function ExpenseQuickAdd({
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <h2 className="text-[16px] font-semibold text-[#1C1C1E]">Quick log</h2>
-          <p className="text-[12px] text-muted">Amount · category · day — in or out</p>
+          <p className="text-[12px] text-muted">
+            {useDualAxis
+              ? 'Amount · purpose · kind · day'
+              : 'Amount · category · day — in or out'}
+          </p>
         </div>
         {savedFlash && (
           <span className="inline-flex items-center gap-1 rounded-full bg-[#E8F8EC] px-2.5 py-1 text-[11px] font-medium text-[#1B7F3A]">
@@ -102,6 +186,7 @@ export function ExpenseQuickAdd({
           onClick={() => {
             setFlow('out')
             setCategoryId('')
+            setEditingId(null)
           }}
           className={`inline-flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-[13px] font-semibold transition-colors ${
             flow === 'out'
@@ -116,6 +201,7 @@ export function ExpenseQuickAdd({
           onClick={() => {
             setFlow('in')
             setCategoryId('')
+            setEditingId(null)
           }}
           className={`inline-flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-[13px] font-semibold transition-colors ${
             flow === 'in'
@@ -134,9 +220,20 @@ export function ExpenseQuickAdd({
         <input
           type="date"
           value={dateKey}
-          onChange={(e) => setDateKey(e.target.value)}
+          onChange={(e) => {
+            setDateKey(e.target.value)
+            setEditingId(null)
+            setShowNewCat(false)
+          }}
           className="w-full rounded-xl border border-hairline bg-[#FAFAFA] px-3.5 py-2.5 text-[14px] text-[#1C1C1E] outline-none focus:border-[#8B5A2B]/50 focus:bg-white"
         />
+        {flow === 'out' && (
+          <p className="mt-1 text-[11px] text-muted">
+            {useDualAxis
+              ? 'Sep 2026+ uses purpose + spend type'
+              : 'Before Sep 2026 uses classic categories'}
+          </p>
+        )}
       </label>
 
       <label className="mb-3 block">
@@ -177,137 +274,320 @@ export function ExpenseQuickAdd({
         />
       </label>
 
-      <div className="mb-3">
-        <div className="mb-1.5 flex items-center justify-between">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-            {flow === 'out' ? 'Category' : 'Source'}
-          </span>
-          <button
-            type="button"
-            onClick={() => setShowNewCat((v) => !v)}
-            className="inline-flex items-center gap-0.5 text-[11px] font-medium text-[#8B5A2B]"
-          >
-            <Plus size={12} /> New
-          </button>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {categories.map((cat) => {
-            const selected = cat.id === activeCategoryId
-            return (
+      {useDualAxis ? (
+        <>
+          <div className="mb-3">
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted">
+              Purpose
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {purposes.map((p) => {
+                const selected = p.id === activePurposeId
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => {
+                      setPurposeId(p.id)
+                      setSpendKindId('')
+                      setEditingId(null)
+                    }}
+                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[12px] font-medium transition-colors ${
+                      selected ? 'text-white shadow-sm' : 'bg-[#F5F5F7] text-[#48484A]'
+                    }`}
+                    style={selected ? { backgroundColor: p.color } : undefined}
+                  >
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{
+                        backgroundColor: selected ? 'rgba(255,255,255,0.85)' : p.color,
+                      }}
+                    />
+                    {p.name}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="mb-3">
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                Spend type
+              </span>
               <button
-                key={cat.id}
+                type="button"
+                onClick={() => setShowNewCat((v) => !v)}
+                className="inline-flex items-center gap-0.5 text-[11px] font-medium text-[#8B5A2B]"
+              >
+                <Plus size={12} /> New
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {purposeKinds.map((k) => {
+                const selected = k.id === activeSpendKindId
+                return (
+                  <button
+                    key={k.id}
+                    type="button"
+                    onClick={() => {
+                      setSpendKindId(k.id)
+                      setEditingId(null)
+                    }}
+                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[12px] font-medium transition-colors ${
+                      selected ? 'text-white shadow-sm' : 'bg-[#F5F5F7] text-[#48484A]'
+                    }`}
+                    style={selected ? { backgroundColor: k.color } : undefined}
+                  >
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{
+                        backgroundColor: selected ? 'rgba(255,255,255,0.85)' : k.color,
+                      }}
+                    />
+                    {k.name}
+                  </button>
+                )
+              })}
+              {purposeKinds.length === 0 && (
+                <p className="text-[12px] text-muted">No types under this purpose yet.</p>
+              )}
+            </div>
+            {activeKind && editingId === activeKind.id ? (
+              <div className="mt-2 flex gap-2">
+                <input
+                  type="text"
+                  value={editingName}
+                  autoFocus
+                  onChange={(e) => setEditingName(e.target.value)}
+                  className="min-w-0 flex-1 rounded-lg border border-hairline bg-[#FAFAFA] px-3 py-2 text-[13px] outline-none focus:border-[#8B5A2B]/40"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      onRenameSpendKind(activeKind.id, editingName)
+                      setEditingId(null)
+                    }
+                    if (e.key === 'Escape') setEditingId(null)
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    onRenameSpendKind(activeKind.id, editingName)
+                    setEditingId(null)
+                  }}
+                  className="rounded-lg bg-[#8B5A2B] px-3 py-2 text-[12px] font-semibold text-white"
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingId(null)}
+                  className="rounded-lg bg-[#F2F2F7] px-2.5 py-2 text-muted"
+                  aria-label="Cancel"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ) : activeKind ? (
+              <div className="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingId(activeKind.id)
+                    setEditingName(activeKind.name)
+                    setShowNewCat(false)
+                  }}
+                  className="inline-flex items-center gap-1 rounded-lg bg-[#F5F5F7] px-2.5 py-1.5 text-[11px] font-medium text-[#48484A] hover:bg-[#EBEBEF]"
+                >
+                  <Pencil size={12} /> Rename
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        `Delete “${activeKind.name}”? Past logs keep amounts but lose this label.`,
+                      )
+                    ) {
+                      onDeleteSpendKind(activeKind.id)
+                      setSpendKindId('')
+                    }
+                  }}
+                  className="inline-flex items-center gap-1 rounded-lg bg-[#F5F5F7] px-2.5 py-1.5 text-[11px] font-medium text-[#FF3B30] hover:bg-[#FFF1F0]"
+                >
+                  <Trash2 size={12} /> Delete
+                </button>
+              </div>
+            ) : null}
+            {showNewCat && (
+              <div className="mt-2 flex gap-2">
+                <input
+                  type="text"
+                  value={newCatName}
+                  onChange={(e) => setNewCatName(e.target.value)}
+                  placeholder="New spend type"
+                  className="min-w-0 flex-1 rounded-lg border border-hairline bg-[#FAFAFA] px-3 py-2 text-[13px] outline-none focus:border-[#8B5A2B]/40"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') createCategory()
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={createCategory}
+                  className="rounded-lg bg-[#8B5A2B] px-3 py-2 text-[12px] font-semibold text-white"
+                >
+                  Add
+                </button>
+              </div>
+            )}
+            {activePurpose && (
+              <p className="mt-2 text-[11px] text-muted">
+                Logging under <span className="font-medium text-[#5C4033]">{activePurpose.name}</span>
+                {activeKind ? (
+                  <>
+                    {' '}
+                    · <span className="font-medium text-[#5C4033]">{activeKind.name}</span>
+                  </>
+                ) : null}
+              </p>
+            )}
+          </div>
+        </>
+      ) : (
+        <div className="mb-3">
+          <div className="mb-1.5 flex items-center justify-between">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+              {flow === 'out' ? 'Category' : 'Source'}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowNewCat((v) => !v)}
+              className="inline-flex items-center gap-0.5 text-[11px] font-medium text-[#8B5A2B]"
+            >
+              <Plus size={12} /> New
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {categories.map((cat) => {
+              const selected = cat.id === activeCategoryId
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => {
+                    setCategoryId(cat.id)
+                    setEditingId(null)
+                  }}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[12px] font-medium transition-colors ${
+                    selected ? 'text-white shadow-sm' : 'bg-[#F5F5F7] text-[#48484A]'
+                  }`}
+                  style={selected ? { backgroundColor: cat.color } : undefined}
+                >
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{
+                      backgroundColor: selected ? 'rgba(255,255,255,0.85)' : cat.color,
+                    }}
+                  />
+                  {cat.name}
+                </button>
+              )
+            })}
+          </div>
+          {activeCategory && editingId === activeCategory.id ? (
+            <div className="mt-2 flex gap-2">
+              <input
+                type="text"
+                value={editingName}
+                autoFocus
+                onChange={(e) => setEditingName(e.target.value)}
+                className="min-w-0 flex-1 rounded-lg border border-hairline bg-[#FAFAFA] px-3 py-2 text-[13px] outline-none focus:border-[#8B5A2B]/40"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    onRenameCategory(activeCategory.id, editingName)
+                    setEditingId(null)
+                  }
+                  if (e.key === 'Escape') setEditingId(null)
+                }}
+              />
+              <button
                 type="button"
                 onClick={() => {
-                  setCategoryId(cat.id)
-                  setEditingId(null)
-                }}
-                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[12px] font-medium transition-colors ${
-                  selected ? 'text-white shadow-sm' : 'bg-[#F5F5F7] text-[#48484A]'
-                }`}
-                style={selected ? { backgroundColor: cat.color } : undefined}
-              >
-                <span
-                  className="h-2 w-2 rounded-full"
-                  style={{ backgroundColor: selected ? 'rgba(255,255,255,0.85)' : cat.color }}
-                />
-                {cat.name}
-              </button>
-            )
-          })}
-        </div>
-        {activeCategory && editingId === activeCategory.id ? (
-          <div className="mt-2 flex gap-2">
-            <input
-              type="text"
-              value={editingName}
-              autoFocus
-              onChange={(e) => setEditingName(e.target.value)}
-              className="min-w-0 flex-1 rounded-lg border border-hairline bg-[#FAFAFA] px-3 py-2 text-[13px] outline-none focus:border-[#8B5A2B]/40"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
                   onRenameCategory(activeCategory.id, editingName)
                   setEditingId(null)
-                }
-                if (e.key === 'Escape') setEditingId(null)
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => {
-                onRenameCategory(activeCategory.id, editingName)
-                setEditingId(null)
-              }}
-              className="rounded-lg bg-[#8B5A2B] px-3 py-2 text-[12px] font-semibold text-white"
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              onClick={() => setEditingId(null)}
-              className="rounded-lg bg-[#F2F2F7] px-2.5 py-2 text-muted"
-              aria-label="Cancel"
-            >
-              <X size={14} />
-            </button>
-          </div>
-        ) : activeCategory ? (
-          <div className="mt-2 flex gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setEditingId(activeCategory.id)
-                setEditingName(activeCategory.name)
-                setShowNewCat(false)
-              }}
-              className="inline-flex items-center gap-1 rounded-lg bg-[#F5F5F7] px-2.5 py-1.5 text-[11px] font-medium text-[#48484A] hover:bg-[#EBEBEF]"
-            >
-              <Pencil size={12} /> Rename
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (
-                  window.confirm(
-                    `Delete “${activeCategory.name}”? Past logs keep amounts but lose this label.`,
-                  )
-                ) {
-                  onDeleteCategory(activeCategory.id)
-                  setCategoryId('')
-                }
-              }}
-              className="inline-flex items-center gap-1 rounded-lg bg-[#F5F5F7] px-2.5 py-1.5 text-[11px] font-medium text-[#FF3B30] hover:bg-[#FFF1F0]"
-            >
-              <Trash2 size={12} /> Delete
-            </button>
-          </div>
-        ) : null}
-        {showNewCat && (
-          <div className="mt-2 flex gap-2">
-            <input
-              type="text"
-              value={newCatName}
-              onChange={(e) => setNewCatName(e.target.value)}
-              placeholder={flow === 'out' ? 'Category name' : 'Source name'}
-              className="min-w-0 flex-1 rounded-lg border border-hairline bg-[#FAFAFA] px-3 py-2 text-[13px] outline-none focus:border-[#8B5A2B]/40"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') createCategory()
-              }}
-            />
-            <button
-              type="button"
-              onClick={createCategory}
-              className="rounded-lg bg-[#8B5A2B] px-3 py-2 text-[12px] font-semibold text-white"
-            >
-              Add
-            </button>
-          </div>
-        )}
-      </div>
+                }}
+                className="rounded-lg bg-[#8B5A2B] px-3 py-2 text-[12px] font-semibold text-white"
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingId(null)}
+                className="rounded-lg bg-[#F2F2F7] px-2.5 py-2 text-muted"
+                aria-label="Cancel"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ) : activeCategory ? (
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingId(activeCategory.id)
+                  setEditingName(activeCategory.name)
+                  setShowNewCat(false)
+                }}
+                className="inline-flex items-center gap-1 rounded-lg bg-[#F5F5F7] px-2.5 py-1.5 text-[11px] font-medium text-[#48484A] hover:bg-[#EBEBEF]"
+              >
+                <Pencil size={12} /> Rename
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `Delete “${activeCategory.name}”? Past logs keep amounts but lose this label.`,
+                    )
+                  ) {
+                    onDeleteCategory(activeCategory.id)
+                    setCategoryId('')
+                  }
+                }}
+                className="inline-flex items-center gap-1 rounded-lg bg-[#F5F5F7] px-2.5 py-1.5 text-[11px] font-medium text-[#FF3B30] hover:bg-[#FFF1F0]"
+              >
+                <Trash2 size={12} /> Delete
+              </button>
+            </div>
+          ) : null}
+          {showNewCat && (
+            <div className="mt-2 flex gap-2">
+              <input
+                type="text"
+                value={newCatName}
+                onChange={(e) => setNewCatName(e.target.value)}
+                placeholder={flow === 'out' ? 'Category name' : 'Source name'}
+                className="min-w-0 flex-1 rounded-lg border border-hairline bg-[#FAFAFA] px-3 py-2 text-[13px] outline-none focus:border-[#8B5A2B]/40"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') createCategory()
+                }}
+              />
+              <button
+                type="button"
+                onClick={createCategory}
+                className="rounded-lg bg-[#8B5A2B] px-3 py-2 text-[12px] font-semibold text-white"
+              >
+                Add
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       <button
         type="button"
         onClick={submit}
-        disabled={!amount || Number(amount) <= 0 || !activeCategoryId}
+        disabled={!amount || Number(amount) <= 0 || !canSubmit}
         className="w-full rounded-xl bg-[#1C1C1E] py-3 text-[14px] font-semibold text-white disabled:opacity-40"
       >
         Log {flow === 'out' ? 'expense' : 'income'}

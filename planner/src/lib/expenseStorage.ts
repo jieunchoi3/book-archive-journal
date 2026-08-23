@@ -1,5 +1,9 @@
 import type { ExpenseStore } from '../types/expense'
-import { emptyExpenseStore } from '../types/expense'
+import {
+  emptyExpenseStore,
+  ensureDualAxisCatalogs,
+  normalizeExpenseTransactions,
+} from '../types/expense'
 import { fetchExpenseStoreCloud, upsertExpenseStoreCloud } from './expenseCloud'
 import { isSupabaseConfigured } from './supabase'
 
@@ -123,8 +127,10 @@ export async function saveExpenseStore(userId: string, store: ExpenseStore): Pro
 
 export function ensureExpenseStore(store: ExpenseStore | null): ExpenseStore {
   if (!store) return emptyExpenseStore()
-  return {
+  const withMarks = {
     ...store,
     dayMarks: store.dayMarks ?? {},
+    transactions: normalizeExpenseTransactions(store.transactions ?? []),
   }
+  return ensureDualAxisCatalogs(withMarks)
 }

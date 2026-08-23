@@ -1,8 +1,17 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 import { Check, ChevronLeft, ChevronRight, Pencil, Trash2, Wallet, X } from 'lucide-react'
 import type { ExpenseActions } from '../hooks/useExpenses'
-import type { ExpenseCategory, MoneyTransaction } from '../types/expense'
-import { formatMoney } from '../types/expense'
+import type {
+  ExpenseCategory,
+  ExpensePurpose,
+  ExpenseSpendKind,
+  MoneyTransaction,
+} from '../types/expense'
+import {
+  dualAxisLabel,
+  formatMoney,
+  isDualAxisTransaction,
+} from '../types/expense'
 import { formatDateKey, formatMonthYear, getTodayKey, parseDateKey } from '../lib/weekUtils'
 import { ExpenseQuickAdd } from './ExpenseQuickAdd'
 import { ExpensePieChart } from './ExpensePieChart'
@@ -19,6 +28,9 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
     loading,
     expenseCategories,
     incomeCategories,
+    purposes,
+    spendKinds,
+    kindsForActivePurpose,
     transactions,
     addTransaction,
     deleteTransaction,
@@ -26,12 +38,19 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
     markDaysNoSpend,
     missingLogDays,
     setCategoryBudget,
+    setPurposeBudget,
     addCategory,
     renameCategory,
     deleteCategory,
+    addSpendKind,
+    renameSpendKind,
+    deleteSpendKind,
     setMonthKey,
+    isHierarchyMonth,
     monthTransactions,
     spentByCategory,
+    spentByPurpose,
+    spentBySpendKind,
     monthOutTotal,
     monthInTotal,
   } = expenses
@@ -49,8 +68,11 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
     'category',
   )
   const [highlightedCategoryId, setHighlightedCategoryId] = useState<string | null>(null)
-  /** null = all categories selected for the month log. */
+  const [highlightedPurposeId, setHighlightedPurposeId] = useState<string | null>(null)
+  /** null = all categories selected for the month log (legacy months). */
   const [logFilterIds, setLogFilterIds] = useState<Set<string> | null>(null)
+  const [logPurposeFilter, setLogPurposeFilter] = useState<string | 'all'>('all')
+  const [logKindFilter, setLogKindFilter] = useState<string | 'all'>('all')
 
   const logFilterCategories = useMemo(
     () => [...expenseCategories, ...incomeCategories],
@@ -62,19 +84,34 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
     return logFilterIds
   }, [logFilterIds, logFilterCategories])
 
-  const pieSlices = useMemo(
-    () =>
-      expenseCategories
-        .map((cat) => ({
-          id: cat.id,
-          label: cat.name,
-          value: spentByCategory[cat.id] ?? 0,
-          color: cat.color,
+  const pieSlices = useMemo(() => {
+    if (isHierarchyMonth) {
+      return purposes
+        .map((p) => ({
+          id: p.id,
+          label: p.name,
+          value: spentByPurpose[p.id] ?? 0,
+          color: p.color,
         }))
         .filter((s) => s.value > 0)
-        .sort((a, b) => b.value - a.value),
-    [expenseCategories, spentByCategory],
-  )
+        .sort((a, b) => b.value - a.value)
+    }
+    return expenseCategories
+      .map((cat) => ({
+        id: cat.id,
+        label: cat.name,
+        value: spentByCategory[cat.id] ?? 0,
+        color: cat.color,
+      }))
+      .filter((s) => s.value > 0)
+      .sort((a, b) => b.value - a.value)
+  }, [
+    isHierarchyMonth,
+    purposes,
+    spentByPurpose,
+    expenseCategories,
+    spentByCategory,
+  ])
 
   const goPrev = () => {
     if (month === 0) setMonthKey(year - 1, 11)
@@ -97,8 +134,28 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
     return map
   }, [expenseCategories, incomeCategories])
 
+  const purposeById = useMemo(() => {
+    const map = new Map(purposes.map((p) => [p.id, p] as const))
+    return map
+  }, [purposes])
+
+  const spendKindById = useMemo(() => {
+    const map = new Map(spendKinds.map((k) => [k.id, k] as const))
+    return map
+  }, [spendKinds])
+
   const logDays = useMemo(() => {
-    const filtered = monthTransactions.filter((t) => activeLogFilterIds.has(t.categoryId))
+    const filtered = monthTransactions.filter((t) => {
+      if (isHierarchyMonth) {
+        if (t.flow === 'in') return Boolean(t.categoryId)
+        if (!isDualAxisTransaction(t)) return false
+        const purposeOk =
+          logPurposeFilter === 'all' || t.purposeId === logPurposeFilter
+        const kindOk = logKindFilter === 'all' || t.spendKindId === logKindFilter
+        return purposeOk && kindOk
+      }
+      return activeLogFilterIds.has(t.categoryId)
+    })
     const byDay = new Map<string, MoneyTransaction[]>()
     for (const t of filtered) {
       const list = byDay.get(t.dateKey) ?? []
@@ -117,7 +174,13 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
           .reduce((sum, t) => sum + t.amount, 0)
         return { dateKey, transactions: sorted, dayOut, dayIn }
       })
-  }, [monthTransactions, activeLogFilterIds])
+  }, [
+    monthTransactions,
+    activeLogFilterIds,
+    isHierarchyMonth,
+    logPurposeFilter,
+    logKindFilter,
+  ])
 
   const toggleLogFilter = (id: string) => {
     setLogFilterIds((prev) => {
@@ -140,7 +203,13 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
 
   const searchSuggestions = useMemo((): SearchSuggestion[] => {
     const txnSuggestions = transactions.map((t) => {
+      const dual = isDualAxisTransaction(t)
+      const purpose = dual ? purposeById.get(t.purposeId ?? '') : undefined
+      const kind = dual ? spendKindById.get(t.spendKindId ?? '') : undefined
       const cat = catById.get(t.categoryId)
+      const axisLabel = dual
+        ? dualAxisLabel(purpose, kind)
+        : cat?.name || (t.flow === 'in' ? 'Income' : 'Expense')
       const label = parseDateKey(t.dateKey).toLocaleDateString(undefined, {
         month: 'short',
         day: 'numeric',
@@ -148,11 +217,14 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
       })
       return {
         id: `txn:${t.id}`,
-        title: t.note.trim() || cat?.name || (t.flow === 'in' ? 'Income' : 'Expense'),
-        subtitle: `${t.flow === 'in' ? 'In' : 'Out'} · ${cat?.name ?? 'Uncategorised'}`,
+        title: t.note.trim() || axisLabel,
+        subtitle: `${t.flow === 'in' ? 'In' : 'Out'} · ${axisLabel}`,
         meta: `${formatMoney(t.amount)} · ${label}`,
         haystack: [
           t.note,
+          axisLabel,
+          purpose?.name,
+          kind?.name,
           cat?.name,
           t.flow,
           t.flow === 'in' ? 'income' : 'expense',
@@ -168,8 +240,37 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
       meta: c.budget != null ? `Budget ${formatMoney(c.budget)}` : undefined,
       haystack: [c.kind, c.kind === 'in' ? 'income' : 'expense', 'budget'],
     }))
-    return [...txnSuggestions, ...catSuggestions]
-  }, [transactions, catById, expenseCategories, incomeCategories])
+    const purposeSuggestions = purposes.map((p) => ({
+      id: `purpose:${p.id}`,
+      title: p.name,
+      subtitle: 'Purpose',
+      meta: p.budget != null ? `Budget ${formatMoney(p.budget)}` : undefined,
+      haystack: ['purpose', 'budget', p.name],
+    }))
+    const kindSuggestions = spendKinds.map((k) => ({
+      id: `kind:${k.id}`,
+      title: k.name,
+      subtitle: 'Spend type',
+      haystack: ['kind', 'type', k.name],
+    }))
+    return [
+      ...txnSuggestions,
+      ...catSuggestions,
+      ...purposeSuggestions,
+      ...kindSuggestions,
+    ]
+  }, [
+    transactions,
+    catById,
+    purposeById,
+    spendKindById,
+    expenseCategories,
+    incomeCategories,
+    purposes,
+    spendKinds,
+  ])
+
+  const categoryTabLabel = isHierarchyMonth ? 'By purpose' : 'By category'
 
   return (
     <div className="min-h-screen p-6 pb-24">
@@ -245,6 +346,17 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
                   setMonthKey(d.getFullYear(), d.getMonth())
                   setSelectedDateKey(hit.dateKey)
                 }
+                return
+              }
+              if (s.id.startsWith('purpose:')) {
+                const id = s.id.slice(8)
+                setHighlightedPurposeId(id)
+                setOverviewPanel('category')
+                return
+              }
+              if (s.id.startsWith('kind:')) {
+                setLogKindFilter(s.id.slice(5))
+                setOverviewPanel('log')
               }
             }}
           />
@@ -276,11 +388,16 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
           <ExpenseQuickAdd
             expenseCategories={expenseCategories}
             incomeCategories={incomeCategories}
+            purposes={purposes}
+            kindsForActivePurpose={kindsForActivePurpose}
             defaultDateKey={selectedDateKey ?? getTodayKey()}
             onAdd={addTransaction}
             onAddCategory={addCategory}
             onRenameCategory={renameCategory}
             onDeleteCategory={deleteCategory}
+            onAddSpendKind={addSpendKind}
+            onRenameSpendKind={renameSpendKind}
+            onDeleteSpendKind={deleteSpendKind}
             onMarkNoSpend={markDayNoSpend}
           />
 
@@ -290,7 +407,7 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
                 <div className="inline-flex max-w-full flex-wrap rounded-full bg-[#F2F2F7] p-0.5">
                   {(
                     [
-                      ['category', 'By category'],
+                      ['category', categoryTabLabel],
                       ['report', 'Report'],
                       ['log', 'This month’s log'],
                     ] as const
@@ -312,231 +429,148 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
               </div>
 
               {overviewPanel === 'category' ? (
-                <>
-                  <p className="mb-4 text-[12px] text-muted">
-                    This month’s expenses — set a budget to spot overspend
-                  </p>
-
-                  <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-start">
-                    <ExpensePieChart
-                      slices={pieSlices}
-                      size={200}
-                      highlightedId={highlightedCategoryId}
-                      onHighlightChange={setHighlightedCategoryId}
-                    />
-                    <div className="min-w-0 flex-1 space-y-2">
-                      {expenseCategories.map((cat) => {
-                    const spent = spentByCategory[cat.id] ?? 0
-                    const budget = cat.budget
-                    const over = budget != null && budget > 0 && spent > budget
-                    const highlighted = highlightedCategoryId === cat.id
-                    const pct =
-                      budget != null && budget > 0
-                        ? Math.min(100, Math.round((spent / budget) * 100))
-                        : null
-                    const draft =
-                      budgetDrafts[cat.id] ??
-                      (budget != null ? String(budget) : '')
-
-                    return (
-                      <div
-                        key={cat.id}
-                        onPointerEnter={() => setHighlightedCategoryId(cat.id)}
-                        onPointerLeave={() => setHighlightedCategoryId(null)}
-                        className={`rounded-xl px-3 py-2.5 transition-all duration-150 ${
-                          highlighted
-                            ? 'bg-white shadow-md ring-2 ring-[#8B5A2B]/45'
-                            : over
-                              ? 'bg-[#FFF1F0] ring-1 ring-[#FF3B30]/20'
-                              : 'bg-[#FAFAFA]'
-                        }`}
-                      >
-                        <div className="mb-1.5 flex items-center justify-between gap-2">
-                          <div className="flex min-w-0 flex-1 items-center gap-2">
-                            <span
-                              className="h-2.5 w-2.5 shrink-0 rounded-full"
-                              style={{ backgroundColor: cat.color }}
-                            />
-                            {editingCatId === cat.id ? (
-                              <div className="flex min-w-0 flex-1 items-center gap-1">
-                                <input
-                                  type="text"
-                                  value={editingName}
-                                  autoFocus
-                                  onChange={(e) => setEditingName(e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                      renameCategory(cat.id, editingName)
-                                      setEditingCatId(null)
-                                    }
-                                    if (e.key === 'Escape') setEditingCatId(null)
-                                  }}
-                                  className="min-w-0 flex-1 rounded-md border border-hairline bg-white px-2 py-1 text-[13px] font-medium outline-none focus:border-[#8B5A2B]/40"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    renameCategory(cat.id, editingName)
-                                    setEditingCatId(null)
-                                  }}
-                                  className="rounded-md p-1 text-[#3D7A5A] hover:bg-white"
-                                  aria-label="Save name"
-                                >
-                                  <Check size={14} />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setEditingCatId(null)}
-                                  className="rounded-md p-1 text-muted hover:bg-white"
-                                  aria-label="Cancel"
-                                >
-                                  <X size={14} />
-                                </button>
-                              </div>
-                            ) : (
-                              <>
-                                <span className="min-w-0 truncate text-[13px] font-medium text-[#1C1C1E]">
-                                  {cat.name}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setEditingCatId(cat.id)
-                                    setEditingName(cat.name)
-                                  }}
-                                  className="rounded-md p-1 text-muted hover:bg-white hover:text-[#8B5A2B]"
-                                  aria-label={`Rename ${cat.name}`}
-                                >
-                                  <Pencil size={12} />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (
-                                      window.confirm(
-                                        `Delete category “${cat.name}”? Past logs keep their amounts but lose this label.`,
-                                      )
-                                    ) {
-                                      deleteCategory(cat.id)
-                                    }
-                                  }}
-                                  className="rounded-md p-1 text-muted hover:bg-white hover:text-[#FF3B30]"
-                                  aria-label={`Delete ${cat.name}`}
-                                >
-                                  <Trash2 size={12} />
-                                </button>
-                              </>
-                            )}
-                          </div>
-                          <span className="shrink-0 text-[13px] font-semibold tabular-nums text-[#1C1C1E]">
-                            {formatMoney(spent)}
-                            {over && (
-                              <span className="ml-1 text-[11px] font-medium text-[#FF3B30]">
-                                over
-                              </span>
-                            )}
-                          </span>
-                        </div>
-                        {pct != null && (
-                          <div className="mb-2 h-1.5 overflow-hidden rounded-full bg-white">
-                            <div
-                              className={`h-full rounded-full ${
-                                over ? 'bg-[#FF3B30]' : 'bg-[#8B5A2B]'
-                              }`}
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                        )}
-                        <label className="flex items-center gap-2 text-[11px] text-muted">
-                          Budget
-                          <span>£</span>
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            value={draft}
-                            placeholder="—"
-                            onChange={(e) =>
-                              setBudgetDrafts((prev) => ({
-                                ...prev,
-                                [cat.id]: e.target.value.replace(/[^0-9.]/g, ''),
-                              }))
-                            }
-                            onBlur={() => {
-                              const raw = budgetDrafts[cat.id]
-                              if (raw === undefined) return
-                              const n = Number(raw)
-                              setCategoryBudget(
-                                cat.id,
-                                raw === '' || !(n > 0) ? null : n,
-                              )
-                            }}
-                            className="w-20 rounded-md border border-hairline bg-white px-2 py-1 text-[12px] tabular-nums text-[#1C1C1E] outline-none focus:border-[#8B5A2B]/40"
-                          />
-                          {budget != null && budget > 0 && (
-                            <span className="tabular-nums">
-                              / {formatMoney(budget)}
-                            </span>
-                          )}
-                        </label>
-                      </div>
-                    )
-                  })}
-                      {expenseCategories.length === 0 && (
-                        <p className="text-[12px] text-muted">No expense categories yet.</p>
-                      )}
-                    </div>
-                  </div>
-                </>
+                isHierarchyMonth ? (
+                  <HierarchyCategoryPanel
+                    purposes={purposes}
+                    kindsForActivePurpose={kindsForActivePurpose}
+                    spentByPurpose={spentByPurpose}
+                    spentBySpendKind={spentBySpendKind}
+                    pieSlices={pieSlices}
+                    highlightedPurposeId={highlightedPurposeId}
+                    onHighlightChange={setHighlightedPurposeId}
+                    budgetDrafts={budgetDrafts}
+                    setBudgetDrafts={setBudgetDrafts}
+                    setPurposeBudget={setPurposeBudget}
+                  />
+                ) : (
+                  <LegacyCategoryPanel
+                    expenseCategories={expenseCategories}
+                    spentByCategory={spentByCategory}
+                    pieSlices={pieSlices}
+                    highlightedCategoryId={highlightedCategoryId}
+                    onHighlightChange={setHighlightedCategoryId}
+                    budgetDrafts={budgetDrafts}
+                    setBudgetDrafts={setBudgetDrafts}
+                    setCategoryBudget={setCategoryBudget}
+                    editingCatId={editingCatId}
+                    setEditingCatId={setEditingCatId}
+                    editingName={editingName}
+                    setEditingName={setEditingName}
+                    renameCategory={renameCategory}
+                    deleteCategory={deleteCategory}
+                  />
+                )
               ) : overviewPanel === 'report' ? (
                 <>
                   <p className="mb-4 text-[12px] text-muted">
-                    Filter categories and compare spending across the month
+                    {isHierarchyMonth
+                      ? 'Filter by purpose and type across the month'
+                      : 'Filter categories and compare spending across the month'}
                   </p>
                   <ExpenseReport
                     year={year}
                     month={month}
                     expenseCategories={expenseCategories}
+                    purposes={purposes}
+                    spendKinds={spendKinds}
+                    isHierarchyMonth={isHierarchyMonth}
                     transactions={transactions}
                     monthOutTotal={monthOutTotal}
                   />
                 </>
               ) : (
                 <>
-                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-[12px] text-muted">
-                      Day-by-day log — filter by category
-                    </p>
-                    <div className="flex items-center gap-1 text-[11px]">
-                      <button
-                        type="button"
-                        onClick={() => setLogFilterIds(null)}
-                        className="rounded-lg px-2.5 py-1 font-medium text-[#8B5A2B] hover:bg-[#F3E5D8]"
-                      >
-                        All
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setLogFilterIds(new Set())}
-                        className="rounded-lg px-2.5 py-1 font-medium text-muted hover:bg-[#F2F2F7]"
-                      >
-                        Clear
-                      </button>
-                    </div>
-                  </div>
+                  {isHierarchyMonth ? (
+                    <>
+                      <p className="mb-3 text-[12px] text-muted">
+                        Day-by-day log — filter by purpose and type
+                      </p>
+                      <div className="mb-4 space-y-3">
+                        <div>
+                          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                            Purpose
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            <AxisFilterPill
+                              label="All"
+                              color="#8B5A2B"
+                              active={logPurposeFilter === 'all'}
+                              onClick={() => setLogPurposeFilter('all')}
+                            />
+                            {purposes.map((p) => (
+                              <AxisFilterPill
+                                key={p.id}
+                                label={p.name}
+                                color={p.color}
+                                active={logPurposeFilter === p.id}
+                                onClick={() => setLogPurposeFilter(p.id)}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                            Type
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            <AxisFilterPill
+                              label="All"
+                              color="#8B5A2B"
+                              active={logKindFilter === 'all'}
+                              onClick={() => setLogKindFilter('all')}
+                            />
+                            {spendKinds.map((k) => (
+                              <AxisFilterPill
+                                key={k.id}
+                                label={k.name}
+                                color={k.color}
+                                active={logKindFilter === k.id}
+                                onClick={() => setLogKindFilter(k.id)}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-[12px] text-muted">
+                          Day-by-day log — filter by category
+                        </p>
+                        <div className="flex items-center gap-1 text-[11px]">
+                          <button
+                            type="button"
+                            onClick={() => setLogFilterIds(null)}
+                            className="rounded-lg px-2.5 py-1 font-medium text-[#8B5A2B] hover:bg-[#F3E5D8]"
+                          >
+                            All
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setLogFilterIds(new Set())}
+                            className="rounded-lg px-2.5 py-1 font-medium text-muted hover:bg-[#F2F2F7]"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </div>
 
-                  <div className="mb-4 flex flex-wrap gap-1.5">
-                    {logFilterCategories.map((cat) => {
-                      const on = activeLogFilterIds.has(cat.id)
-                      return (
-                        <CategoryFilterPill
-                          key={cat.id}
-                          category={cat}
-                          active={on}
-                          onClick={() => toggleLogFilter(cat.id)}
-                        />
-                      )
-                    })}
-                  </div>
+                      <div className="mb-4 flex flex-wrap gap-1.5">
+                        {logFilterCategories.map((cat) => {
+                          const on = activeLogFilterIds.has(cat.id)
+                          return (
+                            <CategoryFilterPill
+                              key={cat.id}
+                              category={cat}
+                              active={on}
+                              onClick={() => toggleLogFilter(cat.id)}
+                            />
+                          )
+                        })}
+                      </div>
+                    </>
+                  )}
 
                   {loading && <p className="text-[12px] text-muted">Loading…</p>}
                   {!loading && monthTransactions.length === 0 && (
@@ -565,20 +599,34 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
                         </div>
                         <ul className="divide-y divide-hairline rounded-xl bg-[#FAFAFA] px-3">
                           {dayTxns.map((t) => {
+                            const dual = isDualAxisTransaction(t)
+                            const purpose = dual
+                              ? purposeById.get(t.purposeId ?? '')
+                              : undefined
+                            const kind = dual
+                              ? spendKindById.get(t.spendKindId ?? '')
+                              : undefined
                             const cat = catById.get(t.categoryId)
+                            const rowLabel = dual
+                              ? dualAxisLabel(purpose, kind)
+                              : (cat?.name ?? 'Unknown')
+                            const rowColor = dual
+                              ? (kind?.color ?? purpose?.color ?? '#8E8E93')
+                              : (cat?.color ?? '#8E8E93')
                             return (
                               <li key={t.id} className="flex items-center gap-3 py-2.5">
                                 <span
                                   className="h-2.5 w-2.5 shrink-0 rounded-full"
-                                  style={{ backgroundColor: cat?.color ?? '#8E8E93' }}
+                                  style={{ backgroundColor: rowColor }}
                                 />
                                 <div className="min-w-0 flex-1">
                                   <p className="truncate text-[13px] font-medium text-[#1C1C1E]">
-                                    <span style={{ color: cat?.color ?? undefined }}>
-                                      {cat?.name ?? 'Unknown'}
-                                    </span>
+                                    <span style={{ color: rowColor }}>{rowLabel}</span>
                                     {t.note ? (
-                                      <span className="font-normal text-muted"> · {t.note}</span>
+                                      <span className="font-normal text-muted">
+                                        {' '}
+                                        · {t.note}
+                                      </span>
                                     ) : null}
                                   </p>
                                 </div>
@@ -620,6 +668,371 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
         </div>
       </div>
     </div>
+  )
+}
+
+function LegacyCategoryPanel({
+  expenseCategories,
+  spentByCategory,
+  pieSlices,
+  highlightedCategoryId,
+  onHighlightChange,
+  budgetDrafts,
+  setBudgetDrafts,
+  setCategoryBudget,
+  editingCatId,
+  setEditingCatId,
+  editingName,
+  setEditingName,
+  renameCategory,
+  deleteCategory,
+}: {
+  expenseCategories: ExpenseCategory[]
+  spentByCategory: Record<string, number>
+  pieSlices: { id: string; label: string; value: number; color: string }[]
+  highlightedCategoryId: string | null
+  onHighlightChange: (id: string | null) => void
+  budgetDrafts: Record<string, string>
+  setBudgetDrafts: Dispatch<SetStateAction<Record<string, string>>>
+  setCategoryBudget: (categoryId: string, budget: number | null) => void
+  editingCatId: string | null
+  setEditingCatId: (id: string | null) => void
+  editingName: string
+  setEditingName: (name: string) => void
+  renameCategory: (categoryId: string, name: string) => void
+  deleteCategory: (categoryId: string) => void
+}) {
+  return (
+    <>
+      <p className="mb-4 text-[12px] text-muted">
+        This month’s expenses — set a budget to spot overspend
+      </p>
+
+      <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-start">
+        <ExpensePieChart
+          slices={pieSlices}
+          size={200}
+          highlightedId={highlightedCategoryId}
+          onHighlightChange={onHighlightChange}
+        />
+        <div className="min-w-0 flex-1 space-y-2">
+          {expenseCategories.map((cat) => {
+            const spent = spentByCategory[cat.id] ?? 0
+            const budget = cat.budget
+            const over = budget != null && budget > 0 && spent > budget
+            const highlighted = highlightedCategoryId === cat.id
+            const pct =
+              budget != null && budget > 0
+                ? Math.min(100, Math.round((spent / budget) * 100))
+                : null
+            const draft =
+              budgetDrafts[cat.id] ?? (budget != null ? String(budget) : '')
+
+            return (
+              <div
+                key={cat.id}
+                onPointerEnter={() => onHighlightChange(cat.id)}
+                onPointerLeave={() => onHighlightChange(null)}
+                className={`rounded-xl px-3 py-2.5 transition-all duration-150 ${
+                  highlighted
+                    ? 'bg-white shadow-md ring-2 ring-[#8B5A2B]/45'
+                    : over
+                      ? 'bg-[#FFF1F0] ring-1 ring-[#FF3B30]/20'
+                      : 'bg-[#FAFAFA]'
+                }`}
+              >
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: cat.color }}
+                    />
+                    {editingCatId === cat.id ? (
+                      <div className="flex min-w-0 flex-1 items-center gap-1">
+                        <input
+                          type="text"
+                          value={editingName}
+                          autoFocus
+                          onChange={(e) => setEditingName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              renameCategory(cat.id, editingName)
+                              setEditingCatId(null)
+                            }
+                            if (e.key === 'Escape') setEditingCatId(null)
+                          }}
+                          className="min-w-0 flex-1 rounded-md border border-hairline bg-white px-2 py-1 text-[13px] font-medium outline-none focus:border-[#8B5A2B]/40"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            renameCategory(cat.id, editingName)
+                            setEditingCatId(null)
+                          }}
+                          className="rounded-md p-1 text-[#3D7A5A] hover:bg-white"
+                          aria-label="Save name"
+                        >
+                          <Check size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingCatId(null)}
+                          className="rounded-md p-1 text-muted hover:bg-white"
+                          aria-label="Cancel"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <span className="min-w-0 truncate text-[13px] font-medium text-[#1C1C1E]">
+                          {cat.name}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingCatId(cat.id)
+                            setEditingName(cat.name)
+                          }}
+                          className="rounded-md p-1 text-muted hover:bg-white hover:text-[#8B5A2B]"
+                          aria-label={`Rename ${cat.name}`}
+                        >
+                          <Pencil size={12} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                `Delete category “${cat.name}”? Past logs keep their amounts but lose this label.`,
+                              )
+                            ) {
+                              deleteCategory(cat.id)
+                            }
+                          }}
+                          className="rounded-md p-1 text-muted hover:bg-white hover:text-[#FF3B30]"
+                          aria-label={`Delete ${cat.name}`}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  <span className="shrink-0 text-[13px] font-semibold tabular-nums text-[#1C1C1E]">
+                    {formatMoney(spent)}
+                    {over && (
+                      <span className="ml-1 text-[11px] font-medium text-[#FF3B30]">
+                        over
+                      </span>
+                    )}
+                  </span>
+                </div>
+                {pct != null && (
+                  <div className="mb-2 h-1.5 overflow-hidden rounded-full bg-white">
+                    <div
+                      className={`h-full rounded-full ${
+                        over ? 'bg-[#FF3B30]' : 'bg-[#8B5A2B]'
+                      }`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                )}
+                <label className="flex items-center gap-2 text-[11px] text-muted">
+                  Budget
+                  <span>£</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={draft}
+                    placeholder="—"
+                    onChange={(e) =>
+                      setBudgetDrafts((prev) => ({
+                        ...prev,
+                        [cat.id]: e.target.value.replace(/[^0-9.]/g, ''),
+                      }))
+                    }
+                    onBlur={() => {
+                      const raw = budgetDrafts[cat.id]
+                      if (raw === undefined) return
+                      const n = Number(raw)
+                      setCategoryBudget(cat.id, raw === '' || !(n > 0) ? null : n)
+                    }}
+                    className="w-20 rounded-md border border-hairline bg-white px-2 py-1 text-[12px] tabular-nums text-[#1C1C1E] outline-none focus:border-[#8B5A2B]/40"
+                  />
+                  {budget != null && budget > 0 && (
+                    <span className="tabular-nums">/ {formatMoney(budget)}</span>
+                  )}
+                </label>
+              </div>
+            )
+          })}
+          {expenseCategories.length === 0 && (
+            <p className="text-[12px] text-muted">No expense categories yet.</p>
+          )}
+        </div>
+      </div>
+    </>
+  )
+}
+
+function HierarchyCategoryPanel({
+  purposes,
+  kindsForActivePurpose,
+  spentByPurpose,
+  spentBySpendKind,
+  pieSlices,
+  highlightedPurposeId,
+  onHighlightChange,
+  budgetDrafts,
+  setBudgetDrafts,
+  setPurposeBudget,
+}: {
+  purposes: ExpensePurpose[]
+  kindsForActivePurpose: (purposeId: string) => ExpenseSpendKind[]
+  spentByPurpose: Record<string, number>
+  spentBySpendKind: Record<string, number>
+  pieSlices: { id: string; label: string; value: number; color: string }[]
+  highlightedPurposeId: string | null
+  onHighlightChange: (id: string | null) => void
+  budgetDrafts: Record<string, string>
+  setBudgetDrafts: Dispatch<SetStateAction<Record<string, string>>>
+  setPurposeBudget: (purposeId: string, budget: number | null) => void
+}) {
+  const kindBreakdown = highlightedPurposeId
+    ? kindsForActivePurpose(highlightedPurposeId)
+    : []
+
+  return (
+    <>
+      <p className="mb-4 text-[12px] text-muted">
+        This month by purpose — set a budget to spot overspend
+      </p>
+
+      <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-start">
+        <ExpensePieChart
+          slices={pieSlices}
+          size={200}
+          highlightedId={highlightedPurposeId}
+          onHighlightChange={onHighlightChange}
+        />
+        <div className="min-w-0 flex-1 space-y-2">
+          {purposes.map((purpose) => {
+            const spent = spentByPurpose[purpose.id] ?? 0
+            const budget = purpose.budget
+            const over = budget != null && budget > 0 && spent > budget
+            const highlighted = highlightedPurposeId === purpose.id
+            const pct =
+              budget != null && budget > 0
+                ? Math.min(100, Math.round((spent / budget) * 100))
+                : null
+            const draft =
+              budgetDrafts[purpose.id] ?? (budget != null ? String(budget) : '')
+
+            return (
+              <div
+                key={purpose.id}
+                onPointerEnter={() => onHighlightChange(purpose.id)}
+                onPointerLeave={() => onHighlightChange(null)}
+                className={`rounded-xl px-3 py-2.5 transition-all duration-150 ${
+                  highlighted
+                    ? 'bg-white shadow-md ring-2 ring-[#8B5A2B]/45'
+                    : over
+                      ? 'bg-[#FFF1F0] ring-1 ring-[#FF3B30]/20'
+                      : 'bg-[#FAFAFA]'
+                }`}
+              >
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: purpose.color }}
+                    />
+                    <span className="min-w-0 truncate text-[13px] font-medium text-[#1C1C1E]">
+                      {purpose.name}
+                    </span>
+                  </div>
+                  <span className="shrink-0 text-[13px] font-semibold tabular-nums text-[#1C1C1E]">
+                    {formatMoney(spent)}
+                    {over && (
+                      <span className="ml-1 text-[11px] font-medium text-[#FF3B30]">
+                        over
+                      </span>
+                    )}
+                  </span>
+                </div>
+                {pct != null && (
+                  <div className="mb-2 h-1.5 overflow-hidden rounded-full bg-white">
+                    <div
+                      className={`h-full rounded-full ${
+                        over ? 'bg-[#FF3B30]' : 'bg-[#8B5A2B]'
+                      }`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                )}
+                <label className="flex items-center gap-2 text-[11px] text-muted">
+                  Budget
+                  <span>£</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={draft}
+                    placeholder="—"
+                    onChange={(e) =>
+                      setBudgetDrafts((prev) => ({
+                        ...prev,
+                        [purpose.id]: e.target.value.replace(/[^0-9.]/g, ''),
+                      }))
+                    }
+                    onBlur={() => {
+                      const raw = budgetDrafts[purpose.id]
+                      if (raw === undefined) return
+                      const n = Number(raw)
+                      setPurposeBudget(
+                        purpose.id,
+                        raw === '' || !(n > 0) ? null : n,
+                      )
+                    }}
+                    className="w-20 rounded-md border border-hairline bg-white px-2 py-1 text-[12px] tabular-nums text-[#1C1C1E] outline-none focus:border-[#8B5A2B]/40"
+                  />
+                  {budget != null && budget > 0 && (
+                    <span className="tabular-nums">/ {formatMoney(budget)}</span>
+                  )}
+                </label>
+
+                {highlighted && kindBreakdown.length > 0 && (
+                  <ul className="mt-2 space-y-1 border-t border-hairline pt-2">
+                    {kindBreakdown.map((kind) => {
+                      const kindSpent = spentBySpendKind[kind.id] ?? 0
+                      return (
+                        <li
+                          key={kind.id}
+                          className="flex items-center justify-between gap-2 text-[12px]"
+                        >
+                          <span className="flex min-w-0 items-center gap-1.5">
+                            <span
+                              className="h-1.5 w-1.5 shrink-0 rounded-full"
+                              style={{ backgroundColor: kind.color }}
+                            />
+                            <span className="truncate text-muted">{kind.name}</span>
+                          </span>
+                          <span className="shrink-0 tabular-nums text-[#1C1C1E]">
+                            {formatMoney(kindSpent)}
+                          </span>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+              </div>
+            )
+          })}
+          {purposes.length === 0 && (
+            <p className="text-[12px] text-muted">No purposes yet.</p>
+          )}
+        </div>
+      </div>
+    </>
   )
 }
 
@@ -677,6 +1090,39 @@ function CategoryFilterPill({
         }}
       />
       {category.name}
+    </button>
+  )
+}
+
+function AxisFilterPill({
+  label,
+  color,
+  active,
+  onClick,
+}: {
+  label: string
+  color: string
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[12px] font-medium transition-colors ${
+        active
+          ? 'text-white shadow-sm'
+          : 'bg-[#F2F2F7] text-[#8E8E93]'
+      }`}
+      style={active ? { backgroundColor: color } : undefined}
+    >
+      <span
+        className="h-2 w-2 rounded-full"
+        style={{
+          backgroundColor: active ? 'rgba(255,255,255,0.85)' : color,
+        }}
+      />
+      {label}
     </button>
   )
 }

@@ -1,9 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ExpenseCategory, ExpenseStore, MoneyFlow, MoneyTransaction } from '../types/expense'
+import type {
+  ExpenseCategory,
+  ExpensePurpose,
+  ExpenseSpendKind,
+  ExpenseStore,
+  MoneyFlow,
+  MoneyTransaction,
+} from '../types/expense'
 import {
   DEFAULT_EXPENSE_CATEGORIES,
   DEFAULT_INCOME_SOURCES,
+  EXPENSE_COLORS,
   emptyExpenseStore,
+  isDualAxisTransaction,
+  isExpenseHierarchyMonth,
+  kindsForPurpose,
 } from '../types/expense'
 import { getMissingExpenseLogDays } from '../lib/expenseMissingDays'
 import { ensureExpenseStore, loadExpenseStore, saveExpenseStore } from '../lib/expenseStorage'
@@ -23,10 +34,16 @@ export interface ExpenseActions {
   transactions: MoneyTransaction[]
   expenseCategories: ExpenseCategory[]
   incomeCategories: ExpenseCategory[]
+  purposes: ExpensePurpose[]
+  spendKinds: ExpenseSpendKind[]
+  purposeKindLinks: ExpenseStore['purposeKindLinks']
+  kindsForActivePurpose: (purposeId: string) => ExpenseSpendKind[]
   addTransaction: (input: {
     amount: number
     flow: MoneyFlow
-    categoryId: string
+    categoryId?: string
+    purposeId?: string
+    spendKindId?: string
     dateKey: string
     note?: string
   }) => void
@@ -38,13 +55,26 @@ export interface ExpenseActions {
   /** Unglogged days this month through yesterday (newest first). */
   missingLogDays: string[]
   setCategoryBudget: (categoryId: string, budget: number | null) => void
+  setPurposeBudget: (purposeId: string, budget: number | null) => void
   addCategory: (input: { name: string; color: string; kind: MoneyFlow }) => string
   renameCategory: (categoryId: string, name: string) => void
   deleteCategory: (categoryId: string) => void
+  addSpendKind: (input: {
+    name: string
+    color?: string
+    purposeId: string
+  }) => string | null
+  renameSpendKind: (spendKindId: string, name: string) => void
+  deleteSpendKind: (spendKindId: string) => void
+  unlinkSpendKindFromPurpose: (purposeId: string, spendKindId: string) => void
   monthKey: string
   setMonthKey: (year: number, month: number) => void
+  /** True when viewing Sep 2026+ (dual-axis month). */
+  isHierarchyMonth: boolean
   monthTransactions: MoneyTransaction[]
   spentByCategory: Record<string, number>
+  spentByPurpose: Record<string, number>
+  spentBySpendKind: Record<string, number>
   incomeByCategory: Record<string, number>
   spentByDate: Record<string, number>
   monthOutTotal: number
@@ -71,11 +101,22 @@ export function useExpenses(): ExpenseActions {
         const loaded = ensureExpenseStore(await loadExpenseStore(userId))
         if (cancelled) return
         if (loaded.categories.length === 0) {
-          const seeded = { ...loaded, categories: seedCategories() }
+          const seeded = ensureExpenseStore({
+            ...loaded,
+            categories: seedCategories(),
+          })
           setStore(seeded)
           void saveExpenseStore(userId, seeded)
         } else {
-          setStore(loaded)
+          const normalized = ensureExpenseStore(loaded)
+          setStore(normalized)
+          const needsSave =
+            !loaded.purposes?.length ||
+            (loaded.transactions?.length ?? 0) !== normalized.transactions.length ||
+            loaded.transactions?.some(
+              (t) => t.purposeId === undefined || t.spendKindId === undefined,
+            )
+          if (needsSave) void saveExpenseStore(userId, normalized)
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -106,6 +147,12 @@ export function useExpenses(): ExpenseActions {
   )
 
   const monthPrefix = `${viewMonth.year}-${String(viewMonth.month + 1).padStart(2, '0')}-`
+  const monthKey = monthPrefix.slice(0, 7)
+  const isHierarchyMonth = isExpenseHierarchyMonth(monthKey)
+
+  const purposes = store.purposes ?? []
+  const spendKinds = store.spendKinds ?? []
+  const purposeKindLinks = store.purposeKindLinks ?? []
 
   const monthTransactions = useMemo(
     () => store.transactions.filter((t) => t.dateKey.startsWith(monthPrefix)),
@@ -116,7 +163,27 @@ export function useExpenses(): ExpenseActions {
     const map: Record<string, number> = {}
     for (const t of monthTransactions) {
       if (t.flow !== 'out') continue
+      if (isDualAxisTransaction(t)) continue
+      if (!t.categoryId) continue
       map[t.categoryId] = (map[t.categoryId] ?? 0) + t.amount
+    }
+    return map
+  }, [monthTransactions])
+
+  const spentByPurpose = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const t of monthTransactions) {
+      if (!isDualAxisTransaction(t) || !t.purposeId) continue
+      map[t.purposeId] = (map[t.purposeId] ?? 0) + t.amount
+    }
+    return map
+  }, [monthTransactions])
+
+  const spentBySpendKind = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const t of monthTransactions) {
+      if (!isDualAxisTransaction(t) || !t.spendKindId) continue
+      map[t.spendKindId] = (map[t.spendKindId] ?? 0) + t.amount
     }
     return map
   }, [monthTransactions])
@@ -158,24 +225,31 @@ export function useExpenses(): ExpenseActions {
     [store.categories],
   )
 
-  const missingLogDays = useMemo(
-    () => getMissingExpenseLogDays(store),
-    [store],
+  const missingLogDays = useMemo(() => getMissingExpenseLogDays(store), [store])
+
+  const kindsForActivePurpose = useCallback(
+    (purposeId: string) => kindsForPurpose(purposeId, spendKinds, purposeKindLinks),
+    [spendKinds, purposeKindLinks],
   )
 
   const addTransaction: ExpenseActions['addTransaction'] = useCallback(
-    ({ amount, flow, categoryId, dateKey, note }) => {
+    ({ amount, flow, categoryId, purposeId, spendKindId, dateKey, note }) => {
       if (!(amount > 0)) return
       const key = dateKey || getTodayKey()
+      const dual =
+        flow === 'out' && Boolean(purposeId?.trim()) && Boolean(spendKindId?.trim())
       const tx: MoneyTransaction = {
         id: generateId(),
         amount,
         flow,
-        categoryId,
+        categoryId: dual ? '' : categoryId?.trim() || '',
+        purposeId: dual ? purposeId!.trim() : '',
+        spendKindId: dual ? spendKindId!.trim() : '',
         dateKey: key,
         note: note?.trim() ?? '',
         createdAt: new Date().toISOString(),
       }
+      if (!dual && !tx.categoryId) return
       const dayMarks = { ...(store.dayMarks ?? {}) }
       delete dayMarks[key]
       persist({
@@ -248,6 +322,18 @@ export function useExpenses(): ExpenseActions {
     [persist, store],
   )
 
+  const setPurposeBudget = useCallback(
+    (purposeId: string, budget: number | null) => {
+      persist({
+        ...store,
+        purposes: (store.purposes ?? []).map((p) =>
+          p.id === purposeId ? { ...p, budget } : p,
+        ),
+      })
+    },
+    [persist, store],
+  )
+
   const addCategory: ExpenseActions['addCategory'] = useCallback(
     ({ name, color, kind }) => {
       const id = generateId()
@@ -282,7 +368,83 @@ export function useExpenses(): ExpenseActions {
       persist({
         ...store,
         categories: store.categories.filter((c) => c.id !== categoryId),
-        // Keep past transactions; they will show as Unknown if category is gone.
+      })
+    },
+    [persist, store],
+  )
+
+  const addSpendKind: ExpenseActions['addSpendKind'] = useCallback(
+    ({ name, color, purposeId }) => {
+      const trimmed = name.trim()
+      if (!trimmed || !purposeId) return null
+      const purposesList = store.purposes ?? []
+      if (!purposesList.some((p) => p.id === purposeId)) return null
+      const kinds = store.spendKinds ?? []
+      const links = store.purposeKindLinks ?? []
+      const existing = kinds.find((k) => k.name.toLowerCase() === trimmed.toLowerCase())
+      let spendKindId = existing?.id
+      let nextKinds = kinds
+      if (!spendKindId) {
+        spendKindId = generateId()
+        nextKinds = [
+          ...kinds,
+          {
+            id: spendKindId,
+            name: trimmed,
+            color: color ?? EXPENSE_COLORS[kinds.length % EXPENSE_COLORS.length]!,
+          },
+        ]
+      }
+      if (links.some((l) => l.purposeId === purposeId && l.spendKindId === spendKindId)) {
+        if (nextKinds !== kinds) {
+          persist({ ...store, spendKinds: nextKinds })
+        }
+        return spendKindId
+      }
+      persist({
+        ...store,
+        spendKinds: nextKinds,
+        purposeKindLinks: [...links, { purposeId, spendKindId }],
+      })
+      return spendKindId
+    },
+    [persist, store],
+  )
+
+  const renameSpendKind = useCallback(
+    (spendKindId: string, name: string) => {
+      const trimmed = name.trim()
+      if (!trimmed) return
+      persist({
+        ...store,
+        spendKinds: (store.spendKinds ?? []).map((k) =>
+          k.id === spendKindId ? { ...k, name: trimmed } : k,
+        ),
+      })
+    },
+    [persist, store],
+  )
+
+  const deleteSpendKind = useCallback(
+    (spendKindId: string) => {
+      persist({
+        ...store,
+        spendKinds: (store.spendKinds ?? []).filter((k) => k.id !== spendKindId),
+        purposeKindLinks: (store.purposeKindLinks ?? []).filter(
+          (l) => l.spendKindId !== spendKindId,
+        ),
+      })
+    },
+    [persist, store],
+  )
+
+  const unlinkSpendKindFromPurpose = useCallback(
+    (purposeId: string, spendKindId: string) => {
+      persist({
+        ...store,
+        purposeKindLinks: (store.purposeKindLinks ?? []).filter(
+          (l) => !(l.purposeId === purposeId && l.spendKindId === spendKindId),
+        ),
       })
     },
     [persist, store],
@@ -298,6 +460,10 @@ export function useExpenses(): ExpenseActions {
     transactions: store.transactions,
     expenseCategories,
     incomeCategories,
+    purposes,
+    spendKinds,
+    purposeKindLinks,
+    kindsForActivePurpose,
     addTransaction,
     deleteTransaction,
     markDayNoSpend,
@@ -305,13 +471,21 @@ export function useExpenses(): ExpenseActions {
     markDaysNoSpend,
     missingLogDays,
     setCategoryBudget,
+    setPurposeBudget,
     addCategory,
     renameCategory,
     deleteCategory,
-    monthKey: monthPrefix.slice(0, 7),
+    addSpendKind,
+    renameSpendKind,
+    deleteSpendKind,
+    unlinkSpendKindFromPurpose,
+    monthKey,
     setMonthKey,
+    isHierarchyMonth,
     monthTransactions,
     spentByCategory,
+    spentByPurpose,
+    spentBySpendKind,
     incomeByCategory,
     spentByDate,
     monthOutTotal,

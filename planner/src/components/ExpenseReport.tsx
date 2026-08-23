@@ -1,12 +1,21 @@
 import { useMemo, useState } from 'react'
-import type { ExpenseCategory, MoneyTransaction } from '../types/expense'
-import { formatMoney } from '../types/expense'
+import type {
+  ExpenseCategory,
+  ExpensePurpose,
+  ExpenseSpendKind,
+  MoneyTransaction,
+} from '../types/expense'
+import { formatMoney, isDualAxisTransaction } from '../types/expense'
 import { formatDateKey, parseDateKey } from '../lib/weekUtils'
 
 interface ExpenseReportProps {
   year: number
   month: number
   expenseCategories: ExpenseCategory[]
+  purposes?: ExpensePurpose[]
+  spendKinds?: ExpenseSpendKind[]
+  /** When true, filter dual-axis Sep+ transactions by purpose / kind. */
+  isHierarchyMonth?: boolean
   transactions: MoneyTransaction[]
   monthOutTotal: number
 }
@@ -28,11 +37,15 @@ export function ExpenseReport({
   year,
   month,
   expenseCategories,
+  purposes = [],
+  spendKinds = [],
+  isHierarchyMonth = false,
   transactions,
   monthOutTotal,
 }: ExpenseReportProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string> | null>(null)
-  // null = all categories selected
+  const [purposeFilter, setPurposeFilter] = useState<string | 'all'>('all')
+  const [kindFilter, setKindFilter] = useState<string | 'all'>('all')
 
   const activeIds = useMemo(() => {
     if (selectedIds === null) return new Set(expenseCategories.map((c) => c.id))
@@ -71,26 +84,52 @@ export function ExpenseReport({
   const prevPrefix = monthPrefix(prev.year, prev.month)
   const dayCount = daysInMonth(year, month)
 
+  const matchesDual = (t: MoneyTransaction) => {
+    if (t.flow !== 'out' || !isDualAxisTransaction(t)) return false
+    if (purposeFilter !== 'all' && t.purposeId !== purposeFilter) return false
+    if (kindFilter !== 'all' && t.spendKindId !== kindFilter) return false
+    return true
+  }
+
   const filteredOut = useMemo(
     () =>
-      transactions.filter(
-        (t) =>
-          t.flow === 'out' &&
-          t.dateKey.startsWith(prefix) &&
-          activeIds.has(t.categoryId),
-      ),
-    [transactions, prefix, activeIds],
+      transactions.filter((t) => {
+        if (!t.dateKey.startsWith(prefix) || t.flow !== 'out') return false
+        if (isHierarchyMonth) return matchesDual(t)
+        return activeIds.has(t.categoryId)
+      }),
+    // matchesDual closes over filters
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      transactions,
+      prefix,
+      isHierarchyMonth,
+      activeIds,
+      purposeFilter,
+      kindFilter,
+    ],
   )
 
   const prevFilteredOut = useMemo(
     () =>
-      transactions.filter(
-        (t) =>
-          t.flow === 'out' &&
-          t.dateKey.startsWith(prevPrefix) &&
-          activeIds.has(t.categoryId),
-      ),
-    [transactions, prevPrefix, activeIds],
+      transactions.filter((t) => {
+        if (!t.dateKey.startsWith(prevPrefix) || t.flow !== 'out') return false
+        if (isHierarchyMonth) {
+          if (!isDualAxisTransaction(t)) return false
+          if (purposeFilter !== 'all' && t.purposeId !== purposeFilter) return false
+          if (kindFilter !== 'all' && t.spendKindId !== kindFilter) return false
+          return true
+        }
+        return activeIds.has(t.categoryId)
+      }),
+    [
+      transactions,
+      prevPrefix,
+      isHierarchyMonth,
+      activeIds,
+      purposeFilter,
+      kindFilter,
+    ],
   )
 
   const filteredTotal = useMemo(
@@ -124,6 +163,61 @@ export function ExpenseReport({
   )
 
   const byCategory = useMemo(() => {
+    if (isHierarchyMonth) {
+      // Prefer kind breakdown when a purpose is selected; else purpose rollup.
+      // When only kind selected (purpose=all), single kind row is enough via kinds.
+      if (purposeFilter !== 'all' || kindFilter === 'all') {
+        if (purposeFilter !== 'all' && kindFilter === 'all') {
+          const map: Record<string, number> = {}
+          for (const t of filteredOut) {
+            if (!t.spendKindId) continue
+            map[t.spendKindId] = (map[t.spendKindId] ?? 0) + t.amount
+          }
+          return spendKinds
+            .map((k) => ({
+              id: k.id,
+              name: k.name,
+              color: k.color,
+              amount: map[k.id] ?? 0,
+              share: filteredTotal > 0 ? (map[k.id] ?? 0) / filteredTotal : 0,
+            }))
+            .sort((a, b) => b.amount - a.amount)
+        }
+        if (purposeFilter === 'all' && kindFilter === 'all') {
+          const map: Record<string, number> = {}
+          for (const t of filteredOut) {
+            if (!t.purposeId) continue
+            map[t.purposeId] = (map[t.purposeId] ?? 0) + t.amount
+          }
+          return purposes
+            .map((p) => ({
+              id: p.id,
+              name: p.name,
+              color: p.color,
+              amount: map[p.id] ?? 0,
+              share: filteredTotal > 0 ? (map[p.id] ?? 0) / filteredTotal : 0,
+            }))
+            .sort((a, b) => b.amount - a.amount)
+        }
+      }
+      // kind-only or purpose+kind: show matching kinds
+      const map: Record<string, number> = {}
+      for (const t of filteredOut) {
+        if (!t.spendKindId) continue
+        map[t.spendKindId] = (map[t.spendKindId] ?? 0) + t.amount
+      }
+      return spendKinds
+        .filter((k) => kindFilter === 'all' || k.id === kindFilter)
+        .map((k) => ({
+          id: k.id,
+          name: k.name,
+          color: k.color,
+          amount: map[k.id] ?? 0,
+          share: filteredTotal > 0 ? (map[k.id] ?? 0) / filteredTotal : 0,
+        }))
+        .sort((a, b) => b.amount - a.amount)
+    }
+
     const map: Record<string, number> = {}
     for (const t of filteredOut) {
       map[t.categoryId] = (map[t.categoryId] ?? 0) + t.amount
@@ -138,7 +232,17 @@ export function ExpenseReport({
         share: filteredTotal > 0 ? (map[c.id] ?? 0) / filteredTotal : 0,
       }))
       .sort((a, b) => b.amount - a.amount)
-  }, [filteredOut, expenseCategories, activeIds, filteredTotal])
+  }, [
+    filteredOut,
+    expenseCategories,
+    activeIds,
+    filteredTotal,
+    isHierarchyMonth,
+    purposes,
+    spendKinds,
+    purposeFilter,
+    kindFilter,
+  ])
 
   const today = formatDateKey(new Date())
   const daysElapsed =
@@ -170,63 +274,123 @@ export function ExpenseReport({
 
   const maxWeek = Math.max(1, ...weekBuckets.map((w) => w.amount))
 
+  const filterHint = isHierarchyMonth
+    ? [
+        purposeFilter === 'all'
+          ? 'All purposes'
+          : purposes.find((p) => p.id === purposeFilter)?.name,
+        kindFilter === 'all'
+          ? 'All types'
+          : spendKinds.find((k) => k.id === kindFilter)?.name,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : allSelected
+      ? 'All categories'
+      : `${activeIds.size} categor${activeIds.size === 1 ? 'y' : 'ies'}`
+
   return (
     <>
-      <div className="mb-4 flex flex-wrap items-center justify-end gap-2 text-[11px]">
-        <button
-          type="button"
-          onClick={selectAll}
-          className="rounded-lg px-2.5 py-1 font-medium text-[#8B5A2B] hover:bg-[#F3E5D8]"
-        >
-          All
-        </button>
-        <button
-          type="button"
-          onClick={clearAll}
-          className="rounded-lg px-2.5 py-1 font-medium text-muted hover:bg-[#F2F2F7]"
-        >
-          Clear
-        </button>
-      </div>
-
-      <div className="mb-4 flex flex-wrap gap-1.5">
-        {expenseCategories.map((cat) => {
-          const on = activeIds.has(cat.id)
-          return (
-            <button
-              key={cat.id}
-              type="button"
-              onClick={() => toggleCategory(cat.id)}
-              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[12px] font-medium transition-colors ${
-                on ? 'text-white shadow-sm' : 'bg-[#F2F2F7] text-[#8E8E93] line-through decoration-[#C7C7CC]'
-              }`}
-              style={on ? { backgroundColor: cat.color } : undefined}
-            >
-              <span
-                className="h-2 w-2 rounded-full"
-                style={{
-                  backgroundColor: on ? 'rgba(255,255,255,0.85)' : cat.color,
-                }}
+      {isHierarchyMonth ? (
+        <div className="mb-4 space-y-3">
+          <div>
+            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+              Purpose
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              <FilterChip
+                label="All"
+                active={purposeFilter === 'all'}
+                color="#8B5A2B"
+                onClick={() => setPurposeFilter('all')}
               />
-              {cat.name}
+              {purposes.map((p) => (
+                <FilterChip
+                  key={p.id}
+                  label={p.name}
+                  active={purposeFilter === p.id}
+                  color={p.color}
+                  onClick={() => setPurposeFilter(p.id)}
+                />
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
+              Spend type
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              <FilterChip
+                label="All"
+                active={kindFilter === 'all'}
+                color="#8B5A2B"
+                onClick={() => setKindFilter('all')}
+              />
+              {spendKinds.map((k) => (
+                <FilterChip
+                  key={k.id}
+                  label={k.name}
+                  active={kindFilter === k.id}
+                  color={k.color}
+                  onClick={() => setKindFilter(k.id)}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="mb-4 flex flex-wrap items-center justify-end gap-2 text-[11px]">
+            <button
+              type="button"
+              onClick={selectAll}
+              className="rounded-lg px-2.5 py-1 font-medium text-[#8B5A2B] hover:bg-[#F3E5D8]"
+            >
+              All
             </button>
-          )
-        })}
-        {expenseCategories.length === 0 && (
-          <p className="text-[12px] text-muted">No categories yet.</p>
-        )}
-      </div>
+            <button
+              type="button"
+              onClick={clearAll}
+              className="rounded-lg px-2.5 py-1 font-medium text-muted hover:bg-[#F2F2F7]"
+            >
+              Clear
+            </button>
+          </div>
+
+          <div className="mb-4 flex flex-wrap gap-1.5">
+            {expenseCategories.map((cat) => {
+              const on = activeIds.has(cat.id)
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => toggleCategory(cat.id)}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[12px] font-medium transition-colors ${
+                    on
+                      ? 'text-white shadow-sm'
+                      : 'bg-[#F2F2F7] text-[#8E8E93] line-through decoration-[#C7C7CC]'
+                  }`}
+                  style={on ? { backgroundColor: cat.color } : undefined}
+                >
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{
+                      backgroundColor: on ? 'rgba(255,255,255,0.85)' : cat.color,
+                    }}
+                  />
+                  {cat.name}
+                </button>
+              )
+            })}
+            {expenseCategories.length === 0 && (
+              <p className="text-[12px] text-muted">No categories yet.</p>
+            )}
+          </div>
+        </>
+      )}
 
       <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <ResultCard
-          label="Filtered total"
-          value={formatMoney(filteredTotal)}
-          hint={
-            allSelected
-              ? 'All categories'
-              : `${activeIds.size} categor${activeIds.size === 1 ? 'y' : 'ies'}`
-          }
-        />
+        <ResultCard label="Filtered total" value={formatMoney(filteredTotal)} hint={filterHint} />
         <ResultCard
           label="Daily average"
           value={formatMoney(dailyAvg)}
@@ -308,9 +472,7 @@ export function ExpenseReport({
       </div>
 
       <div>
-        <h3 className="mb-2 text-[13px] font-semibold text-[#1C1C1E]">
-          Breakdown
-        </h3>
+        <h3 className="mb-2 text-[13px] font-semibold text-[#1C1C1E]">Breakdown</h3>
         {byCategory.every((c) => c.amount === 0) ? (
           <p className="text-[12px] text-muted">No spending in the selected filters.</p>
         ) : (
@@ -338,6 +500,35 @@ export function ExpenseReport({
         )}
       </div>
     </>
+  )
+}
+
+function FilterChip({
+  label,
+  active,
+  color,
+  onClick,
+}: {
+  label: string
+  active: boolean
+  color: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[12px] font-medium transition-colors ${
+        active ? 'text-white shadow-sm' : 'bg-[#F5F5F7] text-[#48484A]'
+      }`}
+      style={active ? { backgroundColor: color } : undefined}
+    >
+      <span
+        className="h-2 w-2 rounded-full"
+        style={{ backgroundColor: active ? 'rgba(255,255,255,0.85)' : color }}
+      />
+      {label}
+    </button>
   )
 }
 
