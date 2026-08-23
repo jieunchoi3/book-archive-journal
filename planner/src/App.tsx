@@ -6,20 +6,36 @@ import { usePlanner } from './hooks/usePlanner'
 import { useItems } from './hooks/useItems'
 import { useExpenses } from './hooks/useExpenses'
 import { useLinkedApps } from './hooks/useLinkedApps'
+import { useCompass } from './hooks/useCompass'
 import { ImportLocalDataBanner } from './components/ImportLocalDataBanner'
 import { WeekView } from './components/WeekView'
 import { MonthCalendarView } from './components/MonthCalendarView'
 import { DiaryView } from './components/DiaryView'
 import { ExpenseView } from './components/ExpenseView'
 import { TasteStickerView } from './components/TasteStickerView'
+import { CompassView } from './components/CompassView'
 import { BottomNav, type AppView } from './components/BottomNav'
+import type { CompassRoute } from './types/compass'
 
 function AppContent() {
   const [view, setView] = useState<AppView>('weekly')
+  const [compassRoute, setCompassRoute] = useState<CompassRoute>({
+    page: 'overview',
+  })
   const planner = usePlanner()
   const items = useItems(planner.weekStart)
   const expenses = useExpenses()
   const linkedApps = useLinkedApps()
+  const compass = useCompass()
+
+  const openCompassAsk = (questionId?: string) => {
+    setCompassRoute(
+      questionId
+        ? { page: 'askDetail', questionId }
+        : { page: 'ask' },
+    )
+    setView('compass')
+  }
 
   return (
     <>
@@ -30,6 +46,12 @@ function AppContent() {
         <ExpenseView expenses={expenses} />
       ) : view === 'taste' ? (
         <TasteStickerView />
+      ) : view === 'compass' ? (
+        <CompassView
+          compass={compass}
+          route={compassRoute}
+          onRouteChange={setCompassRoute}
+        />
       ) : view === 'weekly' ? (
         <WeekView
           template={planner.template}
@@ -37,6 +59,8 @@ function AppContent() {
           planner={planner}
           items={items}
           linkedApps={linkedApps}
+          compass={compass}
+          onOpenCompassAsk={openCompassAsk}
         />
       ) : (
         <MonthCalendarView
@@ -48,8 +72,14 @@ function AppContent() {
       )}
       <BottomNav
         active={view}
-        onChange={setView}
-        badges={{ expenses: expenses.missingLogDays.length }}
+        onChange={(v) => {
+          if (v === 'compass') setCompassRoute({ page: 'overview' })
+          setView(v)
+        }}
+        badges={{
+          expenses: expenses.missingLogDays.length,
+          compass: compass.badgeCount,
+        }}
       />
     </>
   )

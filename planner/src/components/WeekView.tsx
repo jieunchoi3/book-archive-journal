@@ -33,8 +33,10 @@ import { DayFocusView } from './DayFocusView'
 import { WeekSummary } from './WeekSummary'
 import { MonthCalendarTrigger } from './MonthCalendarPopover'
 import { OverdueEventsSection } from './OverdueEventsSection'
+import { CompassDueSection } from './CompassDueSection'
 import { PageSearch, type SearchSuggestion } from './PageSearch'
 import type { LinkedAppsActions } from '../hooks/useLinkedApps'
+import type { CompassActions } from '../hooks/useCompass'
 
 interface WeekViewProps {
   template: WeekTemplate
@@ -42,9 +44,19 @@ interface WeekViewProps {
   planner: PlannerActions
   items: ItemsActions
   linkedApps: LinkedAppsActions
+  compass?: CompassActions
+  onOpenCompassAsk?: (questionId?: string) => void
 }
 
-export function WeekView({ template, weekStart, planner, items, linkedApps }: WeekViewProps) {
+export function WeekView({
+  template,
+  weekStart,
+  planner,
+  items,
+  linkedApps,
+  compass,
+  onOpenCompassAsk,
+}: WeekViewProps) {
   const [activeTaskDrag, setActiveTaskDrag] = useState<TaskDragData | null>(null)
   const [focusedDayKey, setFocusedDayKey] = useState<DayKey | null>(null)
 
@@ -267,6 +279,13 @@ export function WeekView({ template, weekStart, planner, items, linkedApps }: We
             })
           }}
         />
+
+        {compass && onOpenCompassAsk && (
+          <CompassDueSection
+            compass={compass}
+            onOpenCompassAsk={onOpenCompassAsk}
+          />
+        )}
 
         <div className="relative min-h-[320px]">
           <div

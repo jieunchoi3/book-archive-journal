@@ -1,7 +1,20 @@
 import type { ReactNode } from 'react'
-import { BookHeart, Calendar, CalendarDays, Sticker, Wallet } from 'lucide-react'
+import {
+  BookHeart,
+  Calendar,
+  CalendarDays,
+  Compass,
+  Sticker,
+  Wallet,
+} from 'lucide-react'
 
-export type AppView = 'diary' | 'expenses' | 'taste' | 'monthly' | 'weekly'
+export type AppView =
+  | 'diary'
+  | 'expenses'
+  | 'taste'
+  | 'monthly'
+  | 'weekly'
+  | 'compass'
 
 interface BottomNavProps {
   active: AppView
@@ -60,6 +73,14 @@ export function BottomNav({ active, onChange, badges }: BottomNavProps) {
           active={active === 'weekly'}
           badge={badges?.weekly}
           onClick={() => onChange('weekly')}
+          light={transparent}
+        />
+        <NavButton
+          label="Compass"
+          icon={<Compass size={20} />}
+          active={active === 'compass'}
+          badge={badges?.compass}
+          onClick={() => onChange('compass')}
           light={transparent}
         />
       </div>
