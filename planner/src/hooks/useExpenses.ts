@@ -56,6 +56,7 @@ export interface ExpenseActions {
   missingLogDays: string[]
   setCategoryBudget: (categoryId: string, budget: number | null) => void
   setPurposeBudget: (purposeId: string, budget: number | null) => void
+  setSpendKindBudget: (spendKindId: string, budget: number | null) => void
   addCategory: (input: { name: string; color: string; kind: MoneyFlow }) => string
   renameCategory: (categoryId: string, name: string) => void
   deleteCategory: (categoryId: string) => void
@@ -110,8 +111,12 @@ export function useExpenses(): ExpenseActions {
         } else {
           const normalized = ensureExpenseStore(loaded)
           setStore(normalized)
+          const linksChanged =
+            JSON.stringify(loaded.purposeKindLinks ?? []) !==
+            JSON.stringify(normalized.purposeKindLinks ?? [])
           const needsSave =
             !loaded.purposes?.length ||
+            linksChanged ||
             (loaded.transactions?.length ?? 0) !== normalized.transactions.length ||
             loaded.transactions?.some(
               (t) => t.purposeId === undefined || t.spendKindId === undefined,
@@ -334,6 +339,18 @@ export function useExpenses(): ExpenseActions {
     [persist, store],
   )
 
+  const setSpendKindBudget = useCallback(
+    (spendKindId: string, budget: number | null) => {
+      persist({
+        ...store,
+        spendKinds: (store.spendKinds ?? []).map((k) =>
+          k.id === spendKindId ? { ...k, budget } : k,
+        ),
+      })
+    },
+    [persist, store],
+  )
+
   const addCategory: ExpenseActions['addCategory'] = useCallback(
     ({ name, color, kind }) => {
       const id = generateId()
@@ -392,6 +409,7 @@ export function useExpenses(): ExpenseActions {
             id: spendKindId,
             name: trimmed,
             color: color ?? EXPENSE_COLORS[kinds.length % EXPENSE_COLORS.length]!,
+            budget: null,
           },
         ]
       }
@@ -472,6 +490,7 @@ export function useExpenses(): ExpenseActions {
     missingLogDays,
     setCategoryBudget,
     setPurposeBudget,
+    setSpendKindBudget,
     addCategory,
     renameCategory,
     deleteCategory,

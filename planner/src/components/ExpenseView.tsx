@@ -1,4 +1,4 @@
-import { useMemo, useState, type Dispatch, type SetStateAction } from 'react'
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 import { Check, ChevronLeft, ChevronRight, Pencil, Trash2, Wallet, X } from 'lucide-react'
 import type { ExpenseActions } from '../hooks/useExpenses'
 import type {
@@ -39,6 +39,7 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
     missingLogDays,
     setCategoryBudget,
     setPurposeBudget,
+    setSpendKindBudget,
     addCategory,
     renameCategory,
     deleteCategory,
@@ -126,6 +127,17 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
     setMonthKey(now.getFullYear(), now.getMonth())
     setSelectedDateKey(getTodayKey())
   }
+
+  // Keep Quick log date inside the month you're viewing so Sep+ shows purpose/kind pills.
+  useEffect(() => {
+    const prefix = `${year}-${String(month + 1).padStart(2, '0')}`
+    setSelectedDateKey((prev) => {
+      if (prev?.startsWith(prefix)) return prev
+      const today = getTodayKey()
+      if (today.startsWith(prefix)) return today
+      return `${prefix}-01`
+    })
+  }, [year, month])
 
   const catById = useMemo(() => {
     const map = new Map(
@@ -441,6 +453,7 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
                     budgetDrafts={budgetDrafts}
                     setBudgetDrafts={setBudgetDrafts}
                     setPurposeBudget={setPurposeBudget}
+                    setSpendKindBudget={setSpendKindBudget}
                   />
                 ) : (
                   <LegacyCategoryPanel
@@ -886,6 +899,7 @@ function HierarchyCategoryPanel({
   budgetDrafts,
   setBudgetDrafts,
   setPurposeBudget,
+  setSpendKindBudget,
 }: {
   purposes: ExpensePurpose[]
   kindsForActivePurpose: (purposeId: string) => ExpenseSpendKind[]
@@ -897,15 +911,12 @@ function HierarchyCategoryPanel({
   budgetDrafts: Record<string, string>
   setBudgetDrafts: Dispatch<SetStateAction<Record<string, string>>>
   setPurposeBudget: (purposeId: string, budget: number | null) => void
+  setSpendKindBudget: (spendKindId: string, budget: number | null) => void
 }) {
-  const kindBreakdown = highlightedPurposeId
-    ? kindsForActivePurpose(highlightedPurposeId)
-    : []
-
   return (
     <>
       <p className="mb-4 text-[12px] text-muted">
-        This month by purpose — set a budget to spot overspend
+        This month by purpose — set budgets on purposes or spend types
       </p>
 
       <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-start">
@@ -927,6 +938,7 @@ function HierarchyCategoryPanel({
                 : null
             const draft =
               budgetDrafts[purpose.id] ?? (budget != null ? String(budget) : '')
+            const kinds = kindsForActivePurpose(purpose.id)
 
             return (
               <div
@@ -1000,25 +1012,68 @@ function HierarchyCategoryPanel({
                   )}
                 </label>
 
-                {highlighted && kindBreakdown.length > 0 && (
-                  <ul className="mt-2 space-y-1 border-t border-hairline pt-2">
-                    {kindBreakdown.map((kind) => {
+                {kinds.length > 0 && (
+                  <ul className="mt-2 space-y-2 border-t border-hairline pt-2">
+                    {kinds.map((kind) => {
                       const kindSpent = spentBySpendKind[kind.id] ?? 0
+                      const kindBudget = kind.budget
+                      const kindOver =
+                        kindBudget != null &&
+                        kindBudget > 0 &&
+                        kindSpent > kindBudget
+                      const kindDraft =
+                        budgetDrafts[kind.id] ??
+                        (kindBudget != null ? String(kindBudget) : '')
                       return (
-                        <li
-                          key={kind.id}
-                          className="flex items-center justify-between gap-2 text-[12px]"
-                        >
-                          <span className="flex min-w-0 items-center gap-1.5">
+                        <li key={kind.id} className="space-y-1">
+                          <div className="flex items-center justify-between gap-2 text-[12px]">
+                            <span className="flex min-w-0 items-center gap-1.5">
+                              <span
+                                className="h-1.5 w-1.5 shrink-0 rounded-full"
+                                style={{ backgroundColor: kind.color }}
+                              />
+                              <span className="truncate text-muted">{kind.name}</span>
+                            </span>
                             <span
-                              className="h-1.5 w-1.5 shrink-0 rounded-full"
-                              style={{ backgroundColor: kind.color }}
+                              className={`shrink-0 tabular-nums ${
+                                kindOver
+                                  ? 'font-semibold text-[#FF3B30]'
+                                  : 'text-[#1C1C1E]'
+                              }`}
+                            >
+                              {formatMoney(kindSpent)}
+                            </span>
+                          </div>
+                          <label className="flex items-center justify-end gap-1.5 text-[10px] text-muted">
+                            <span>Budget £</span>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={kindDraft}
+                              placeholder="—"
+                              onChange={(e) =>
+                                setBudgetDrafts((prev) => ({
+                                  ...prev,
+                                  [kind.id]: e.target.value.replace(/[^0-9.]/g, ''),
+                                }))
+                              }
+                              onBlur={() => {
+                                const raw = budgetDrafts[kind.id]
+                                if (raw === undefined) return
+                                const n = Number(raw)
+                                setSpendKindBudget(
+                                  kind.id,
+                                  raw === '' || !(n > 0) ? null : n,
+                                )
+                              }}
+                              className="w-16 rounded-md border border-hairline bg-white px-1.5 py-0.5 text-[11px] tabular-nums text-[#1C1C1E] outline-none focus:border-[#8B5A2B]/40"
                             />
-                            <span className="truncate text-muted">{kind.name}</span>
-                          </span>
-                          <span className="shrink-0 tabular-nums text-[#1C1C1E]">
-                            {formatMoney(kindSpent)}
-                          </span>
+                            {kindBudget != null && kindBudget > 0 && (
+                              <span className="tabular-nums">
+                                / {formatMoney(kindBudget)}
+                              </span>
+                            )}
+                          </label>
                         </li>
                       )
                     })}

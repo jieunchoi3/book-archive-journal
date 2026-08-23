@@ -23,6 +23,8 @@ export interface ExpenseSpendKind {
   id: string
   name: string
   color: string
+  /** Monthly budget across all purposes that use this kind. */
+  budget: number | null
 }
 
 /** Which spend kinds appear under a purpose in the picker. */
@@ -138,18 +140,18 @@ export const DEFAULT_EXPENSE_PURPOSES: ExpensePurpose[] = [
 ]
 
 export const DEFAULT_EXPENSE_SPEND_KINDS: ExpenseSpendKind[] = [
-  { id: SEED_KIND_IDS.gifts, name: 'gifts', color: '#BC8F8F' },
-  { id: SEED_KIND_IDS.dining, name: '외식', color: '#C4A484' },
-  { id: SEED_KIND_IDS.cafe, name: '카페', color: '#DEB887' },
-  { id: SEED_KIND_IDS.culture, name: '문화생활', color: '#A67B5B' },
-  { id: SEED_KIND_IDS.snack, name: '간식', color: '#E8B923' },
-  { id: SEED_KIND_IDS.beauty, name: '화장품', color: '#CD853F' },
-  { id: SEED_KIND_IDS.clothes, name: '옷', color: '#A0522D' },
-  { id: SEED_KIND_IDS.misc, name: '기타 소비', color: '#5C4033' },
-  { id: SEED_KIND_IDS.hobby, name: '취미 활동', color: '#B87333' },
-  { id: SEED_KIND_IDS.tickets, name: '입장료', color: '#8B5A2B' },
-  { id: SEED_KIND_IDS.bills, name: 'bills', color: '#6B4226' },
-  { id: SEED_KIND_IDS.subscriptions, name: 'subscriptions', color: '#3D7A5A' },
+  { id: SEED_KIND_IDS.gifts, name: 'gifts', color: '#BC8F8F', budget: null },
+  { id: SEED_KIND_IDS.dining, name: '외식', color: '#C4A484', budget: null },
+  { id: SEED_KIND_IDS.cafe, name: '카페', color: '#DEB887', budget: null },
+  { id: SEED_KIND_IDS.culture, name: '문화생활', color: '#A67B5B', budget: null },
+  { id: SEED_KIND_IDS.snack, name: '간식', color: '#E8B923', budget: null },
+  { id: SEED_KIND_IDS.beauty, name: '화장품', color: '#CD853F', budget: null },
+  { id: SEED_KIND_IDS.clothes, name: '옷', color: '#A0522D', budget: null },
+  { id: SEED_KIND_IDS.misc, name: '기타 소비', color: '#5C4033', budget: null },
+  { id: SEED_KIND_IDS.hobby, name: '취미 활동', color: '#B87333', budget: null },
+  { id: SEED_KIND_IDS.tickets, name: '입장료', color: '#8B5A2B', budget: null },
+  { id: SEED_KIND_IDS.bills, name: 'bills', color: '#6B4226', budget: null },
+  { id: SEED_KIND_IDS.subscriptions, name: 'subscriptions', color: '#3D7A5A', budget: null },
 ]
 
 /** Shared 외식 / 카페 ids appear under both Social and For me. */
@@ -165,7 +167,7 @@ export const DEFAULT_PURPOSE_KIND_LINKS: ExpensePurposeKindLink[] = [
   { purposeId: SEED_PURPOSE_IDS.forMe, spendKindId: SEED_KIND_IDS.clothes },
   { purposeId: SEED_PURPOSE_IDS.forMe, spendKindId: SEED_KIND_IDS.misc },
   { purposeId: SEED_PURPOSE_IDS.forMe, spendKindId: SEED_KIND_IDS.hobby },
-  { purposeId: SEED_PURPOSE_IDS.forMe, spendKindId: SEED_KIND_IDS.tickets },
+  { purposeId: SEED_PURPOSE_IDS.forMe, spendKindId: SEED_KIND_IDS.culture },
   { purposeId: SEED_PURPOSE_IDS.others, spendKindId: SEED_KIND_IDS.bills },
   { purposeId: SEED_PURPOSE_IDS.others, spendKindId: SEED_KIND_IDS.subscriptions },
 ]
@@ -205,19 +207,46 @@ export function dualAxisLabel(
 /** Ensure Sep+ catalogs exist; never rewrite transactions. */
 export function ensureDualAxisCatalogs(store: ExpenseStore): ExpenseStore {
   const hasPurposes = Array.isArray(store.purposes) && store.purposes.length > 0
-  if (hasPurposes) {
+  if (!hasPurposes) {
     return {
       ...store,
-      purposes: store.purposes ?? [],
-      spendKinds: store.spendKinds ?? [],
-      purposeKindLinks: store.purposeKindLinks ?? [],
+      purposes: DEFAULT_EXPENSE_PURPOSES.map((p) => ({ ...p })),
+      spendKinds: DEFAULT_EXPENSE_SPEND_KINDS.map((k) => ({ ...k })),
+      purposeKindLinks: DEFAULT_PURPOSE_KIND_LINKS.map((l) => ({ ...l })),
     }
   }
+
+  let links = [...(store.purposeKindLinks ?? [])]
+  const forMe = SEED_PURPOSE_IDS.forMe
+  const tickets = SEED_KIND_IDS.tickets
+  const culture = SEED_KIND_IDS.culture
+  const hadTickets = links.some((l) => l.purposeId === forMe && l.spendKindId === tickets)
+  const hasCulture = links.some((l) => l.purposeId === forMe && l.spendKindId === culture)
+  if (hadTickets || !hasCulture) {
+    links = links.filter((l) => !(l.purposeId === forMe && l.spendKindId === tickets))
+    if (!links.some((l) => l.purposeId === forMe && l.spendKindId === culture)) {
+      links.push({ purposeId: forMe, spendKindId: culture })
+    }
+  }
+
   return {
     ...store,
-    purposes: DEFAULT_EXPENSE_PURPOSES.map((p) => ({ ...p })),
-    spendKinds: DEFAULT_EXPENSE_SPEND_KINDS.map((k) => ({ ...k })),
-    purposeKindLinks: DEFAULT_PURPOSE_KIND_LINKS.map((l) => ({ ...l })),
+    purposes: (store.purposes ?? []).map((p) => ({
+      ...p,
+      budget: p.budget ?? null,
+    })),
+    spendKinds: (() => {
+      const kinds = (store.spendKinds ?? []).map((k) => ({
+        ...k,
+        budget: k.budget ?? null,
+      }))
+      if (!kinds.some((k) => k.id === culture)) {
+        const seed = DEFAULT_EXPENSE_SPEND_KINDS.find((k) => k.id === culture)
+        if (seed) kinds.push({ ...seed })
+      }
+      return kinds
+    })(),
+    purposeKindLinks: links,
   }
 }
 
