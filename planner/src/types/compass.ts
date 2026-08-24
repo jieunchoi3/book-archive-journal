@@ -91,6 +91,324 @@ export function isDashboardData(data: unknown): data is DashboardData {
   return Boolean(d.gauges && d.reasons && typeof d.friction === 'string')
 }
 
+// ─── Journal / Prototype / AI ───────────────────────────────────────────────
+
+export const JOURNAL_BUCKETS = [
+  'work',
+  'study',
+  'social',
+  'body',
+  'admin',
+  'rest',
+  'play',
+] as const
+
+export type JournalBucket = (typeof JOURNAL_BUCKETS)[number]
+
+export const JOURNAL_BUCKET_LABELS: Record<JournalBucket, string> = {
+  work: '일',
+  study: '공부',
+  social: '사람',
+  body: '몸',
+  admin: '잡무',
+  rest: '쉼',
+  play: '놀이',
+}
+
+export interface AeiouData {
+  activities: string
+  environments: string
+  interactions: string
+  objects: string
+  users: string
+}
+
+export function emptyAeiou(): AeiouData {
+  return {
+    activities: '',
+    environments: '',
+    interactions: '',
+    objects: '',
+    users: '',
+  }
+}
+
+export interface LdJournalEntry {
+  id: string
+  userId: string
+  entryDate: string
+  activity: string
+  bucket: JournalBucket | null
+  engagement: number
+  energy: number
+  isFlow: boolean
+  note: string | null
+  aeiou: AeiouData | null
+  createdAt: string
+}
+
+export type PrototypeKind = 'conversation' | 'experience'
+export type PrototypeStatus = 'planned' | 'done' | 'dropped'
+
+export interface LdPrototype {
+  id: string
+  userId: string
+  kind: PrototypeKind
+  title: string
+  person: string | null
+  happenedOn: string | null
+  goingInQ: string | null
+  learned: string | null
+  nextStep: string | null
+  linkedPlan: string | null
+  status: PrototypeStatus
+  createdAt: string
+}
+
+export type AiReportType = 'snapshot' | 'compare' | 'pathway'
+
+export interface AiObservation {
+  text: string
+  evidence: string[]
+  source: string
+}
+
+export interface AiPathway {
+  name: string
+  why_it_fits: string[]
+  friction: string[]
+  smallest_test: string
+  confidence: 'high' | 'medium' | 'low'
+}
+
+export interface AiReportOutput {
+  report_type: AiReportType
+  headline: string
+  observations: AiObservation[]
+  pathways?: AiPathway[]
+  tension: string | null
+  unknowns: string[]
+  next_question?: string
+  what_changed?: string[]
+  what_stayed?: string[]
+  implications?: string[]
+  highlights?: string[]
+  blind_spot?: string
+}
+
+export interface LdAiReport {
+  id: string
+  userId: string
+  reportType: AiReportType
+  inputHash: string
+  inputRefs: Record<string, unknown>
+  output: AiReportOutput
+  model: string | null
+  createdAt: string
+}
+
+// ─── Exercise snapshot data shapes ──────────────────────────────────────────
+
+export interface LongformData {
+  body: string
+  promptsUsed: string[]
+}
+
+export function emptyLongformData(): LongformData {
+  return { body: '', promptsUsed: [] }
+}
+
+export type CoherenceLinkKind = '맞물림' | '충돌' | '애매'
+
+export interface CoherenceLink {
+  id: string
+  leftText: string
+  rightText: string
+  kind: CoherenceLinkKind
+  action?: string
+}
+
+export interface CoherenceData {
+  workviewSnapshotId: string | null
+  lifeviewSnapshotId: string | null
+  links: CoherenceLink[]
+}
+
+export function emptyCoherenceData(): CoherenceData {
+  return { workviewSnapshotId: null, lifeviewSnapshotId: null, links: [] }
+}
+
+export interface MindmapNode {
+  id: string
+  parentId: string | null
+  label: string
+  x: number
+  y: number
+  ring: 0 | 1 | 2
+}
+
+export interface MindmapRoleIdea {
+  id: string
+  words: string[]
+  title: string
+  daySketch: string
+}
+
+export interface MindmapData {
+  nodes: MindmapNode[]
+  roleIdeas: MindmapRoleIdea[]
+}
+
+export function emptyMindmapData(): MindmapData {
+  return { nodes: [], roleIdeas: [] }
+}
+
+export interface OdysseyMilestone {
+  id: string
+  yearIndex: number
+  label: string
+}
+
+export interface OdysseyPlan {
+  id: string
+  badge: string
+  title: string
+  milestones: OdysseyMilestone[]
+  questions: [string, string, string]
+  gauges: { resources: number; pull: number; confidence: number; coherence: number }
+}
+
+export interface OdysseyData {
+  plans: [OdysseyPlan, OdysseyPlan, OdysseyPlan]
+}
+
+export const ODYSSEY_DEFAULT_BADGES = [
+  'A 지금 길의 연장',
+  'B 그 길이 사라진다면',
+  'C 돈도 평판도 상관없다면',
+] as const
+
+export function emptyOdysseyData(): OdysseyData {
+  const mk = (i: number): OdysseyPlan => ({
+    id: ['A', 'B', 'C'][i],
+    badge: ODYSSEY_DEFAULT_BADGES[i],
+    title: '',
+    milestones: [],
+    questions: ['', '', ''],
+    gauges: { resources: 3, pull: 3, confidence: 3, coherence: 3 },
+  })
+  return { plans: [mk(0), mk(1), mk(2)] }
+}
+
+export interface PrototypeGoalData {
+  quarterlyGoal: number
+}
+
+export function emptyPrototypeMeta(): PrototypeGoalData {
+  return { quarterlyGoal: 3 }
+}
+
+export interface ChoosingOption {
+  id: string
+  label: string
+  source?: string
+  head?: string
+  body?: string
+}
+
+export interface ChoosingData {
+  step: 0 | 1 | 2 | 3
+  options: ChoosingOption[]
+  narrowed: string[]
+  chosenId: string | null
+}
+
+export function emptyChoosingData(): ChoosingData {
+  return { step: 0, options: [], narrowed: [], chosenId: null }
+}
+
+export type FailureKind = '실수' | '약점' | '성장통'
+
+export interface FailureRow {
+  id: string
+  event: string
+  kind: FailureKind | null
+  leftover: string
+}
+
+export interface FailureData {
+  rows: FailureRow[]
+}
+
+export function emptyFailureData(): FailureData {
+  return { rows: [] }
+}
+
+export interface GravityItem {
+  id: string
+  problem: string
+  changeable: boolean
+  note: string
+}
+
+export interface GravityData {
+  items: GravityItem[]
+}
+
+export function emptyGravityData(): GravityData {
+  return { items: [] }
+}
+
+export type TeamRole = '멘토' | '응원' | '같이 하는 사람' | '현실 검증'
+
+export interface TeamPerson {
+  id: string
+  name: string
+  relation: string
+  roles: TeamRole[]
+  lastContact: string | null
+  note: string
+  linkedPrototypeId: string | null
+}
+
+export interface TeamData {
+  people: TeamPerson[]
+}
+
+export function emptyTeamData(): TeamData {
+  return { people: [] }
+}
+
+export function emptyDataForExercise(key: ExerciseKey): Record<string, unknown> {
+  switch (key) {
+    case 'dashboard':
+      return emptyDashboardData() as unknown as Record<string, unknown>
+    case 'workview':
+    case 'lifeview':
+      return emptyLongformData() as unknown as Record<string, unknown>
+    case 'coherence':
+      return emptyCoherenceData() as unknown as Record<string, unknown>
+    case 'mindmap':
+      return emptyMindmapData() as unknown as Record<string, unknown>
+    case 'odyssey':
+      return emptyOdysseyData() as unknown as Record<string, unknown>
+    case 'prototype':
+      return emptyPrototypeMeta() as unknown as Record<string, unknown>
+    case 'choosing':
+      return emptyChoosingData() as unknown as Record<string, unknown>
+    case 'failure':
+      return emptyFailureData() as unknown as Record<string, unknown>
+    case 'gravity':
+      return emptyGravityData() as unknown as Record<string, unknown>
+    case 'team':
+      return emptyTeamData() as unknown as Record<string, unknown>
+    case 'goodtime':
+      return {}
+    default:
+      return {}
+  }
+}
+
 export interface ExerciseMeta {
   key: ExerciseKey
   name: string
@@ -99,7 +417,7 @@ export interface ExerciseMeta {
   phase: 1 | 2 | 3
 }
 
-/** Phase 1 ships dashboard + ask; others listed for overview cards later. */
+/** Phase 1–3 exercises; Ask Myself is separate from this list. */
 export const EXERCISE_META: ExerciseMeta[] = [
   {
     key: 'dashboard',

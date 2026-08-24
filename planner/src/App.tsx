@@ -16,6 +16,9 @@ import { TasteStickerView } from './components/TasteStickerView'
 import { CompassView } from './components/CompassView'
 import { BottomNav, type AppView } from './components/BottomNav'
 import type { CompassRoute } from './types/compass'
+import { DAY_KEYS, type DayKey } from './types/planner'
+import { getDateKeyForDay } from './lib/weekUtils'
+import { todayKey } from './types/compass'
 
 function AppContent() {
   const [view, setView] = useState<AppView>('weekly')
@@ -37,6 +40,22 @@ function AppContent() {
     setView('compass')
   }
 
+  const onAddWeeklyTask = (label: string) => {
+    const today = todayKey()
+    let dayKey: DayKey = 'mon'
+    for (const k of DAY_KEYS) {
+      if (getDateKeyForDay(planner.weekStart, k) === today) {
+        dayKey = k
+        break
+      }
+    }
+    const day = planner.template.days.find((d) => d.key === dayKey)
+    const block = day?.blocks[0]
+    if (!block) return
+    planner.addTask(dayKey, block.id, `Compass · ${label}`, null)
+    setView('weekly')
+  }
+
   return (
     <>
       <ImportLocalDataBanner />
@@ -51,6 +70,7 @@ function AppContent() {
           compass={compass}
           route={compassRoute}
           onRouteChange={setCompassRoute}
+          onAddWeeklyTask={onAddWeeklyTask}
         />
       ) : view === 'weekly' ? (
         <WeekView

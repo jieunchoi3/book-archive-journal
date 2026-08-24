@@ -1,20 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   addDays,
-  emptyDashboardData,
+  emptyDataForExercise,
   EXERCISE_META,
   newId,
   todayKey,
+  type AiReportType,
   type DashboardData,
   type ExerciseKey,
+  type LdAiReport,
   type LdAnswer,
+  type LdJournalEntry,
+  type LdPrototype,
   type LdQuestion,
   type LdSnapshot,
 } from '../types/compass'
 import {
+  deleteJournalCloud,
+  deletePrototypeCloud,
   deleteQuestionCloud,
   fetchCompassCloud,
+  invokeCompassAnalyze,
+  upsertAiReportCloud,
   upsertAnswerCloud,
+  upsertJournalCloud,
+  upsertPrototypeCloud,
   upsertQuestionCloud,
   upsertSnapshotCloud,
 } from '../lib/compassCloud'
@@ -47,23 +57,48 @@ function mergeById<T extends { id: string; updatedAt?: string; createdAt?: strin
   return [...map.values()]
 }
 
+type PersistSlice = {
+  snapshots: LdSnapshot[]
+  questions: LdQuestion[]
+  answers: LdAnswer[]
+  journalEntries: LdJournalEntry[]
+  prototypes: LdPrototype[]
+  aiReports: LdAiReport[]
+}
+
 export function useCompass() {
   const { user } = useAuth()
   const userId = user?.id ?? 'local'
   const [snapshots, setSnapshots] = useState<LdSnapshot[]>([])
   const [questions, setQuestions] = useState<LdQuestion[]>([])
   const [answers, setAnswers] = useState<LdAnswer[]>([])
+  const [journalEntries, setJournalEntries] = useState<LdJournalEntry[]>([])
+  const [prototypes, setPrototypes] = useState<LdPrototype[]>([])
+  const [aiReports, setAiReports] = useState<LdAiReport[]>([])
   const [loading, setLoading] = useState(true)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null)
   const hydrated = useRef(false)
 
+  const sliceRef = useRef<PersistSlice>({
+    snapshots: [],
+    questions: [],
+    answers: [],
+    journalEntries: [],
+    prototypes: [],
+    aiReports: [],
+  })
+  sliceRef.current = {
+    snapshots,
+    questions,
+    answers,
+    journalEntries,
+    prototypes,
+    aiReports,
+  }
+
   const persist = useCallback(
-    async (next: {
-      snapshots: LdSnapshot[]
-      questions: LdQuestion[]
-      answers: LdAnswer[]
-    }) => {
+    async (next: PersistSlice) => {
       await saveCompassLocal(userId, {
         ...next,
         updatedAt: new Date().toISOString(),
@@ -81,6 +116,9 @@ export function useCompass() {
         let snaps = local.snapshots
         let qs = local.questions
         let ans = local.answers
+        let journals = local.journalEntries
+        let protos = local.prototypes
+        let reports = local.aiReports
 
         if (isSupabaseConfigured && user?.id) {
           try {
@@ -89,6 +127,9 @@ export function useCompass() {
               snaps = mergeById(snaps, remote.snapshots)
               qs = mergeById(qs, remote.questions)
               ans = mergeById(ans, remote.answers)
+              journals = mergeById(journals, remote.journalEntries)
+              protos = mergeById(protos, remote.prototypes)
+              reports = mergeById(reports, remote.aiReports)
             }
           } catch {
             /* keep local */
@@ -99,11 +140,17 @@ export function useCompass() {
           setSnapshots(snaps)
           setQuestions(qs)
           setAnswers(ans)
+          setJournalEntries(journals)
+          setPrototypes(protos)
+          setAiReports(reports)
           hydrated.current = true
           await saveCompassLocal(userId, {
             snapshots: snaps,
             questions: qs,
             answers: ans,
+            journalEntries: journals,
+            prototypes: protos,
+            aiReports: reports,
             updatedAt: new Date().toISOString(),
           })
         }
@@ -143,7 +190,8 @@ export function useCompass() {
         const next = prev.some((s) => s.id === snapshot.id)
           ? prev.map((s) => (s.id === snapshot.id ? snapshot : s))
           : [...prev, snapshot]
-        void persist({ snapshots: next, questions, answers })
+        const slice = { ...sliceRef.current, snapshots: next }
+        void persist(slice)
         return next
       })
       setLastSavedAt(new Date())
@@ -156,7 +204,7 @@ export function useCompass() {
         }
       }
     },
-    [answers, persist, questions, user?.id],
+    [persist, user?.id],
   )
 
   const createDraft = useCallback(
@@ -173,11 +221,7 @@ export function useCompass() {
         takenAt: todayKey(),
         label: null,
         status: 'draft',
-        data:
-          data ??
-          (key === 'dashboard'
-            ? (emptyDashboardData() as unknown as Record<string, unknown>)
-            : {}),
+        data: data ?? emptyDataForExercise(key),
         createdAt: now,
         updatedAt: now,
       }
@@ -247,11 +291,7 @@ export function useCompass() {
   )
 
   const createQuestion = useCallback(
-    async (input: {
-      body: string
-      cadenceDays: number
-      color: string
-    }) => {
+    async (input: { body: string; cadenceDays: number; color: string }) => {
       const now = new Date().toISOString()
       const q: LdQuestion = {
         id: newId(),
@@ -265,7 +305,7 @@ export function useCompass() {
       }
       setQuestions((prev) => {
         const next = [...prev, q]
-        void persist({ snapshots, questions: next, answers })
+        void persist({ ...sliceRef.current, questions: next })
         return next
       })
       if (isSupabaseConfigured && user?.id) {
@@ -277,14 +317,14 @@ export function useCompass() {
       }
       return q
     },
-    [answers, persist, snapshots, user?.id, userId],
+    [persist, user?.id, userId],
   )
 
   const updateQuestion = useCallback(
     async (question: LdQuestion) => {
       setQuestions((prev) => {
         const next = prev.map((q) => (q.id === question.id ? question : q))
-        void persist({ snapshots, questions: next, answers })
+        void persist({ ...sliceRef.current, questions: next })
         return next
       })
       if (isSupabaseConfigured && user?.id) {
@@ -295,7 +335,7 @@ export function useCompass() {
         }
       }
     },
-    [answers, persist, snapshots, user?.id],
+    [persist, user?.id],
   )
 
   const deleteQuestion = useCallback(
@@ -303,9 +343,9 @@ export function useCompass() {
       setQuestions((prev) => {
         const next = prev.filter((q) => q.id !== questionId)
         void persist({
-          snapshots,
+          ...sliceRef.current,
           questions: next,
-          answers: answers.filter((a) => a.questionId !== questionId),
+          answers: sliceRef.current.answers.filter((a) => a.questionId !== questionId),
         })
         return next
       })
@@ -318,7 +358,7 @@ export function useCompass() {
         }
       }
     },
-    [answers, persist, snapshots, user?.id],
+    [persist, user?.id],
   )
 
   const submitAnswer = useCallback(
@@ -344,7 +384,11 @@ export function useCompass() {
         const nextA = [...prev, answer]
         setQuestions((prevQ) => {
           const nextQs = prevQ.map((x) => (x.id === questionId ? nextQ : x))
-          void persist({ snapshots, questions: nextQs, answers: nextA })
+          void persist({
+            ...sliceRef.current,
+            questions: nextQs,
+            answers: nextA,
+          })
           return nextQs
         })
         return nextA
@@ -359,7 +403,194 @@ export function useCompass() {
       }
       return answer
     },
-    [persist, questions, snapshots, user?.id, userId],
+    [persist, questions, user?.id, userId],
+  )
+
+  const upsertJournalEntry = useCallback(
+    async (entry: LdJournalEntry) => {
+      setJournalEntries((prev) => {
+        const next = prev.some((e) => e.id === entry.id)
+          ? prev.map((e) => (e.id === entry.id ? entry : e))
+          : [...prev, entry]
+        void persist({ ...sliceRef.current, journalEntries: next })
+        return next
+      })
+      setLastSavedAt(new Date())
+      if (isSupabaseConfigured && user?.id) {
+        try {
+          await upsertJournalCloud(entry)
+        } catch {
+          setSaveError('저장 실패. 네트워크 확인하고 다시 눌러주세요.')
+        }
+      }
+    },
+    [persist, user?.id],
+  )
+
+  const addJournalEntry = useCallback(
+    async (input: Omit<LdJournalEntry, 'id' | 'userId' | 'createdAt'>) => {
+      const entry: LdJournalEntry = {
+        ...input,
+        id: newId(),
+        userId,
+        createdAt: new Date().toISOString(),
+      }
+      await upsertJournalEntry(entry)
+      return entry
+    },
+    [upsertJournalEntry, userId],
+  )
+
+  const deleteJournalEntry = useCallback(
+    async (id: string) => {
+      setJournalEntries((prev) => {
+        const next = prev.filter((e) => e.id !== id)
+        void persist({ ...sliceRef.current, journalEntries: next })
+        return next
+      })
+      if (isSupabaseConfigured && user?.id) {
+        try {
+          await deleteJournalCloud(id)
+        } catch {
+          setSaveError('저장 실패. 네트워크 확인하고 다시 눌러주세요.')
+        }
+      }
+    },
+    [persist, user?.id],
+  )
+
+  const upsertPrototype = useCallback(
+    async (proto: LdPrototype) => {
+      setPrototypes((prev) => {
+        const next = prev.some((p) => p.id === proto.id)
+          ? prev.map((p) => (p.id === proto.id ? proto : p))
+          : [...prev, proto]
+        void persist({ ...sliceRef.current, prototypes: next })
+        return next
+      })
+      setLastSavedAt(new Date())
+      if (isSupabaseConfigured && user?.id) {
+        try {
+          await upsertPrototypeCloud(proto)
+        } catch {
+          setSaveError('저장 실패. 네트워크 확인하고 다시 눌러주세요.')
+        }
+      }
+    },
+    [persist, user?.id],
+  )
+
+  const addPrototype = useCallback(
+    async (input: Omit<LdPrototype, 'id' | 'userId' | 'createdAt'>) => {
+      const proto: LdPrototype = {
+        ...input,
+        id: newId(),
+        userId,
+        createdAt: new Date().toISOString(),
+      }
+      await upsertPrototype(proto)
+      return proto
+    },
+    [upsertPrototype, userId],
+  )
+
+  const deletePrototype = useCallback(
+    async (id: string) => {
+      setPrototypes((prev) => {
+        const next = prev.filter((p) => p.id !== id)
+        void persist({ ...sliceRef.current, prototypes: next })
+        return next
+      })
+      if (isSupabaseConfigured && user?.id) {
+        try {
+          await deletePrototypeCloud(id)
+        } catch {
+          setSaveError('저장 실패. 네트워크 확인하고 다시 눌러주세요.')
+        }
+      }
+    },
+    [persist, user?.id],
+  )
+
+  const saveAiReport = useCallback(
+    async (report: LdAiReport) => {
+      setAiReports((prev) => {
+        const next = prev.some((r) => r.id === report.id)
+          ? prev.map((r) => (r.id === report.id ? report : r))
+          : [report, ...prev]
+        void persist({ ...sliceRef.current, aiReports: next })
+        return next
+      })
+      if (isSupabaseConfigured && user?.id) {
+        try {
+          await upsertAiReportCloud(report)
+        } catch {
+          /* local ok */
+        }
+      }
+    },
+    [persist, user?.id],
+  )
+
+  const requestAiReport = useCallback(
+    async (input: {
+      reportType: AiReportType
+      inputHash: string
+      inputRefs: Record<string, unknown>
+      payload: unknown
+    }) => {
+      const cached = aiReports.find((r) => r.inputHash === input.inputHash)
+      if (cached) return cached
+
+      if (isSupabaseConfigured && user?.id) {
+        try {
+          const { report } = await invokeCompassAnalyze(input)
+          await saveAiReport(report)
+          return report
+        } catch {
+          /* fall through to local stub */
+        }
+      }
+
+      const report: LdAiReport = {
+        id: newId(),
+        userId,
+        reportType: input.reportType,
+        inputHash: input.inputHash,
+        inputRefs: input.inputRefs,
+        model: 'local-stub',
+        createdAt: new Date().toISOString(),
+        output: {
+          report_type: input.reportType,
+          headline: '기록을 읽었다. Edge Function이 연결되면 더 정확한 리포트가 온다.',
+          observations: [
+            {
+              text: '지금은 로컬 스텁이다. Gemini Edge Function을 배포하면 같은 입력으로 캐시된 리포트가 온다.',
+              evidence: ['로컬 모드'],
+              source: 'system',
+            },
+          ],
+          pathways:
+            input.reportType === 'pathway'
+              ? [
+                  {
+                    name: '작은 테스트부터',
+                    why_it_fits: ['기록이 쌓이고 있다'],
+                    friction: ['아직 AI가 연결되지 않았다'],
+                    smallest_test: '이번 주 굿타임 저널 3줄 쓰기',
+                    confidence: 'low',
+                  },
+                ]
+              : undefined,
+          tension: null,
+          unknowns: ['Gemini Edge Function 미배포'],
+          next_question: '지금 기록이 말해 주는 건 무엇인가?',
+        },
+      }
+      await saveAiReport(report)
+      return report
+    },
+    [aiReports, saveAiReport, user?.id, userId],
   )
 
   const revisitItems = useMemo(() => {
@@ -388,7 +619,7 @@ export function useCompass() {
       })
     }
 
-    for (const meta of EXERCISE_META.filter((m) => m.phase === 1 && m.cadenceDays)) {
+    for (const meta of EXERCISE_META.filter((m) => m.cadenceDays)) {
       const completes = completeSnapshotsFor(meta.key)
       if (completes.length === 0) continue
       const last = completes[completes.length - 1]
@@ -412,27 +643,37 @@ export function useCompass() {
     const set = new Set<string>()
     for (const s of snapshots.filter((x) => x.status === 'complete')) set.add(s.takenAt)
     for (const a of answers) set.add(a.answeredOn)
+    for (const j of journalEntries) set.add(j.entryDate)
     return set
-  }, [answers, snapshots])
+  }, [answers, journalEntries, snapshots])
 
   const badgeCount = dueQuestions.length
 
-  const getDashboardDraftData = useCallback(
-    (snapshot: LdSnapshot): DashboardData => {
-      const fromLs = loadDraftLocal<DashboardData>(`${snapshot.exerciseKey}:${snapshot.id}`)
-      if (fromLs) return fromLs
-      const d = snapshot.data as unknown as DashboardData
-      if (d?.gauges) return d
-      return emptyDashboardData()
-    },
-    [],
-  )
+  const getDashboardDraftData = useCallback((snapshot: LdSnapshot): DashboardData => {
+    const fromLs = loadDraftLocal<DashboardData>(`${snapshot.exerciseKey}:${snapshot.id}`)
+    if (fromLs) return fromLs
+    const d = snapshot.data as unknown as DashboardData
+    if (d?.gauges) return d
+    return emptyDataForExercise('dashboard') as unknown as DashboardData
+  }, [])
+
+  const getDraftData = useCallback(<T,>(snapshot: LdSnapshot, fallback: T): T => {
+    const fromLs = loadDraftLocal<T>(`${snapshot.exerciseKey}:${snapshot.id}`)
+    if (fromLs) return fromLs
+    if (snapshot.data && Object.keys(snapshot.data).length > 0) {
+      return snapshot.data as unknown as T
+    }
+    return fallback
+  }, [])
 
   return {
     loading,
     snapshots,
     questions,
     answers,
+    journalEntries,
+    prototypes,
+    aiReports,
     saveError,
     lastSavedAt,
     snapshotsFor,
@@ -448,10 +689,19 @@ export function useCompass() {
     updateQuestion,
     deleteQuestion,
     submitAnswer,
+    upsertJournalEntry,
+    addJournalEntry,
+    deleteJournalEntry,
+    upsertPrototype,
+    addPrototype,
+    deletePrototype,
+    saveAiReport,
+    requestAiReport,
     revisitItems,
     activityDates,
     badgeCount,
     getDashboardDraftData,
+    getDraftData,
   }
 }
 

@@ -1,5 +1,19 @@
-import type { LdAnswer, LdQuestion, LdSnapshot, SnapshotStatus } from '../types/compass'
-import type { ExerciseKey } from '../types/compass'
+import type {
+  AeiouData,
+  AiReportOutput,
+  AiReportType,
+  ExerciseKey,
+  JournalBucket,
+  LdAiReport,
+  LdAnswer,
+  LdJournalEntry,
+  LdPrototype,
+  LdQuestion,
+  LdSnapshot,
+  PrototypeKind,
+  PrototypeStatus,
+  SnapshotStatus,
+} from '../types/compass'
 import { supabase } from './supabase'
 
 type SnapshotRow = {
@@ -32,6 +46,46 @@ type AnswerRow = {
   answered_on: string
   body: string
   feeling: number | null
+  created_at: string
+}
+
+type JournalRow = {
+  id: string
+  user_id: string
+  entry_date: string
+  activity: string
+  bucket: string | null
+  engagement: number
+  energy: number
+  is_flow: boolean
+  note: string | null
+  aeiou: AeiouData | null
+  created_at: string
+}
+
+type PrototypeRow = {
+  id: string
+  user_id: string
+  kind: PrototypeKind
+  title: string
+  person: string | null
+  happened_on: string | null
+  going_in_q: string | null
+  learned: string | null
+  next_step: string | null
+  linked_plan: string | null
+  status: PrototypeStatus
+  created_at: string
+}
+
+type AiReportRow = {
+  id: string
+  user_id: string
+  report_type: AiReportType
+  input_hash: string
+  input_refs: Record<string, unknown>
+  output: AiReportOutput
+  model: string | null
   created_at: string
 }
 
@@ -113,29 +167,160 @@ function answerToRow(a: LdAnswer) {
   }
 }
 
+function rowToJournal(row: JournalRow): LdJournalEntry {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    entryDate: row.entry_date,
+    activity: row.activity,
+    bucket: (row.bucket as JournalBucket | null) ?? null,
+    engagement: row.engagement,
+    energy: row.energy,
+    isFlow: row.is_flow,
+    note: row.note,
+    aeiou: row.aeiou,
+    createdAt: row.created_at,
+  }
+}
+
+function journalToRow(e: LdJournalEntry) {
+  return {
+    id: e.id,
+    user_id: e.userId,
+    entry_date: e.entryDate,
+    activity: e.activity,
+    bucket: e.bucket,
+    engagement: e.engagement,
+    energy: e.energy,
+    is_flow: e.isFlow,
+    note: e.note,
+    aeiou: e.aeiou,
+    created_at: e.createdAt,
+  }
+}
+
+function rowToPrototype(row: PrototypeRow): LdPrototype {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    kind: row.kind,
+    title: row.title,
+    person: row.person,
+    happenedOn: row.happened_on,
+    goingInQ: row.going_in_q,
+    learned: row.learned,
+    nextStep: row.next_step,
+    linkedPlan: row.linked_plan,
+    status: row.status,
+    createdAt: row.created_at,
+  }
+}
+
+function prototypeToRow(p: LdPrototype) {
+  return {
+    id: p.id,
+    user_id: p.userId,
+    kind: p.kind,
+    title: p.title,
+    person: p.person,
+    happened_on: p.happenedOn,
+    going_in_q: p.goingInQ,
+    learned: p.learned,
+    next_step: p.nextStep,
+    linked_plan: p.linkedPlan,
+    status: p.status,
+    created_at: p.createdAt,
+  }
+}
+
+function rowToAiReport(row: AiReportRow): LdAiReport {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    reportType: row.report_type,
+    inputHash: row.input_hash,
+    inputRefs: row.input_refs,
+    output: row.output,
+    model: row.model,
+    createdAt: row.created_at,
+  }
+}
+
+function aiReportToRow(r: LdAiReport) {
+  return {
+    id: r.id,
+    user_id: r.userId,
+    report_type: r.reportType,
+    input_hash: r.inputHash,
+    input_refs: r.inputRefs,
+    output: r.output,
+    model: r.model,
+    created_at: r.createdAt,
+  }
+}
+
+function isMissingTable(msg: string) {
+  return /relation|schema cache|does not exist|404/i.test(msg)
+}
+
 export async function fetchCompassCloud(userId: string): Promise<{
   snapshots: LdSnapshot[]
   questions: LdQuestion[]
   answers: LdAnswer[]
+  journalEntries: LdJournalEntry[]
+  prototypes: LdPrototype[]
+  aiReports: LdAiReport[]
 } | null> {
-  const [snapRes, qRes, aRes] = await Promise.all([
+  const [snapRes, qRes, aRes, jRes, pRes, aiRes] = await Promise.all([
     supabase.from('ld_snapshot').select('*').eq('user_id', userId),
     supabase.from('ld_question').select('*').eq('user_id', userId),
     supabase.from('ld_answer').select('*').eq('user_id', userId),
+    supabase.from('ld_journal_entry').select('*').eq('user_id', userId),
+    supabase.from('ld_prototype').select('*').eq('user_id', userId),
+    supabase.from('ld_ai_report').select('*').eq('user_id', userId),
   ])
 
   if (snapRes.error || qRes.error || aRes.error) {
     const msg =
       snapRes.error?.message || qRes.error?.message || aRes.error?.message || ''
-    // Table missing / not exposed yet — treat as empty remote
-    if (/relation|schema cache|does not exist|404/i.test(msg)) return null
+    if (isMissingTable(msg)) return null
     throw snapRes.error || qRes.error || aRes.error
   }
+
+  const journalEntries =
+    jRes.error && isMissingTable(jRes.error.message)
+      ? []
+      : jRes.error
+        ? (() => {
+            throw jRes.error
+          })()
+        : ((jRes.data ?? []) as JournalRow[]).map(rowToJournal)
+
+  const prototypes =
+    pRes.error && isMissingTable(pRes.error.message)
+      ? []
+      : pRes.error
+        ? (() => {
+            throw pRes.error
+          })()
+        : ((pRes.data ?? []) as PrototypeRow[]).map(rowToPrototype)
+
+  const aiReports =
+    aiRes.error && isMissingTable(aiRes.error.message)
+      ? []
+      : aiRes.error
+        ? (() => {
+            throw aiRes.error
+          })()
+        : ((aiRes.data ?? []) as AiReportRow[]).map(rowToAiReport)
 
   return {
     snapshots: ((snapRes.data ?? []) as SnapshotRow[]).map(rowToSnapshot),
     questions: ((qRes.data ?? []) as QuestionRow[]).map(rowToQuestion),
     answers: ((aRes.data ?? []) as AnswerRow[]).map(rowToAnswer),
+    journalEntries,
+    prototypes,
+    aiReports,
   }
 }
 
@@ -168,4 +353,50 @@ export async function upsertAnswerCloud(answer: LdAnswer): Promise<void> {
     .from('ld_answer')
     .upsert(answerToRow(answer), { onConflict: 'id' })
   if (error) throw error
+}
+
+export async function upsertJournalCloud(entry: LdJournalEntry): Promise<void> {
+  const { error } = await supabase
+    .from('ld_journal_entry')
+    .upsert(journalToRow(entry), { onConflict: 'id' })
+  if (error) throw error
+}
+
+export async function deleteJournalCloud(id: string): Promise<void> {
+  const { error } = await supabase.from('ld_journal_entry').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function upsertPrototypeCloud(proto: LdPrototype): Promise<void> {
+  const { error } = await supabase
+    .from('ld_prototype')
+    .upsert(prototypeToRow(proto), { onConflict: 'id' })
+  if (error) throw error
+}
+
+export async function deletePrototypeCloud(id: string): Promise<void> {
+  const { error } = await supabase.from('ld_prototype').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function upsertAiReportCloud(report: LdAiReport): Promise<void> {
+  const { error } = await supabase
+    .from('ld_ai_report')
+    .upsert(aiReportToRow(report), { onConflict: 'id' })
+  if (error) throw error
+}
+
+export async function invokeCompassAnalyze(body: {
+  reportType: AiReportType
+  inputHash: string
+  inputRefs: Record<string, unknown>
+  payload: unknown
+}): Promise<{ report: LdAiReport; cached: boolean }> {
+  const { data, error } = await supabase.functions.invoke('compass-analyze', {
+    body,
+  })
+  if (error) throw error
+  const report = data?.report as LdAiReport | undefined
+  if (!report) throw new Error('INVALID_AI_RESPONSE')
+  return { report, cached: Boolean(data?.cached) }
 }

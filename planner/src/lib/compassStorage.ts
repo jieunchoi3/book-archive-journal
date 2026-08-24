@@ -1,4 +1,11 @@
-import type { LdAnswer, LdQuestion, LdSnapshot } from '../types/compass'
+import type {
+  LdAiReport,
+  LdAnswer,
+  LdJournalEntry,
+  LdPrototype,
+  LdQuestion,
+  LdSnapshot,
+} from '../types/compass'
 
 const DB_NAME = 'compass-db'
 const DB_VERSION = 1
@@ -8,6 +15,9 @@ export interface CompassLocalStore {
   snapshots: LdSnapshot[]
   questions: LdQuestion[]
   answers: LdAnswer[]
+  journalEntries: LdJournalEntry[]
+  prototypes: LdPrototype[]
+  aiReports: LdAiReport[]
   updatedAt: string
 }
 
@@ -16,7 +26,24 @@ function emptyStore(): CompassLocalStore {
     snapshots: [],
     questions: [],
     answers: [],
+    journalEntries: [],
+    prototypes: [],
+    aiReports: [],
     updatedAt: new Date(0).toISOString(),
+  }
+}
+
+function normalizeStore(raw: Partial<CompassLocalStore> | undefined): CompassLocalStore {
+  const base = emptyStore()
+  if (!raw) return base
+  return {
+    snapshots: raw.snapshots ?? [],
+    questions: raw.questions ?? [],
+    answers: raw.answers ?? [],
+    journalEntries: raw.journalEntries ?? [],
+    prototypes: raw.prototypes ?? [],
+    aiReports: raw.aiReports ?? [],
+    updatedAt: raw.updatedAt ?? base.updatedAt,
   }
 }
 
@@ -40,7 +67,7 @@ export async function loadCompassLocal(userId: string): Promise<CompassLocalStor
     const tx = db.transaction(STORE, 'readonly')
     const req = tx.objectStore(STORE).get(userId)
     req.onsuccess = () => {
-      resolve((req.result as CompassLocalStore | undefined) ?? emptyStore())
+      resolve(normalizeStore(req.result as Partial<CompassLocalStore> | undefined))
     }
     req.onerror = () => reject(req.error)
   })
@@ -53,7 +80,10 @@ export async function saveCompassLocal(
   const db = await openDb()
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readwrite')
-    tx.objectStore(STORE).put({ ...store, updatedAt: new Date().toISOString() }, userId)
+    tx.objectStore(STORE).put(
+      { ...normalizeStore(store), updatedAt: new Date().toISOString() },
+      userId,
+    )
     tx.oncomplete = () => resolve()
     tx.onerror = () => reject(tx.error)
   })

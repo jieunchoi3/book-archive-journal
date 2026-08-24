@@ -47,8 +47,7 @@ export function CompassOverview({
     })
   }, [compass.activityDates, year])
 
-  const phase1Cards = EXERCISE_META.filter((m) => m.phase === 1)
-  const filteredCards = phase1Cards.filter((m) => {
+  const filteredCards = EXERCISE_META.filter((m) => {
     if (!query.trim()) return true
     const q = query.toLowerCase()
     return (
@@ -233,7 +232,7 @@ export function CompassOverview({
             </div>
           </section>
 
-          <div className="mb-4 flex gap-2">
+          <div className="mb-4 flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => onNavigate({ page: 'ask' })}
@@ -247,6 +246,20 @@ export function CompassOverview({
                   {compass.badgeCount}
                 </span>
               )}
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigate({ page: 'compare' })}
+              className="rounded-full border border-[#ECE7E2] bg-white px-4 py-2 text-[13px] font-semibold text-[#1C1B1A]"
+            >
+              비교
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigate({ page: 'ai' })}
+              className="rounded-full border border-[#ECE7E2] bg-white px-4 py-2 text-[13px] font-semibold text-[#1C1B1A]"
+            >
+              AI 리포트
             </button>
           </div>
 
@@ -277,6 +290,7 @@ export function CompassOverview({
                 onOpen={(key, snapshotId) =>
                   onNavigate({ page: 'exercise', key, snapshotId })
                 }
+                onCompare={() => onNavigate({ page: 'compare' })}
               />
             ))}
             <button
@@ -312,10 +326,12 @@ function ExerciseCard({
   meta,
   compass,
   onOpen,
+  onCompare,
 }: {
   meta: (typeof EXERCISE_META)[number]
   compass: CompassActions
   onOpen: (key: ExerciseKey, snapshotId?: string) => void
+  onCompare: () => void
 }) {
   const completes = compass.completeSnapshotsFor(meta.key)
   const last = completes[completes.length - 1]
@@ -351,23 +367,34 @@ function ExerciseCard({
           ))}
         </div>
       )}
-      <button
-        type="button"
-        className="mt-4 rounded-full px-4 py-2 text-[13px] font-semibold text-white"
-        style={{ background: COMPASS.accent }}
-        onClick={() => {
-          void (async () => {
-            if (last) {
-              const draft = await compass.createDraft(meta.key, undefined, true)
-              onOpen(meta.key, draft.id)
-            } else {
-              onOpen(meta.key)
-            }
-          })()
-        }}
-      >
-        {last ? '다시 하기' : '하기'}
-      </button>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="rounded-full px-4 py-2 text-[13px] font-semibold text-white"
+          style={{ background: COMPASS.accent }}
+          onClick={() => {
+            void (async () => {
+              if (last) {
+                const draft = await compass.createDraft(meta.key, undefined, true)
+                onOpen(meta.key, draft.id)
+              } else {
+                onOpen(meta.key)
+              }
+            })()
+          }}
+        >
+          {last ? '다시 하기' : '하기'}
+        </button>
+        {completes.length >= 2 && (
+          <button
+            type="button"
+            className="rounded-full border border-[#ECE7E2] px-4 py-2 text-[13px] font-semibold text-[#1C1B1A]"
+            onClick={onCompare}
+          >
+            비교
+          </button>
+        )}
+      </div>
     </div>
   )
 }
