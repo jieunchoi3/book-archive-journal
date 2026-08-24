@@ -194,6 +194,24 @@ export function kindsForPurpose(
   return spendKinds.filter((k) => ids.has(k.id))
 }
 
+/** Sum of linked spend-kind budgets for a purpose (null if none set). */
+export function sumKindBudgetsForPurpose(
+  purposeId: string,
+  spendKinds: ExpenseSpendKind[],
+  links: ExpensePurposeKindLink[],
+): number | null {
+  const kinds = kindsForPurpose(purposeId, spendKinds, links)
+  let sum = 0
+  let any = false
+  for (const k of kinds) {
+    if (k.budget != null && k.budget > 0) {
+      sum += k.budget
+      any = true
+    }
+  }
+  return any ? sum : null
+}
+
 export function dualAxisLabel(
   purpose: ExpensePurpose | undefined,
   kind: ExpenseSpendKind | undefined,
@@ -229,23 +247,27 @@ export function ensureDualAxisCatalogs(store: ExpenseStore): ExpenseStore {
     }
   }
 
+  const spendKinds = (() => {
+    const kinds = (store.spendKinds ?? []).map((k) => ({
+      ...k,
+      budget: k.budget ?? null,
+    }))
+    if (!kinds.some((k) => k.id === culture)) {
+      const seed = DEFAULT_EXPENSE_SPEND_KINDS.find((k) => k.id === culture)
+      if (seed) kinds.push({ ...seed })
+    }
+    return kinds
+  })()
+
+  const purposes = (store.purposes ?? []).map((p) => ({
+    ...p,
+    budget: sumKindBudgetsForPurpose(p.id, spendKinds, links),
+  }))
+
   return {
     ...store,
-    purposes: (store.purposes ?? []).map((p) => ({
-      ...p,
-      budget: p.budget ?? null,
-    })),
-    spendKinds: (() => {
-      const kinds = (store.spendKinds ?? []).map((k) => ({
-        ...k,
-        budget: k.budget ?? null,
-      }))
-      if (!kinds.some((k) => k.id === culture)) {
-        const seed = DEFAULT_EXPENSE_SPEND_KINDS.find((k) => k.id === culture)
-        if (seed) kinds.push({ ...seed })
-      }
-      return kinds
-    })(),
+    purposes,
+    spendKinds,
     purposeKindLinks: links,
   }
 }

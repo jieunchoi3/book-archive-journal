@@ -38,7 +38,7 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
     markDaysNoSpend,
     missingLogDays,
     setCategoryBudget,
-    setPurposeBudget,
+    setPurposeBudget: _setPurposeBudget,
     setSpendKindBudget,
     addCategory,
     renameCategory,
@@ -452,7 +452,6 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
                     onHighlightChange={setHighlightedPurposeId}
                     budgetDrafts={budgetDrafts}
                     setBudgetDrafts={setBudgetDrafts}
-                    setPurposeBudget={setPurposeBudget}
                     setSpendKindBudget={setSpendKindBudget}
                   />
                 ) : (
@@ -898,7 +897,6 @@ function HierarchyCategoryPanel({
   onHighlightChange,
   budgetDrafts,
   setBudgetDrafts,
-  setPurposeBudget,
   setSpendKindBudget,
 }: {
   purposes: ExpensePurpose[]
@@ -910,13 +908,12 @@ function HierarchyCategoryPanel({
   onHighlightChange: (id: string | null) => void
   budgetDrafts: Record<string, string>
   setBudgetDrafts: Dispatch<SetStateAction<Record<string, string>>>
-  setPurposeBudget: (purposeId: string, budget: number | null) => void
   setSpendKindBudget: (spendKindId: string, budget: number | null) => void
 }) {
   return (
     <>
       <p className="mb-4 text-[12px] text-muted">
-        This month by purpose — set budgets on purposes or spend types
+        Set budgets on spend types — purpose totals add up automatically
       </p>
 
       <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-start">
@@ -929,16 +926,34 @@ function HierarchyCategoryPanel({
         <div className="min-w-0 flex-1 space-y-2">
           {purposes.map((purpose) => {
             const spent = spentByPurpose[purpose.id] ?? 0
-            const budget = purpose.budget
+            const kinds = kindsForActivePurpose(purpose.id)
+            // Live sum includes in-progress kind budget drafts.
+            let autoBudget = 0
+            let anyKindBudget = false
+            for (const k of kinds) {
+              const draft = budgetDrafts[k.id]
+              const value =
+                draft !== undefined
+                  ? Number(draft)
+                  : k.budget != null && k.budget > 0
+                    ? k.budget
+                    : 0
+              if (value > 0) {
+                autoBudget += value
+                anyKindBudget = true
+              }
+            }
+            const budget = anyKindBudget
+              ? autoBudget
+              : purpose.budget != null && purpose.budget > 0
+                ? purpose.budget
+                : null
             const over = budget != null && budget > 0 && spent > budget
             const highlighted = highlightedPurposeId === purpose.id
             const pct =
               budget != null && budget > 0
                 ? Math.min(100, Math.round((spent / budget) * 100))
                 : null
-            const draft =
-              budgetDrafts[purpose.id] ?? (budget != null ? String(budget) : '')
-            const kinds = kindsForActivePurpose(purpose.id)
 
             return (
               <div
@@ -982,35 +997,13 @@ function HierarchyCategoryPanel({
                     />
                   </div>
                 )}
-                <label className="flex items-center gap-2 text-[11px] text-muted">
-                  Budget
-                  <span>£</span>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={draft}
-                    placeholder="—"
-                    onChange={(e) =>
-                      setBudgetDrafts((prev) => ({
-                        ...prev,
-                        [purpose.id]: e.target.value.replace(/[^0-9.]/g, ''),
-                      }))
-                    }
-                    onBlur={() => {
-                      const raw = budgetDrafts[purpose.id]
-                      if (raw === undefined) return
-                      const n = Number(raw)
-                      setPurposeBudget(
-                        purpose.id,
-                        raw === '' || !(n > 0) ? null : n,
-                      )
-                    }}
-                    className="w-20 rounded-md border border-hairline bg-white px-2 py-1 text-[12px] tabular-nums text-[#1C1C1E] outline-none focus:border-[#8B5A2B]/40"
-                  />
-                  {budget != null && budget > 0 && (
-                    <span className="tabular-nums">/ {formatMoney(budget)}</span>
-                  )}
-                </label>
+                <div className="flex items-center gap-2 text-[11px] text-muted">
+                  <span>Budget</span>
+                  <span className="rounded-md border border-hairline bg-[#F5F5F7] px-2 py-1 text-[12px] font-semibold tabular-nums text-[#1C1C1E]">
+                    {budget != null ? formatMoney(budget) : '—'}
+                  </span>
+                  <span className="text-[10px] text-muted">sum of types</span>
+                </div>
 
                 {kinds.length > 0 && (
                   <ul className="mt-2 space-y-2 border-t border-hairline pt-2">

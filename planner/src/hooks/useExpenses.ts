@@ -15,6 +15,7 @@ import {
   isDualAxisTransaction,
   isExpenseHierarchyMonth,
   kindsForPurpose,
+  sumKindBudgetsForPurpose,
 } from '../types/expense'
 import { getMissingExpenseLogDays } from '../lib/expenseMissingDays'
 import { ensureExpenseStore, loadExpenseStore, saveExpenseStore } from '../lib/expenseStorage'
@@ -114,9 +115,13 @@ export function useExpenses(): ExpenseActions {
           const linksChanged =
             JSON.stringify(loaded.purposeKindLinks ?? []) !==
             JSON.stringify(normalized.purposeKindLinks ?? [])
+          const purposeBudgetsChanged =
+            JSON.stringify((loaded.purposes ?? []).map((p) => p.budget)) !==
+            JSON.stringify((normalized.purposes ?? []).map((p) => p.budget))
           const needsSave =
             !loaded.purposes?.length ||
             linksChanged ||
+            purposeBudgetsChanged ||
             (loaded.transactions?.length ?? 0) !== normalized.transactions.length ||
             loaded.transactions?.some(
               (t) => t.purposeId === undefined || t.spendKindId === undefined,
@@ -341,12 +346,15 @@ export function useExpenses(): ExpenseActions {
 
   const setSpendKindBudget = useCallback(
     (spendKindId: string, budget: number | null) => {
-      persist({
-        ...store,
-        spendKinds: (store.spendKinds ?? []).map((k) =>
-          k.id === spendKindId ? { ...k, budget } : k,
-        ),
-      })
+      const spendKinds = (store.spendKinds ?? []).map((k) =>
+        k.id === spendKindId ? { ...k, budget } : k,
+      )
+      const links = store.purposeKindLinks ?? []
+      const purposes = (store.purposes ?? []).map((p) => ({
+        ...p,
+        budget: sumKindBudgetsForPurpose(p.id, spendKinds, links),
+      }))
+      persist({ ...store, spendKinds, purposes })
     },
     [persist, store],
   )
