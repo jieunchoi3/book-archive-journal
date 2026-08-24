@@ -357,7 +357,7 @@ export function CompassDashboard({
 
       {!readonly && active && (
         <div className="fixed inset-x-0 bottom-16 z-30 border-t border-[#ECE7E2] bg-white/95 px-4 py-3 backdrop-blur-md">
-          <div className="mx-auto flex max-w-xl justify-end">
+          <div className="mx-auto flex w-full max-w-none justify-end px-4 sm:px-6 lg:px-8">
             <button
               type="button"
               onClick={() => void compass.completeSnapshot(active.id)}

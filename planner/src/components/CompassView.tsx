@@ -46,14 +46,14 @@ export function CompassView({
 
   if (compass.loading) {
     return (
-      <div className="mx-auto min-h-screen max-w-xl bg-[#F7F5F3] px-4 pb-24 pt-6">
+      <div className="min-h-screen w-full bg-[#F7F5F3] px-4 pb-24 pt-6 sm:px-6 lg:px-8">
         <p className="text-[14px] text-[#8A847E]">불러오는 중…</p>
       </div>
     )
   }
 
   return (
-    <div className="mx-auto min-h-screen max-w-xl bg-[#F7F5F3] px-4 pb-24 pt-6 sm:max-w-3xl">
+    <div className="min-h-screen w-full bg-[#F7F5F3] px-4 pb-24 pt-6 sm:px-6 lg:px-8">
       {route.page === 'overview' && (
         <CompassOverview
           compass={compass}
