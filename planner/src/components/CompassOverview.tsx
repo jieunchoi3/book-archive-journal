@@ -124,200 +124,182 @@ export function CompassOverview({
         />
       </div>
 
-      {!hasAny ? (
-        <div
-          className="rounded-[18px] border border-[#ECE7E2] bg-white p-8 text-center"
+      {compass.revisitItems.length > 0 && (
+        <section
+          className="mb-5 overflow-hidden rounded-xl border backdrop-blur-md"
           style={{
-            boxShadow: '0 1px 2px rgba(28,27,26,.04), 0 8px 24px rgba(28,27,26,.05)',
+            borderColor: `${COMPASS.accent}33`,
+            background: `${COMPASS.soft}f2`,
+          }}
+          aria-label="이번에 다시 볼 것"
+        >
+          <div
+            className="flex items-center gap-2 border-b px-4 py-2.5"
+            style={{ borderColor: `${COMPASS.accent}22` }}
+          >
+            <Activity size={14} style={{ color: COMPASS.accent }} />
+            <h2
+              className="text-[12px] font-semibold tracking-wide"
+              style={{ color: COMPASS.ink }}
+            >
+              이번에 다시 볼 것
+            </h2>
+          </div>
+          <ul className="flex flex-col gap-1 px-3 py-2.5">
+            {compass.revisitItems.map((item) => (
+              <li
+                key={item.id}
+                className="flex items-center justify-between gap-3 px-1 py-2"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-[14px] font-medium text-[#1C1B1A]">
+                    {item.kind === 'question' ? `“${item.title}”` : item.title}
+                  </p>
+                  <p className="text-[12px] text-[#8A847E]">{item.subtitle}</p>
+                </div>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-full px-3 py-1.5 text-[12px] font-semibold text-white"
+                  style={{ background: COMPASS.accent }}
+                  onClick={() => {
+                    if (item.action === 'open-ask' && item.questionId) {
+                      onNavigate({
+                        page: 'askDetail',
+                        questionId: item.questionId,
+                      })
+                    } else if (item.exerciseKey) {
+                      onNavigate({
+                        page: 'exercise',
+                        key: item.exerciseKey,
+                      })
+                    }
+                  }}
+                >
+                  {item.kind === 'question' ? '열기' : '다시'}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {!hasAny && (
+        <p className="mb-5 text-[14px] text-[#8A847E]">
+          아직 기록이 없어요. 아무 연습이나 Ask부터 열어보세요 — 순서는 상관없어요.
+        </p>
+      )}
+
+      <section className="mb-6">
+        <h2 className="mb-3 text-[11px] font-semibold tracking-[0.14em] text-[#8A847E]">
+          YEAR TRACK
+        </h2>
+        <div className="flex gap-1 overflow-x-auto pb-1">
+          {yearTrack.map((m) => (
+            <div
+              key={m.label}
+              className="min-w-[4.5rem] rounded-xl bg-[#FAF8F6] px-2 py-2"
+            >
+              <p className="text-[11px] font-medium text-[#8A847E]">{m.label}</p>
+              <p className="mt-1 font-mono text-[11px] tracking-widest text-[#1C1B1A]">
+                {m.dots.length === 0
+                  ? '····'
+                  : m.dots
+                      .slice(0, 5)
+                      .map(() => '●')
+                      .join('')
+                      .padEnd(4, '·')
+                      .slice(0, 5)}
+              </p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => onNavigate({ page: 'ask' })}
+          className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-[13px] font-semibold text-white"
+          style={{ background: COMPASS.accent }}
+        >
+          <Mail size={14} />
+          Ask Myself
+          {compass.badgeCount > 0 && (
+            <span className="rounded-full bg-white/25 px-1.5 text-[11px]">
+              {compass.badgeCount}
+            </span>
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => onNavigate({ page: 'compare' })}
+          className="rounded-full border border-[#ECE7E2] bg-white px-4 py-2 text-[13px] font-semibold text-[#1C1B1A]"
+        >
+          비교
+        </button>
+        <button
+          type="button"
+          onClick={() => onNavigate({ page: 'ai' })}
+          className="rounded-full border border-[#ECE7E2] bg-white px-4 py-2 text-[13px] font-semibold text-[#1C1B1A]"
+        >
+          AI 리포트
+        </button>
+      </div>
+
+      {query && askHits.length > 0 && (
+        <ul className="mb-4 space-y-2">
+          {askHits.map((q) => (
+            <li key={q.id}>
+              <button
+                type="button"
+                className="w-full rounded-xl bg-[#FAF8F6] px-3 py-2 text-left text-[14px]"
+                onClick={() =>
+                  onNavigate({ page: 'askDetail', questionId: q.id })
+                }
+              >
+                “{q.body}”
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {filteredCards.map((meta) => (
+          <ExerciseCard
+            key={meta.key}
+            meta={meta}
+            compass={compass}
+            onOpen={(key, snapshotId) =>
+              onNavigate({ page: 'exercise', key, snapshotId })
+            }
+            onCompare={() => onNavigate({ page: 'compare' })}
+          />
+        ))}
+        <button
+          type="button"
+          onClick={() => onNavigate({ page: 'ask' })}
+          className="rounded-[18px] border border-[#ECE7E2] bg-white p-6 text-left"
+          style={{
+            boxShadow:
+              '0 1px 2px rgba(28,27,26,.04), 0 8px 24px rgba(28,27,26,.05)',
           }}
         >
-          <p className="text-[15px] text-[#8A847E]">
-            아직 기록이 없어요. 라이프 대시보드부터 5분이면 됩니다.
-          </p>
-          <button
-            type="button"
-            className="mt-5 rounded-full px-5 py-2.5 text-[14px] font-semibold text-white"
-            style={{ background: COMPASS.accent }}
-            onClick={() =>
-              onNavigate({ page: 'exercise', key: 'dashboard' })
-            }
+          <div
+            className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl"
+            style={{ background: COMPASS.soft }}
           >
-            라이프 대시보드 시작
-          </button>
-        </div>
-      ) : (
-        <>
-          {compass.revisitItems.length > 0 && (
-            <section
-              className="mb-5 overflow-hidden rounded-xl border backdrop-blur-md"
-              style={{
-                borderColor: `${COMPASS.accent}33`,
-                background: `${COMPASS.soft}f2`,
-              }}
-              aria-label="이번에 다시 볼 것"
-            >
-              <div
-                className="flex items-center gap-2 border-b px-4 py-2.5"
-                style={{ borderColor: `${COMPASS.accent}22` }}
-              >
-                <Activity size={14} style={{ color: COMPASS.accent }} />
-                <h2
-                  className="text-[12px] font-semibold tracking-wide"
-                  style={{ color: COMPASS.ink }}
-                >
-                  이번에 다시 볼 것
-                </h2>
-              </div>
-              <ul className="flex flex-col gap-1 px-3 py-2.5">
-                {compass.revisitItems.map((item) => (
-                  <li
-                    key={item.id}
-                    className="flex items-center justify-between gap-3 px-1 py-2"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-[14px] font-medium text-[#1C1B1A]">
-                        {item.kind === 'question' ? `“${item.title}”` : item.title}
-                      </p>
-                      <p className="text-[12px] text-[#8A847E]">{item.subtitle}</p>
-                    </div>
-                    <button
-                      type="button"
-                      className="shrink-0 rounded-full px-3 py-1.5 text-[12px] font-semibold text-white"
-                      style={{ background: COMPASS.accent }}
-                      onClick={() => {
-                        if (item.action === 'open-ask' && item.questionId) {
-                          onNavigate({
-                            page: 'askDetail',
-                            questionId: item.questionId,
-                          })
-                        } else if (item.exerciseKey) {
-                          onNavigate({
-                            page: 'exercise',
-                            key: item.exerciseKey,
-                          })
-                        }
-                      }}
-                    >
-                      {item.kind === 'question' ? '열기' : '다시'}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          <section className="mb-6">
-            <h2 className="mb-3 text-[11px] font-semibold tracking-[0.14em] text-[#8A847E]">
-              YEAR TRACK
-            </h2>
-            <div className="flex gap-1 overflow-x-auto pb-1">
-              {yearTrack.map((m) => (
-                <div
-                  key={m.label}
-                  className="min-w-[4.5rem] rounded-xl bg-[#FAF8F6] px-2 py-2"
-                >
-                  <p className="text-[11px] font-medium text-[#8A847E]">{m.label}</p>
-                  <p className="mt-1 font-mono text-[11px] tracking-widest text-[#1C1B1A]">
-                    {m.dots.length === 0
-                      ? '····'
-                      : m.dots
-                          .slice(0, 5)
-                          .map(() => '●')
-                          .join('')
-                          .padEnd(4, '·')
-                          .slice(0, 5)}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <div className="mb-4 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => onNavigate({ page: 'ask' })}
-              className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-[13px] font-semibold text-white"
-              style={{ background: COMPASS.accent }}
-            >
-              <Mail size={14} />
-              Ask Myself
-              {compass.badgeCount > 0 && (
-                <span className="rounded-full bg-white/25 px-1.5 text-[11px]">
-                  {compass.badgeCount}
-                </span>
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={() => onNavigate({ page: 'compare' })}
-              className="rounded-full border border-[#ECE7E2] bg-white px-4 py-2 text-[13px] font-semibold text-[#1C1B1A]"
-            >
-              비교
-            </button>
-            <button
-              type="button"
-              onClick={() => onNavigate({ page: 'ai' })}
-              className="rounded-full border border-[#ECE7E2] bg-white px-4 py-2 text-[13px] font-semibold text-[#1C1B1A]"
-            >
-              AI 리포트
-            </button>
+            <Mail size={20} style={{ color: COMPASS.accent }} />
           </div>
-
-          {query && askHits.length > 0 && (
-            <ul className="mb-4 space-y-2">
-              {askHits.map((q) => (
-                <li key={q.id}>
-                  <button
-                    type="button"
-                    className="w-full rounded-xl bg-[#FAF8F6] px-3 py-2 text-left text-[14px]"
-                    onClick={() =>
-                      onNavigate({ page: 'askDetail', questionId: q.id })
-                    }
-                  >
-                    “{q.body}”
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {filteredCards.map((meta) => (
-              <ExerciseCard
-                key={meta.key}
-                meta={meta}
-                compass={compass}
-                onOpen={(key, snapshotId) =>
-                  onNavigate({ page: 'exercise', key, snapshotId })
-                }
-                onCompare={() => onNavigate({ page: 'compare' })}
-              />
-            ))}
-            <button
-              type="button"
-              onClick={() => onNavigate({ page: 'ask' })}
-              className="rounded-[18px] border border-[#ECE7E2] bg-white p-6 text-left"
-              style={{
-                boxShadow:
-                  '0 1px 2px rgba(28,27,26,.04), 0 8px 24px rgba(28,27,26,.05)',
-              }}
-            >
-              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl"
-                style={{ background: COMPASS.soft }}
-              >
-                <Mail size={20} style={{ color: COMPASS.accent }} />
-              </div>
-              <h3 className="text-[17px] font-semibold text-[#1C1B1A]">Ask Myself</h3>
-              <p className="mt-1 text-[13px] text-[#8A847E]">
-                커스텀 질문을 몇 달마다 다시 열기
-              </p>
-              <p className="mt-3 text-[12px] text-[#8A847E]">
-                질문 {compass.questions.length}개
-              </p>
-            </button>
-          </div>
-        </>
-      )}
+          <h3 className="text-[17px] font-semibold text-[#1C1B1A]">Ask Myself</h3>
+          <p className="mt-1 text-[13px] text-[#8A847E]">
+            커스텀 질문을 몇 달마다 다시 열기
+          </p>
+          <p className="mt-3 text-[12px] text-[#8A847E]">
+            질문 {compass.questions.length}개
+          </p>
+        </button>
+      </div>
     </div>
   )
 }
