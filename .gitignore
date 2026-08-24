@@ -28,3 +28,5 @@ planner/.env.*
 *.njsproj
 *.sln
 *.sw?
+
+planner/supabase/.temp/
