@@ -16,6 +16,7 @@ interface CompassDashboardProps {
   snapshotId?: string
   onNavigateSnapshot: (id: string | undefined) => void
   onCompare?: (ids: [string, string]) => void
+  onRequestSnapshotAi?: (snapshotId: string) => void
 }
 
 function useDebouncedSave(
@@ -153,6 +154,7 @@ export function CompassDashboard({
   snapshotId,
   onNavigateSnapshot,
   onCompare,
+  onRequestSnapshotAi,
 }: CompassDashboardProps) {
   const all = compass.snapshotsFor('dashboard')
   const completes = compass.completeSnapshotsFor('dashboard')
@@ -251,6 +253,17 @@ export function CompassDashboard({
         onCompare={onCompare}
         onCreateNew={() => void ensureDraft(true)}
       />
+
+      {readonly && active && onRequestSnapshotAi && (
+        <button
+          type="button"
+          className="mb-3 rounded-full px-4 py-1.5 text-[12px] font-semibold text-white"
+          style={{ background: COMPASS.accent }}
+          onClick={() => onRequestSnapshotAi(active.id)}
+        >
+          이번 기록 AI로 읽기
+        </button>
+      )}
 
       <button
         type="button"

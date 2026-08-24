@@ -21,6 +21,7 @@ interface CompassChoosingProps {
   snapshotId?: string
   onNavigateSnapshot: (id: string | undefined) => void
   onCompare?: (ids: [string, string]) => void
+  onRequestSnapshotAi?: (snapshotId: string) => void
 }
 
 const STEPS = ['모으기', '좁히기', '고르기', '놓아주기'] as const
@@ -30,6 +31,7 @@ export function CompassChoosing({
   snapshotId,
   onNavigateSnapshot,
   onCompare,
+  onRequestSnapshotAi,
 }: CompassChoosingProps) {
   const { all, active, ensureDraft, readonly } = useExerciseSnapshot(
     compass,
@@ -112,6 +114,7 @@ export function CompassChoosing({
       active={active}
       onNavigateSnapshot={onNavigateSnapshot}
       onCompare={onCompare}
+      onRequestSnapshotAi={onRequestSnapshotAi}
       onCreateNew={() => void ensureDraft(true)}
       savedAt={savedAt}
       error={error}

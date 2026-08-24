@@ -75,16 +75,19 @@ interface ExerciseChromeProps {
   active: LdSnapshot | null
   onNavigateSnapshot: (id: string | undefined) => void
   onCompare?: (ids: [string, string]) => void
+  onRequestSnapshotAi?: (snapshotId: string) => void
   onCreateNew: () => void
   savedAt: Date | null
   error: string | null
   help: string
+  helpCadence?: string
   lockedMsg: boolean
   onDismissLock?: () => void
   children: ReactNode
   completeLabel?: string
   onComplete?: () => void
   hideComplete?: boolean
+  completeDisabled?: boolean
 }
 
 export function ExerciseChrome({
@@ -93,16 +96,19 @@ export function ExerciseChrome({
   active,
   onNavigateSnapshot,
   onCompare,
+  onRequestSnapshotAi,
   onCreateNew,
   savedAt,
   error,
   help,
+  helpCadence,
   lockedMsg,
   onDismissLock,
   children,
   completeLabel = '완료하기',
   onComplete,
   hideComplete,
+  completeDisabled,
 }: ExerciseChromeProps) {
   const [helpOpen, setHelpOpen] = useState(false)
   const meta = EXERCISE_META.find((m) => m.key === exerciseKey)
@@ -110,6 +116,12 @@ export function ExerciseChrome({
   const timeLabel = savedAt
     ? `저장됨 · ${savedAt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`
     : null
+
+  const cadenceLine =
+    helpCadence ||
+    (meta?.cadenceDays
+      ? `보통 ${Math.round(meta.cadenceDays / 30)}개월마다 다시 해요`
+      : null)
 
   return (
     <div className="pb-28">
@@ -119,10 +131,10 @@ export function ExerciseChrome({
             className="rounded-full px-3 py-1 text-[12px] font-semibold"
             style={{ background: COMPASS.soft, color: COMPASS.ink }}
           >
-            {formatYm(active.takenAt)}의 나
+            {formatYm(active.takenAt)}의 나 · 읽기 전용
           </span>
         ) : (
-          <span className="text-[12px] text-[#8A847E]">{timeLabel ?? '자동 저장'}</span>
+          <span className="text-[13px] text-[#B5AFA8]">{timeLabel ?? '자동 저장'}</span>
         )}
         {error && <span className="text-[12px] text-[#E0574A]">{error}</span>}
       </div>
@@ -135,17 +147,30 @@ export function ExerciseChrome({
         onCreateNew={onCreateNew}
       />
 
+      {readonly && active && onRequestSnapshotAi && (
+        <button
+          type="button"
+          className="mb-3 rounded-full px-4 py-1.5 text-[12px] font-semibold text-white"
+          style={{ background: COMPASS.accent }}
+          onClick={() => onRequestSnapshotAi(active.id)}
+        >
+          이번 기록 AI로 읽기
+        </button>
+      )}
+
       <button
         type="button"
-        className="mb-4 text-left text-[13px] text-[#8A847E] underline-offset-2 hover:underline"
+        className="mb-4 flex items-center gap-1.5 text-left text-[13px] text-[#8A847E]"
         onClick={() => setHelpOpen((v) => !v)}
       >
-        {helpOpen ? '설명 접기' : '이 연습이 뭐예요?'}
+        <span aria-hidden>{helpOpen ? '▾' : '▸'}</span>
+        이 연습이 뭐예요?
       </button>
       {helpOpen && (
-        <p className="mb-5 rounded-2xl bg-[#FAF8F6] px-4 py-3 text-[14px] leading-relaxed text-[#8A847E]">
-          {help || meta?.description}
-        </p>
+        <div className="mb-5 rounded-2xl bg-[#FAF8F6] px-4 py-3 text-[14px] leading-relaxed text-[#8A847E]">
+          <p>{help || meta?.description}</p>
+          {cadenceLine && <p className="mt-2 text-[13px]">{cadenceLine}</p>}
+        </div>
       )}
 
       {lockedMsg && (
@@ -171,11 +196,12 @@ export function ExerciseChrome({
 
       {!readonly && active && !hideComplete && onComplete && (
         <div className="fixed inset-x-0 bottom-16 z-30 border-t border-[#ECE7E2] bg-white/95 px-4 py-3 backdrop-blur-md">
-          <div className="mx-auto flex w-full max-w-none justify-end px-4 sm:px-6 lg:px-8">
+          <div className="mx-auto flex w-full justify-end px-4 sm:px-6 lg:px-8">
             <button
               type="button"
               onClick={onComplete}
-              className="rounded-full px-5 py-2.5 text-[14px] font-semibold text-white"
+              disabled={completeDisabled}
+              className="h-12 rounded-full px-7 text-[14px] font-semibold text-white disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3E6B5E] focus-visible:ring-offset-2"
               style={{ background: COMPASS.accent }}
             >
               {completeLabel}

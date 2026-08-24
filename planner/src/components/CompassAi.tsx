@@ -1,5 +1,12 @@
-import { useState } from 'react'
-import { COMPASS, type LdAiReport } from '../types/compass'
+import { useMemo, useState } from 'react'
+import {
+  COMPASS,
+  EXERCISE_KEYS,
+  EXERCISE_META,
+  formatYm,
+  type ExerciseKey,
+  type LdAiReport,
+} from '../types/compass'
 import type { CompassActions } from '../hooks/useCompass'
 import { cardShadow } from './CompassExerciseShell'
 
@@ -8,6 +15,7 @@ interface CompassAiProps {
   onBack: () => void
   onAddWeeklyTask: (label: string) => void
   focusReportId?: string
+  onOpenSource?: (source: ExerciseKey) => void
 }
 
 export function CompassAi({
@@ -15,6 +23,7 @@ export function CompassAi({
   onBack,
   onAddWeeklyTask,
   focusReportId,
+  onOpenSource,
 }: CompassAiProps) {
   const reports = [...compass.aiReports].sort((a, b) =>
     b.createdAt.localeCompare(a.createdAt),
@@ -24,6 +33,21 @@ export function CompassAi({
   )
   const [loading, setLoading] = useState(false)
   const [added, setAdded] = useState<string | null>(null)
+
+  const completeSnaps = useMemo(
+    () =>
+      [...compass.snapshots]
+        .filter((s) => s.status === 'complete')
+        .sort(
+          (a, b) =>
+            b.takenAt.localeCompare(a.takenAt) ||
+            b.createdAt.localeCompare(a.createdAt),
+        ),
+    [compass.snapshots],
+  )
+  const [snapshotPick, setSnapshotPick] = useState(
+    () => completeSnaps[0]?.id ?? '',
+  )
 
   const active = reports.find((r) => r.id === activeId) ?? reports[0] ?? null
 
@@ -70,6 +94,35 @@ export function CompassAi({
     }
   }
 
+  const runSnapshot = async () => {
+    const id = snapshotPick || completeSnaps[0]?.id
+    if (!id) {
+      alert('완료된 기록이 있어야 snapshot 리포트를 받을 수 있어요.')
+      return
+    }
+    const snap = compass.snapshots.find((s) => s.id === id)
+    if (!snap) return
+    setLoading(true)
+    try {
+      const inputHash = `snapshot:v1:${snap.id}`
+      const report = await compass.requestAiReport({
+        reportType: 'snapshot',
+        inputHash,
+        inputRefs: { snapshotId: snap.id, exerciseKey: snap.exerciseKey },
+        payload: {
+          id: snap.id,
+          exerciseKey: snap.exerciseKey,
+          takenAt: snap.takenAt,
+          label: snap.label,
+          data: snap.data,
+        },
+      })
+      setActiveId(report.id)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="pb-24">
       <button type="button" onClick={onBack} className="mb-4 text-[13px] text-[#8A847E]">
@@ -80,16 +133,47 @@ export function CompassAi({
           <h1 className="text-[28px] font-bold text-[#1C1B1A]">AI 리포트</h1>
           <p className="mt-1 text-[14px] text-[#8A847E]">채팅이 아니라 기록 해석 카드</p>
         </div>
-        <button
-          type="button"
-          disabled={loading}
-          onClick={() => void runPathway()}
-          className="rounded-full px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50"
-          style={{ background: COMPASS.accent }}
-        >
-          {loading ? '기록 읽는 중…' : 'pathway 리포트'}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => void runPathway()}
+            className="rounded-full px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50"
+            style={{ background: COMPASS.accent }}
+          >
+            {loading ? '기록 읽는 중…' : 'pathway 리포트'}
+          </button>
+          <button
+            type="button"
+            disabled={loading || completeSnaps.length === 0}
+            onClick={() => void runSnapshot()}
+            className="rounded-full border border-[#ECE7E2] bg-white px-4 py-2 text-[13px] font-semibold text-[#1C1B1A] disabled:opacity-50"
+          >
+            snapshot 리포트
+          </button>
+        </div>
       </div>
+
+      {completeSnaps.length > 0 && (
+        <label className="mb-4 flex flex-wrap items-center gap-2 text-[12px] text-[#8A847E]">
+          snapshot 대상
+          <select
+            value={snapshotPick || completeSnaps[0]?.id}
+            onChange={(e) => setSnapshotPick(e.target.value)}
+            className="rounded-xl border border-[#ECE7E2] bg-white px-2 py-1.5 text-[13px] text-[#1C1B1A]"
+          >
+            {completeSnaps.map((s) => {
+              const meta = EXERCISE_META.find((m) => m.key === s.exerciseKey)
+              return (
+                <option key={s.id} value={s.id}>
+                  {meta?.name ?? s.exerciseKey} · {formatYm(s.takenAt)}
+                  {s.label ? ` · ${s.label}` : ''}
+                </option>
+              )
+            })}
+          </select>
+        </label>
+      )}
 
       {loading && (
         <div className="mb-4 animate-pulse space-y-2">
@@ -123,7 +207,7 @@ export function CompassAi({
 
       {!active ? (
         <p className="text-[14px] text-[#8A847E]">
-          아직 리포트가 없어요. 비교에서 받거나 pathway를 실행해 보세요.
+          아직 리포트가 없어요. 비교에서 받거나 pathway·snapshot을 실행해 보세요.
         </p>
       ) : (
         <ReportCard
@@ -133,6 +217,7 @@ export function CompassAi({
             setAdded(label)
           }}
           added={added}
+          onOpenSource={onOpenSource}
         />
       )}
     </div>
@@ -143,12 +228,17 @@ function ReportCard({
   report,
   onAddWeeklyTask,
   added,
+  onOpenSource,
 }: {
   report: LdAiReport
   onAddWeeklyTask: (label: string) => void
   added: string | null
+  onOpenSource?: (source: ExerciseKey) => void
 }) {
   const out = report.output
+  const isExerciseSource = (s: string): s is ExerciseKey =>
+    (EXERCISE_KEYS as readonly string[]).includes(s)
+
   return (
     <div className="space-y-4">
       <h2 className="text-[22px] font-bold leading-snug text-[#1C1B1A]">
@@ -163,16 +253,39 @@ function ReportCard({
             style={{ boxShadow: cardShadow }}
           >
             <p className="text-[14px] text-[#1C1B1A]">{o.text}</p>
-            {(o.evidence ?? []).map((e, j) => (
-              <blockquote
-                key={j}
-                className="mt-2 border-l-2 pl-3 text-[13px] text-[#8A847E]"
-                style={{ borderColor: COMPASS.line }}
+            {(o.evidence ?? []).map((e, j) =>
+              isExerciseSource(o.source) && onOpenSource ? (
+                <button
+                  key={j}
+                  type="button"
+                  className="mt-2 block w-full border-l-2 pl-3 text-left text-[13px] text-[#8A847E] underline-offset-2 hover:underline"
+                  style={{ borderColor: COMPASS.line }}
+                  onClick={() => onOpenSource(o.source as ExerciseKey)}
+                >
+                  {e}
+                </button>
+              ) : (
+                <blockquote
+                  key={j}
+                  className="mt-2 border-l-2 pl-3 text-[13px] text-[#8A847E]"
+                  style={{ borderColor: COMPASS.line }}
+                >
+                  {e}
+                </blockquote>
+              ),
+            )}
+            {isExerciseSource(o.source) && onOpenSource ? (
+              <button
+                type="button"
+                className="mt-1 text-[11px] font-medium underline-offset-2 hover:underline"
+                style={{ color: COMPASS.accent }}
+                onClick={() => onOpenSource(o.source as ExerciseKey)}
               >
-                {e}
-              </blockquote>
-            ))}
-            <p className="mt-1 text-[11px] text-[#B5AFA8]">{o.source}</p>
+                {EXERCISE_META.find((m) => m.key === o.source)?.name ?? o.source} 열기
+              </button>
+            ) : (
+              <p className="mt-1 text-[11px] text-[#B5AFA8]">{o.source}</p>
+            )}
           </div>
         ))}
       </section>

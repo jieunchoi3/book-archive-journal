@@ -108,3 +108,13 @@ body {
   }
 }
 
+.prompt-hint {
+  color: #b5afa8;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .compass-longform-editor {
+    transition: none !important;
+  }
+}
+

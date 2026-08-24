@@ -30,6 +30,8 @@ interface CompassMindmapProps {
   snapshotId?: string
   onNavigateSnapshot: (id: string | undefined) => void
   onCompare?: (ids: [string, string]) => void
+  onRequestSnapshotAi?: (snapshotId: string) => void
+  onSendToOdyssey?: (idea: MindmapRoleIdea) => void
 }
 
 function MindNode({
@@ -92,6 +94,8 @@ export function CompassMindmap({
   snapshotId,
   onNavigateSnapshot,
   onCompare,
+  onRequestSnapshotAi,
+  onSendToOdyssey,
 }: CompassMindmapProps) {
   const { all, active, ensureDraft, readonly } = useExerciseSnapshot(
     compass,
@@ -247,6 +251,7 @@ export function CompassMindmap({
       active={active}
       onNavigateSnapshot={onNavigateSnapshot}
       onCompare={onCompare}
+      onRequestSnapshotAi={onRequestSnapshotAi}
       onCreateNew={() => void ensureDraft(true)}
       savedAt={savedAt}
       error={error}
@@ -354,6 +359,16 @@ export function CompassMindmap({
               </p>
               <p className="mt-1 text-[15px] font-semibold">{r.title || '제목 없음'}</p>
               <p className="mt-1 text-[13px] text-[#5A5550]">{r.daySketch}</p>
+              {onSendToOdyssey && (
+                <button
+                  type="button"
+                  className="mt-3 rounded-full px-3 py-1.5 text-[12px] font-semibold text-white"
+                  style={{ background: COMPASS.accent }}
+                  onClick={() => onSendToOdyssey(r)}
+                >
+                  오디세이 플랜에 담기
+                </button>
+              )}
             </li>
           ))}
         </ul>
@@ -386,10 +401,28 @@ export function CompassMindmap({
               rows={3}
               className="mt-2 w-full rounded-xl border border-[#ECE7E2] bg-[#FAF8F6] px-3 py-2 text-[13px]"
             />
-            <div className="mt-3 flex justify-end gap-2">
+            <div className="mt-3 flex flex-wrap justify-end gap-2">
               <button type="button" onClick={() => setIdeaDraft(null)}>
                 취소
               </button>
+              {onSendToOdyssey && (
+                <button
+                  type="button"
+                  className="rounded-full border border-[#ECE7E2] px-4 py-2 text-[13px] font-semibold"
+                  style={{ color: COMPASS.accent }}
+                  onClick={() => {
+                    setData((d) => ({
+                      ...d,
+                      roleIdeas: [...d.roleIdeas, ideaDraft],
+                    }))
+                    onSendToOdyssey(ideaDraft)
+                    setIdeaDraft(null)
+                    setSelected([])
+                  }}
+                >
+                  오디세이 플랜에 담기
+                </button>
+              )}
               <button
                 type="button"
                 className="rounded-full px-4 py-2 text-[13px] font-semibold text-white"

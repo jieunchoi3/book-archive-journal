@@ -3,8 +3,11 @@ import { ArrowLeft } from 'lucide-react'
 import {
   COMPASS,
   EXERCISE_META,
+  emptyOdysseyData,
   type CompassRoute,
   type ExerciseKey,
+  type MindmapRoleIdea,
+  type OdysseyData,
 } from '../types/compass'
 import type { CompassActions } from '../hooks/useCompass'
 import { CompassOverview } from './CompassOverview'
@@ -44,6 +47,45 @@ export function CompassView({
     ids?: string[]
   }>({})
 
+  const requestSnapshotAi = async (snapshotId: string) => {
+    const snap = compass.snapshots.find((s) => s.id === snapshotId)
+    if (!snap) return
+    const report = await compass.requestAiReport({
+      reportType: 'snapshot',
+      inputHash: `snapshot:v1:${snap.id}`,
+      inputRefs: { snapshotId: snap.id, exerciseKey: snap.exerciseKey },
+      payload: {
+        id: snap.id,
+        exerciseKey: snap.exerciseKey,
+        takenAt: snap.takenAt,
+        label: snap.label,
+        data: snap.data,
+      },
+    })
+    setAiFocus(report.id)
+    onRouteChange({ page: 'ai' })
+  }
+
+  const sendIdeaToOdyssey = async (idea: MindmapRoleIdea) => {
+    const draft = await compass.createDraft('odyssey', undefined, false)
+    const current = compass.getDraftData(draft, emptyOdysseyData())
+    const plans = (
+      current.plans?.length === 3 ? current.plans : emptyOdysseyData().plans
+    ).map((p) => ({ ...p })) as OdysseyData['plans']
+    let idx = plans.findIndex((p) => !p.title.trim())
+    if (idx < 0) idx = 0
+    const plan = plans[idx]
+    const qs = [...plan.questions] as [string, string, string]
+    if (!qs[0].trim() && idea.daySketch.trim()) qs[0] = idea.daySketch
+    plans[idx] = {
+      ...plan,
+      title: idea.title.trim() || plan.title,
+      questions: qs,
+    }
+    await compass.updateDraftData(draft.id, { plans } as unknown as Record<string, unknown>)
+    onRouteChange({ page: 'exercise', key: 'odyssey', snapshotId: draft.id })
+  }
+
   if (compass.loading) {
     return (
       <div className="min-h-screen w-full bg-[#F7F5F3] px-4 pb-24 pt-6 sm:px-6 lg:px-8">
@@ -60,6 +102,10 @@ export function CompassView({
           year={year}
           onYearChange={setYear}
           onNavigate={onRouteChange}
+          onCompareExercise={(key, ids) => {
+            setCompareSeed({ key, ids })
+            onRouteChange({ page: 'compare' })
+          }}
         />
       )}
 
@@ -94,12 +140,14 @@ export function CompassView({
             setCompareSeed({ key: route.key, ids })
             onRouteChange({ page: 'compare' })
           }}
+          onRequestSnapshotAi={(id) => void requestSnapshotAi(id)}
           onOpenExercise={(key) => onRouteChange({ page: 'exercise', key })}
           onCreatePrototype={(planId) => {
             setProtoPlanLink(planId)
             onRouteChange({ page: 'exercise', key: 'prototype' })
           }}
           protoPlanLink={protoPlanLink}
+          onSendToOdyssey={(idea) => void sendIdeaToOdyssey(idea)}
         />
       )}
 
@@ -137,6 +185,14 @@ export function CompassView({
           onBack={() => onRouteChange({ page: 'overview' })}
           onAddWeeklyTask={onAddWeeklyTask}
           focusReportId={aiFocus}
+          onOpenSource={(source) => {
+            const last = compass.completeSnapshotsFor(source).at(-1)
+            onRouteChange({
+              page: 'exercise',
+              key: source,
+              snapshotId: last?.id,
+            })
+          }}
         />
       )}
     </div>
@@ -150,9 +206,11 @@ function ExerciseShell({
   onBack,
   onSnapshot,
   onCompare,
+  onRequestSnapshotAi,
   onOpenExercise,
   onCreatePrototype,
   protoPlanLink,
+  onSendToOdyssey,
 }: {
   exerciseKey: ExerciseKey
   snapshotId?: string
@@ -160,9 +218,11 @@ function ExerciseShell({
   onBack: () => void
   onSnapshot: (id: string | undefined) => void
   onCompare: (ids: [string, string]) => void
+  onRequestSnapshotAi: (snapshotId: string) => void
   onOpenExercise: (key: ExerciseKey) => void
   onCreatePrototype: (planId: string, title: string) => void
   protoPlanLink: string | null
+  onSendToOdyssey: (idea: MindmapRoleIdea) => void
 }) {
   const meta = EXERCISE_META.find((m) => m.key === exerciseKey)
 
@@ -200,6 +260,7 @@ function ExerciseShell({
           snapshotId={snapshotId}
           onNavigateSnapshot={onSnapshot}
           onCompare={onCompare}
+          onRequestSnapshotAi={onRequestSnapshotAi}
         />
       )}
       {(exerciseKey === 'workview' || exerciseKey === 'lifeview') && (
@@ -209,6 +270,7 @@ function ExerciseShell({
           snapshotId={snapshotId}
           onNavigateSnapshot={onSnapshot}
           onCompare={onCompare}
+          onRequestSnapshotAi={onRequestSnapshotAi}
         />
       )}
       {exerciseKey === 'coherence' && (
@@ -218,6 +280,7 @@ function ExerciseShell({
           onNavigateSnapshot={onSnapshot}
           onOpenExercise={(k) => onOpenExercise(k)}
           onCompare={onCompare}
+          onRequestSnapshotAi={onRequestSnapshotAi}
         />
       )}
       {exerciseKey === 'goodtime' && (
@@ -249,6 +312,7 @@ function ExerciseShell({
           snapshotId={snapshotId}
           onNavigateSnapshot={onSnapshot}
           onCompare={onCompare}
+          onRequestSnapshotAi={onRequestSnapshotAi}
           onCreatePrototype={onCreatePrototype}
         />
       )}
@@ -267,6 +331,7 @@ function ExerciseShell({
           snapshotId={snapshotId}
           onNavigateSnapshot={onSnapshot}
           onCompare={onCompare}
+          onRequestSnapshotAi={onRequestSnapshotAi}
         />
       )}
       {exerciseKey === 'failure' && (
@@ -275,6 +340,7 @@ function ExerciseShell({
           snapshotId={snapshotId}
           onNavigateSnapshot={onSnapshot}
           onCompare={onCompare}
+          onRequestSnapshotAi={onRequestSnapshotAi}
         />
       )}
       {exerciseKey === 'gravity' && (
@@ -283,6 +349,7 @@ function ExerciseShell({
           snapshotId={snapshotId}
           onNavigateSnapshot={onSnapshot}
           onCompare={onCompare}
+          onRequestSnapshotAi={onRequestSnapshotAi}
         />
       )}
       {exerciseKey === 'team' && (
@@ -291,6 +358,7 @@ function ExerciseShell({
           snapshotId={snapshotId}
           onNavigateSnapshot={onSnapshot}
           onCompare={onCompare}
+          onRequestSnapshotAi={onRequestSnapshotAi}
         />
       )}
       {exerciseKey === 'mindmap' && (
@@ -299,6 +367,8 @@ function ExerciseShell({
           snapshotId={snapshotId}
           onNavigateSnapshot={onSnapshot}
           onCompare={onCompare}
+          onRequestSnapshotAi={onRequestSnapshotAi}
+          onSendToOdyssey={onSendToOdyssey}
         />
       )}
     </div>

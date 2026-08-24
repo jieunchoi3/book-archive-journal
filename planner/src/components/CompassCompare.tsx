@@ -292,6 +292,12 @@ function LongformCompare({ snaps }: { snaps: LdSnapshot[] }) {
 
 function OdysseyCompare({ snaps }: { snaps: LdSnapshot[] }) {
   const plans = ['A', 'B', 'C']
+  const gaugeMeta = [
+    { key: 'resources' as const, label: '자원', color: '#5E8C7B' },
+    { key: 'pull' as const, label: '끌림', color: '#3E6B5E' },
+    { key: 'confidence' as const, label: '자신감', color: '#C08A4A' },
+    { key: 'coherence' as const, label: '내 관점과 맞나', color: '#B4635A' },
+  ]
   return (
     <div className="space-y-6">
       {plans.map((pid, pi) => (
@@ -315,18 +321,78 @@ function OdysseyCompare({ snaps }: { snaps: LdSnapshot[] }) {
                       </li>
                     ))}
                   </ul>
-                  <div className="mt-2 grid grid-cols-2 gap-1 text-[11px]">
-                    {plan &&
-                      Object.entries(plan.gauges).map(([k, v]) => (
-                        <span key={k}>
-                          {k}:{v}
-                        </span>
-                      ))}
-                  </div>
                 </div>
               )
             })}
           </div>
+
+          {snaps.length >= 2 && (
+            <div
+              className="mt-3 overflow-x-auto rounded-[18px] border border-[#ECE7E2] bg-white p-4"
+              style={{ boxShadow: cardShadow }}
+            >
+              <svg
+                viewBox={`0 0 ${Math.max(280, snaps.length * 100)} 140`}
+                className="h-32 w-full"
+              >
+                {gaugeMeta.map((g) => {
+                  const pts = snaps.map((s, i) => {
+                    const v =
+                      (s.data as unknown as OdysseyData).plans?.[pi]?.gauges?.[g.key] ?? 0
+                    const x = 36 + i * 90
+                    const y = 110 - (v / 5) * 90
+                    return `${x},${y}`
+                  })
+                  return (
+                    <polyline
+                      key={g.key}
+                      fill="none"
+                      stroke={g.color}
+                      strokeWidth={2}
+                      points={pts.join(' ')}
+                    />
+                  )
+                })}
+                {snaps.map((s, i) => (
+                  <text
+                    key={s.id}
+                    x={36 + i * 90}
+                    y={130}
+                    textAnchor="middle"
+                    fontSize={10}
+                    fill="#8A847E"
+                  >
+                    {formatYm(s.takenAt)}
+                  </text>
+                ))}
+              </svg>
+              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {gaugeMeta.map((g) => {
+                  const first =
+                    (snaps[0].data as unknown as OdysseyData).plans?.[pi]?.gauges?.[
+                      g.key
+                    ] ?? 0
+                  const last =
+                    (snaps[snaps.length - 1].data as unknown as OdysseyData).plans?.[
+                      pi
+                    ]?.gauges?.[g.key] ?? 0
+                  const delta = last - first
+                  return (
+                    <div key={g.key} className="rounded-xl bg-[#FAF8F6] px-2 py-2 text-center">
+                      <p className="text-[11px] text-[#8A847E]">{g.label}</p>
+                      <p
+                        className="text-[18px] font-bold tabular-nums"
+                        style={{ color: g.color }}
+                      >
+                        {delta > 0 ? `+${delta}` : delta}
+                      </p>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {snaps.length >= 2 && (
             <MilestoneDiff
               a={(snaps[0].data as unknown as OdysseyData).plans?.[pi]?.milestones ?? []}

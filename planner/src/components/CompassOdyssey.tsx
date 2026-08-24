@@ -4,6 +4,8 @@ import {
   emptyOdysseyData,
   newId,
   ODYSSEY_DEFAULT_BADGES,
+  type MindmapData,
+  type MindmapRoleIdea,
   type OdysseyData,
   type OdysseyPlan,
 } from '../types/compass'
@@ -20,6 +22,7 @@ interface CompassOdysseyProps {
   snapshotId?: string
   onNavigateSnapshot: (id: string | undefined) => void
   onCompare?: (ids: [string, string]) => void
+  onRequestSnapshotAi?: (snapshotId: string) => void
   onCreatePrototype?: (planId: string, title: string) => void
 }
 
@@ -35,6 +38,7 @@ export function CompassOdyssey({
   snapshotId,
   onNavigateSnapshot,
   onCompare,
+  onRequestSnapshotAi,
   onCreatePrototype,
 }: CompassOdysseyProps) {
   const { all, active, ensureDraft, readonly } = useExerciseSnapshot(
@@ -45,6 +49,7 @@ export function CompassOdyssey({
   )
   const [data, setData] = useState<OdysseyData>(emptyOdysseyData())
   const [lockedMsg, setLockedMsg] = useState(false)
+  const [showMindmapIdeas, setShowMindmapIdeas] = useState(false)
 
   useEffect(() => {
     if (!active) {
@@ -56,6 +61,33 @@ export function CompassOdyssey({
     else setData(d)
     setLockedMsg(false)
   }, [active, compass])
+
+  const mindmapIdeas = (() => {
+    const mm = compass.completeSnapshotsFor('mindmap').at(-1)
+    return (mm?.data as unknown as MindmapData | undefined)?.roleIdeas ?? []
+  })()
+
+  const applyIdea = (idea: MindmapRoleIdea, planIndex: number) => {
+    if (readonly) {
+      setLockedMsg(true)
+      return
+    }
+    setData((d) => {
+      const plans = [...d.plans] as OdysseyData['plans']
+      const plan = plans[planIndex]
+      plans[planIndex] = {
+        ...plan,
+        title: idea.title.trim() || plan.title,
+        questions: [
+          plan.questions[0].trim() ? plan.questions[0] : idea.daySketch,
+          plan.questions[1],
+          plan.questions[2],
+        ],
+      }
+      return { plans }
+    })
+    setShowMindmapIdeas(false)
+  }
 
   const save = useCallback(
     async (id: string, next: OdysseyData) => {
@@ -90,6 +122,7 @@ export function CompassOdyssey({
       active={active}
       onNavigateSnapshot={onNavigateSnapshot}
       onCompare={onCompare}
+      onRequestSnapshotAi={onRequestSnapshotAi}
       onCreateNew={() => void ensureDraft(true)}
       savedAt={savedAt}
       error={error}
@@ -97,6 +130,45 @@ export function CompassOdyssey({
       lockedMsg={lockedMsg}
       onComplete={() => active && void compass.completeSnapshot(active.id)}
     >
+      {!readonly && mindmapIdeas.length > 0 && (
+        <div className="mb-4">
+          <button
+            type="button"
+            className="rounded-full border border-[#ECE7E2] bg-white px-4 py-2 text-[12px] font-semibold"
+            style={{ color: COMPASS.accent }}
+            onClick={() => setShowMindmapIdeas((v) => !v)}
+          >
+            마인드맵 역할 아이디어 불러오기
+          </button>
+          {showMindmapIdeas && (
+            <ul className="mt-2 space-y-2">
+              {mindmapIdeas.map((idea) => (
+                <li
+                  key={idea.id}
+                  className="rounded-[14px] border border-[#ECE7E2] bg-white p-3"
+                  style={{ boxShadow: cardShadow }}
+                >
+                  <p className="text-[14px] font-semibold">{idea.title || '제목 없음'}</p>
+                  <p className="mt-0.5 text-[12px] text-[#8A847E]">{idea.daySketch}</p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {(['A', 'B', 'C'] as const).map((label, i) => (
+                      <button
+                        key={label}
+                        type="button"
+                        className="rounded-full px-2.5 py-1 text-[11px] font-semibold text-white"
+                        style={{ background: COMPASS.accent }}
+                        onClick={() => applyIdea(idea, i)}
+                      >
+                        플랜 {label}에 넣기
+                      </button>
+                    ))}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory">
         {data.plans.map((plan, pi) => (
           <div

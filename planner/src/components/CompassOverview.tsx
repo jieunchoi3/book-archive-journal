@@ -20,6 +20,7 @@ interface CompassOverviewProps {
   year: number
   onYearChange: (y: number) => void
   onNavigate: (route: CompassRoute) => void
+  onCompareExercise?: (key: ExerciseKey, ids: string[]) => void
 }
 
 export function CompassOverview({
@@ -27,6 +28,7 @@ export function CompassOverview({
   year,
   onYearChange,
   onNavigate,
+  onCompareExercise,
 }: CompassOverviewProps) {
   const [query, setQuery] = useState('')
   const hasAny =
@@ -273,7 +275,10 @@ export function CompassOverview({
             onOpen={(key, snapshotId) =>
               onNavigate({ page: 'exercise', key, snapshotId })
             }
-            onCompare={() => onNavigate({ page: 'compare' })}
+            onCompare={(key, ids) => {
+              if (onCompareExercise) onCompareExercise(key, ids)
+              else onNavigate({ page: 'compare' })
+            }}
           />
         ))}
         <button
@@ -313,11 +318,12 @@ function ExerciseCard({
   meta: (typeof EXERCISE_META)[number]
   compass: CompassActions
   onOpen: (key: ExerciseKey, snapshotId?: string) => void
-  onCompare: () => void
+  onCompare: (key: ExerciseKey, ids: string[]) => void
 }) {
   const completes = compass.completeSnapshotsFor(meta.key)
   const last = completes[completes.length - 1]
   const mini = completes.slice(-5)
+  const compareIds = completes.slice(-2).map((s) => s.id)
 
   return (
     <div
@@ -371,7 +377,7 @@ function ExerciseCard({
           <button
             type="button"
             className="rounded-full border border-[#ECE7E2] px-4 py-2 text-[13px] font-semibold text-[#1C1B1A]"
-            onClick={onCompare}
+            onClick={() => onCompare(meta.key, compareIds)}
           >
             비교
           </button>

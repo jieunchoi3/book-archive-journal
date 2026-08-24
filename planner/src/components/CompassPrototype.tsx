@@ -12,7 +12,15 @@ interface CompassPrototypeProps {
 export function CompassPrototype({ compass, initialPlanLink }: CompassPrototypeProps) {
   const [seg, setSeg] = useState<'conversation' | 'experience' | 'all'>('all')
   const [openId, setOpenId] = useState<string | null>(null)
-  const [goal, setGoal] = useState(3)
+  const [goal, setGoal] = useState(() => {
+    try {
+      const n = Number(localStorage.getItem('compass-proto-goal'))
+      return n > 0 ? n : 3
+    } catch {
+      return 3
+    }
+  })
+  const [learnedErrorId, setLearnedErrorId] = useState<string | null>(null)
   const [draft, setDraft] = useState({
     kind: 'conversation' as PrototypeKind,
     title: '',
@@ -77,7 +85,15 @@ export function CompassPrototype({ compass, initialPlanLink }: CompassPrototypeP
               min={1}
               max={20}
               value={goal}
-              onChange={(e) => setGoal(Number(e.target.value) || 3)}
+              onChange={(e) => {
+                const n = Number(e.target.value) || 3
+                setGoal(n)
+                try {
+                  localStorage.setItem('compass-proto-goal', String(n))
+                } catch {
+                  /* ignore */
+                }
+              }}
               className="w-12 rounded border border-[#ECE7E2] px-1 py-0.5 text-center"
             />
           </label>
@@ -210,7 +226,7 @@ export function CompassPrototype({ compass, initialPlanLink }: CompassPrototypeP
                       />
                     </label>
                   ))}
-                  {p.status === 'done' && !(p.learned ?? '').trim() && (
+                  {learnedErrorId === p.id && (
                     <p className="text-[12px] text-[#E0574A]">
                       여기가 이 대화의 전부예요.
                     </p>
@@ -222,9 +238,10 @@ export function CompassPrototype({ compass, initialPlanLink }: CompassPrototypeP
                       style={{ background: COMPASS.accent }}
                       onClick={() => {
                         if (!(p.learned ?? '').trim()) {
-                          void update({ ...p, status: 'done' })
+                          setLearnedErrorId(p.id)
                           return
                         }
+                        setLearnedErrorId(null)
                         void update({ ...p, status: 'done' })
                       }}
                     >

@@ -18,6 +18,7 @@ interface CompassGravityProps {
   snapshotId?: string
   onNavigateSnapshot: (id: string | undefined) => void
   onCompare?: (ids: [string, string]) => void
+  onRequestSnapshotAi?: (snapshotId: string) => void
 }
 
 export function CompassGravity({
@@ -25,6 +26,7 @@ export function CompassGravity({
   snapshotId,
   onNavigateSnapshot,
   onCompare,
+  onRequestSnapshotAi,
 }: CompassGravityProps) {
   const { all, active, ensureDraft, readonly } = useExerciseSnapshot(
     compass,
@@ -80,6 +82,7 @@ export function CompassGravity({
       active={active}
       onNavigateSnapshot={onNavigateSnapshot}
       onCompare={onCompare}
+      onRequestSnapshotAi={onRequestSnapshotAi}
       onCreateNew={() => void ensureDraft(true)}
       savedAt={savedAt}
       error={error}

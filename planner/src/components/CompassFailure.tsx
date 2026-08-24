@@ -19,6 +19,7 @@ interface CompassFailureProps {
   snapshotId?: string
   onNavigateSnapshot: (id: string | undefined) => void
   onCompare?: (ids: [string, string]) => void
+  onRequestSnapshotAi?: (snapshotId: string) => void
 }
 
 const KINDS: FailureKind[] = ['실수', '약점', '성장통']
@@ -28,6 +29,7 @@ export function CompassFailure({
   snapshotId,
   onNavigateSnapshot,
   onCompare,
+  onRequestSnapshotAi,
 }: CompassFailureProps) {
   const { all, completes, active, ensureDraft, readonly } = useExerciseSnapshot(
     compass,
@@ -109,6 +111,7 @@ export function CompassFailure({
       active={active}
       onNavigateSnapshot={onNavigateSnapshot}
       onCompare={onCompare}
+      onRequestSnapshotAi={onRequestSnapshotAi}
       onCreateNew={() => void ensureDraft(true)}
       savedAt={savedAt}
       error={error}

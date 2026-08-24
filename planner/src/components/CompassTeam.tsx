@@ -20,6 +20,7 @@ interface CompassTeamProps {
   snapshotId?: string
   onNavigateSnapshot: (id: string | undefined) => void
   onCompare?: (ids: [string, string]) => void
+  onRequestSnapshotAi?: (snapshotId: string) => void
 }
 
 const ROLES: TeamRole[] = ['멘토', '응원', '같이 하는 사람', '현실 검증']
@@ -29,6 +30,7 @@ export function CompassTeam({
   snapshotId,
   onNavigateSnapshot,
   onCompare,
+  onRequestSnapshotAi,
 }: CompassTeamProps) {
   const { all, active, ensureDraft, readonly } = useExerciseSnapshot(
     compass,
@@ -75,6 +77,7 @@ export function CompassTeam({
       active={active}
       onNavigateSnapshot={onNavigateSnapshot}
       onCompare={onCompare}
+      onRequestSnapshotAi={onRequestSnapshotAi}
       onCreateNew={() => void ensureDraft(true)}
       savedAt={savedAt}
       error={error}

@@ -211,11 +211,22 @@ export interface LdAiReport {
 
 export interface LongformData {
   body: string
-  promptsUsed: string[]
+  /** @deprecated use chips_used */
+  promptsUsed?: string[]
+  chips_used: string[]
 }
 
 export function emptyLongformData(): LongformData {
-  return { body: '', promptsUsed: [] }
+  return { body: '', chips_used: [] }
+}
+
+export function normalizeLongformData(raw: unknown): LongformData {
+  const d = (raw ?? {}) as Partial<LongformData>
+  const chips = d.chips_used ?? d.promptsUsed ?? []
+  return {
+    body: typeof d.body === 'string' ? d.body : '',
+    chips_used: [...chips],
+  }
 }
 
 export type CoherenceLinkKind = '맞물림' | '충돌' | '애매'

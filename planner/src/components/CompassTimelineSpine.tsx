@@ -1,5 +1,4 @@
 import { useMemo, useRef, useState, type MouseEvent } from 'react'
-import { Plus } from 'lucide-react'
 import { COMPASS, formatYm, type LdSnapshot } from '../types/compass'
 
 interface CompassTimelineSpineProps {
@@ -8,10 +7,10 @@ interface CompassTimelineSpineProps {
   onSelect: (snapshotId: string) => void
   onCompare?: (ids: [string, string]) => void
   onCreateNew: () => void
-  /** Show "지금" empty slot for starting a new run */
   showNowSlot?: boolean
 }
 
+/** §0 Timeline Spine — date-proportional dots; 0 snapshots = grey hint only. */
 export function CompassTimelineSpine({
   snapshots,
   activeId,
@@ -26,7 +25,9 @@ export function CompassTimelineSpine({
   const ordered = useMemo(
     () =>
       [...snapshots].sort(
-        (a, b) => a.takenAt.localeCompare(b.takenAt) || a.createdAt.localeCompare(b.createdAt),
+        (a, b) =>
+          a.takenAt.localeCompare(b.takenAt) ||
+          a.createdAt.localeCompare(b.createdAt),
       ),
     [snapshots],
   )
@@ -34,55 +35,41 @@ export function CompassTimelineSpine({
   const completes = ordered.filter((s) => s.status === 'complete')
   const drafts = ordered.filter((s) => s.status === 'draft')
 
-  if (completes.length <= 1 && drafts.length === 0 && completes.length < 2) {
-    const only = completes[0]
+  // 0 snapshots (no complete, no draft yet counted as "first write"): grey line only
+  if (completes.length === 0 && drafts.length === 0) {
     return (
-      <div
-        className="mb-5 rounded-[18px] border border-[#ECE7E2] bg-white px-5 py-4"
-        style={{ boxShadow: '0 1px 2px rgba(28,27,26,.04), 0 8px 24px rgba(28,27,26,.05)' }}
-      >
-        <div className="flex items-center gap-3">
-          {only ? (
-            <button
-              type="button"
-              onClick={() => onSelect(only.id)}
-              className={`flex h-3.5 w-3.5 shrink-0 rounded-full focus:outline-none focus:ring-2 focus:ring-[${COMPASS.accent}] focus:ring-offset-2`}
-              style={{
-                background: activeId === only.id ? COMPASS.accent : COMPASS.line,
-              }}
-              aria-label={`${formatYm(only.takenAt)} ${only.label ?? ''}`}
-            />
-          ) : (
-            <span
-              className="flex h-3.5 w-3.5 shrink-0 rounded-full border-2 border-dashed"
-              style={{ borderColor: COMPASS.line }}
-            />
-          )}
-          <p className="flex-1 text-[13px] text-[#8A847E]">
-            다음에 다시 하면 여기서 비교할 수 있어요
-          </p>
+      <div className="mb-5">
+        <div className="mb-2 flex justify-end">
           <button
             type="button"
             onClick={onCreateNew}
-            className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-semibold text-white"
-            style={{ background: COMPASS.accent }}
+            className="text-[13px] font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3E6B5E] focus-visible:ring-offset-2"
+            style={{ color: COMPASS.accent }}
           >
-            <Plus size={14} />
-            새로 하기
+            + 새로 하기
           </button>
+        </div>
+        <div
+          className="flex h-11 items-center rounded-xl px-4 text-[13px] text-[#8A847E]"
+          style={{ background: '#FAF8F6' }}
+        >
+          지금 쓰는 게 첫 기록이에요. 다음에 다시 하면 여기서 비교할 수 있어요.
         </div>
       </div>
     )
   }
 
+  // Only completes map onto the time axis; drafts sit near "now"
+  const today = Date.now()
   const dates = completes.map((s) => Date.parse(s.takenAt))
-  const min = dates.length ? Math.min(...dates) : Date.now()
-  const max = Math.max(Date.now(), ...(dates.length ? dates : [Date.now()]))
+  const min = dates.length ? Math.min(...dates) : today
+  const max = Math.max(today, ...(dates.length ? dates : [today]))
   const span = Math.max(max - min, 1)
 
-  const positions = completes.map((s) => {
+  const positions = completes.map((s, i) => {
     const t = Date.parse(s.takenAt)
-    return { snap: s, pct: ((t - min) / span) * 100 }
+    const pct = ((t - min) / span) * 100
+    return { snap: s, pct: Math.min(92, Math.max(0, pct)), index: i }
   })
 
   const handlePointClick = (id: string, e: MouseEvent) => {
@@ -96,24 +83,38 @@ export function CompassTimelineSpine({
   }
 
   return (
-    <div
-      className="mb-5 rounded-[18px] border border-[#ECE7E2] bg-white px-5 py-4"
-      style={{ boxShadow: '0 1px 2px rgba(28,27,26,.04), 0 8px 24px rgba(28,27,26,.05)' }}
-    >
-      <div className="relative mb-6 h-10">
+    <div className="mb-5">
+      <div className="mb-2 flex justify-end">
+        <button
+          type="button"
+          onClick={onCreateNew}
+          className="text-[13px] font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3E6B5E] focus-visible:ring-offset-2"
+          style={{ color: COMPASS.accent }}
+        >
+          + 새로 하기
+        </button>
+      </div>
+
+      <div
+        className="relative w-full px-8"
+        style={{ height: 96 }}
+      >
         <div
-          className="absolute left-0 right-12 top-[7px] h-[2px]"
+          className="absolute left-8 right-8 top-1/2 h-px -translate-y-1/2"
           style={{ background: COMPASS.line }}
         />
-        {positions.map(({ snap, pct }, i) => {
+
+        {positions.map(({ snap, pct, index }) => {
           const active = activeId === snap.id
-          const label = snap.label ?? `${i + 1}차`
+          const label = snap.label ?? `${index + 1}차`
+          const showLabel = positions.length <= 4 || index % 2 === 0 || active
           return (
             <button
               key={snap.id}
               type="button"
-              className="absolute top-0 -translate-x-1/2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3E6B5E] focus-visible:ring-offset-2"
-              style={{ left: `calc(${pct}% * 0.88)` }}
+              title={`${formatYm(snap.takenAt)} ${label}`}
+              className="absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3E6B5E] focus-visible:ring-offset-2"
+              style={{ left: `calc(2rem + (100% - 4rem) * ${pct / 100})` }}
               onClick={(e) => handlePointClick(snap.id, e)}
               onMouseDown={() => {
                 dragStart.current = snap.id
@@ -131,22 +132,25 @@ export function CompassTimelineSpine({
               aria-label={`${formatYm(snap.takenAt)} ${label}`}
             >
               <span
-                className="mx-auto block h-3.5 w-3.5 rounded-full"
+                className="mx-auto block rounded-full"
                 style={{
-                  background: active ? COMPASS.accent : COMPASS.ink,
+                  width: 12,
+                  height: 12,
+                  background: COMPASS.accent,
                   boxShadow: active ? `0 0 0 4px ${COMPASS.soft}` : undefined,
                 }}
               />
-              <span className="mt-1.5 block whitespace-nowrap text-[11px] font-medium text-[#1C1B1A]">
-                {formatYm(snap.takenAt)}
-              </span>
-              <span
-                className="block text-[10px]"
-                style={{ color: active ? COMPASS.accent : '#8A847E' }}
-              >
-                {label}
-                {active ? ' · 보고 있음' : ''}
-              </span>
+              {showLabel && (
+                <>
+                  <span className="mt-2.5 block whitespace-nowrap text-center text-[12px] text-[#8A847E]">
+                    {formatYm(snap.takenAt)}
+                  </span>
+                  <span className="block whitespace-nowrap text-center text-[12px] text-[#B5AFA8]">
+                    {label}
+                    {active ? ' · 보고 있음' : ''}
+                  </span>
+                </>
+              )}
             </button>
           )
         })}
@@ -155,42 +159,36 @@ export function CompassTimelineSpine({
           <button
             key={d.id}
             type="button"
-            className="absolute top-0 right-14 -translate-x-1/2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3E6B5E]"
+            className="absolute top-1/2 right-14 z-10 -translate-y-1/2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3E6B5E]"
             onClick={() => onSelect(d.id)}
             aria-label="작성 중"
+            title="작성 중"
           >
             <span
-              className="mx-auto block h-3.5 w-3.5 rounded-full border-2 border-dashed bg-white"
-              style={{ borderColor: COMPASS.accent }}
+              className="mx-auto block rounded-full border-[1.5px] border-dashed bg-transparent"
+              style={{ width: 12, height: 12, borderColor: COMPASS.accent }}
             />
-            <span className="mt-1.5 block text-[10px] text-[#8A847E]">작성 중</span>
+            <span className="mt-2.5 block text-center text-[12px] text-[#B5AFA8]">
+              작성 중
+            </span>
           </button>
         ))}
 
         {showNowSlot && (
           <button
             type="button"
-            className="absolute right-0 top-0 flex flex-col items-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3E6B5E]"
+            className="absolute right-8 top-1/2 z-10 flex -translate-y-1/2 flex-col items-center focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3E6B5E]"
             onClick={onCreateNew}
-            aria-label="새로 하기"
+            aria-label="지금"
+            title="지금"
           >
             <span
-              className="h-3.5 w-3.5 rounded-full border-2 bg-white"
-              style={{ borderColor: COMPASS.line }}
+              className="rounded-full border-[1.5px] bg-white"
+              style={{ width: 14, height: 14, borderColor: COMPASS.line }}
             />
-            <span className="mt-1.5 text-[10px] text-[#8A847E]">지금</span>
+            <span className="mt-2.5 text-[12px] text-[#B5AFA8]">지금</span>
           </button>
         )}
-
-        <button
-          type="button"
-          onClick={onCreateNew}
-          className="absolute -right-1 top-8 inline-flex items-center gap-0.5 text-[12px] font-semibold"
-          style={{ color: COMPASS.accent }}
-        >
-          <Plus size={14} />
-          새로 하기
-        </button>
       </div>
     </div>
   )

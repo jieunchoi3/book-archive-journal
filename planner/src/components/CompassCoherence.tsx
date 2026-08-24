@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   COMPASS,
   emptyCoherenceData,
@@ -22,6 +22,7 @@ interface CompassCoherenceProps {
   onNavigateSnapshot: (id: string | undefined) => void
   onOpenExercise: (key: 'workview' | 'lifeview') => void
   onCompare?: (ids: [string, string]) => void
+  onRequestSnapshotAi?: (snapshotId: string) => void
 }
 
 const KINDS: CoherenceLinkKind[] = ['맞물림', '충돌', '애매']
@@ -38,6 +39,7 @@ export function CompassCoherence({
   onNavigateSnapshot,
   onOpenExercise,
   onCompare,
+  onRequestSnapshotAi,
 }: CompassCoherenceProps) {
   const { all, active, ensureDraft, readonly } = useExerciseSnapshot(
     compass,
@@ -50,6 +52,8 @@ export function CompassCoherence({
   const [leftSel, setLeftSel] = useState('')
   const [rightSel, setRightSel] = useState('')
   const [pendingKind, setPendingKind] = useState<CoherenceLinkKind | null>(null)
+  const overlayRef = useRef<HTMLDivElement>(null)
+  const [overlaySize, setOverlaySize] = useState({ w: 0, h: 0 })
 
   const work = compass.completeSnapshotsFor('workview').at(-1)
   const life = compass.completeSnapshotsFor('lifeview').at(-1)
@@ -69,6 +73,19 @@ export function CompassCoherence({
     })
     setLockedMsg(false)
   }, [active, compass, life?.id, work?.id])
+
+  useEffect(() => {
+    const el = overlayRef.current
+    if (!el) return
+    const measure = () => {
+      const r = el.getBoundingClientRect()
+      setOverlaySize({ w: r.width, h: r.height })
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [work, life, data.links.length])
 
   const save = useCallback(
     async (id: string, next: CoherenceData) => {
@@ -107,11 +124,23 @@ export function CompassCoherence({
     conflicts.every((l) => (l.action ?? '').trim().length > 0) && data.links.length > 0
 
   const linkPaths = useMemo(() => {
+    const w = overlaySize.w
+    const h = Math.max(overlaySize.h, 80)
+    const n = Math.max(data.links.length, 1)
     return data.links.map((l, i) => {
-      const y = 40 + i * 48
-      return { link: l, y }
+      const y = 48 + (i / n) * Math.max(h - 96, 48)
+      const x1 = 24
+      const x2 = Math.max(w - 24, 80)
+      const c1 = w * 0.35
+      const c2 = w * 0.65
+      return {
+        link: l,
+        y,
+        d: `M ${x1} ${y} C ${c1} ${y}, ${c2} ${y}, ${x2} ${y}`,
+        midX: w / 2,
+      }
     })
-  }, [data.links])
+  }, [data.links, overlaySize.h, overlaySize.w])
 
   if (!work || !life) {
     return (
@@ -156,6 +185,7 @@ export function CompassCoherence({
       active={active}
       onNavigateSnapshot={onNavigateSnapshot}
       onCompare={onCompare}
+      onRequestSnapshotAi={onRequestSnapshotAi}
       onCreateNew={() => void ensureDraft(true)}
       savedAt={savedAt}
       error={error}
@@ -167,7 +197,7 @@ export function CompassCoherence({
       }}
       completeLabel={canComplete ? '완료하기' : '충돌마다 할 일을 적어 주세요'}
     >
-      <div className="relative grid gap-4 lg:grid-cols-2">
+      <div ref={overlayRef} className="relative grid gap-4 lg:grid-cols-2">
         <Side
           title="일 관점"
           body={workBody}
@@ -182,22 +212,37 @@ export function CompassCoherence({
           onSelect={setRightSel}
           readonly={readonly}
         />
-        <svg
-          className="pointer-events-none absolute inset-0 hidden h-full w-full lg:block"
-          aria-hidden
-        >
-          {linkPaths.map(({ link, y }) => (
-            <g key={link.id}>
-              <path
-                d={`M 20 ${y} C 40% ${y}, 60% ${y}, calc(100% - 20px) ${y}`}
-                fill="none"
-                stroke={kindColor(link.kind)}
-                strokeWidth={2}
-                opacity={0.7}
-              />
-            </g>
-          ))}
-        </svg>
+        {overlaySize.w > 0 && (
+          <svg
+            className="pointer-events-none absolute inset-0 hidden h-full w-full lg:block"
+            width={overlaySize.w}
+            height={overlaySize.h}
+            viewBox={`0 0 ${overlaySize.w} ${overlaySize.h}`}
+            aria-hidden
+          >
+            {linkPaths.map(({ link, y, d, midX }) => (
+              <g key={link.id}>
+                <path
+                  d={d}
+                  fill="none"
+                  stroke={kindColor(link.kind)}
+                  strokeWidth={2}
+                  opacity={0.7}
+                />
+                <text
+                  x={midX}
+                  y={y - 6}
+                  textAnchor="middle"
+                  fontSize={11}
+                  fontWeight={600}
+                  fill={kindColor(link.kind)}
+                >
+                  {link.kind}
+                </text>
+              </g>
+            ))}
+          </svg>
+        )}
       </div>
 
       {!readonly && leftSel && rightSel && (
