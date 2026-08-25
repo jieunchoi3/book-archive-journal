@@ -260,18 +260,22 @@ grant all on planner.ld_answer to anon, authenticated, service_role;
 create table if not exists planner.ld_journal_entry (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
+  run_id uuid references planner.ld_snapshot(id) on delete cascade,
   entry_date date not null,
   activity text not null,
-  bucket text,
+  duration_min smallint not null default 60,
   engagement smallint not null check (engagement >= -5 and engagement <= 5),
   energy smallint not null check (energy >= -5 and energy <= 5),
   is_flow boolean not null default false,
+  zoom_note text,
   note text,
   aeiou jsonb,
   created_at timestamptz not null default now()
 );
 create index if not exists ld_journal_entry_user_date_idx
   on planner.ld_journal_entry (user_id, entry_date desc);
+create index if not exists ld_journal_entry_run_date_idx
+  on planner.ld_journal_entry (user_id, run_id, entry_date desc);
 
 create table if not exists planner.ld_prototype (
   id uuid primary key default gen_random_uuid(),

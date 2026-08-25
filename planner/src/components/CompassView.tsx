@@ -1,11 +1,8 @@
 import { useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import {
-  emptyOdysseyData,
   type CompassRoute,
   type ExerciseKey,
-  type MindmapRoleIdea,
-  type OdysseyData,
 } from '../types/compass'
 import type { CompassActions } from '../hooks/useCompass'
 import { CompassOverview } from './CompassOverview'
@@ -63,26 +60,6 @@ export function CompassView({
     })
     setAiFocus(report.id)
     onRouteChange({ page: 'ai' })
-  }
-
-  const sendIdeaToOdyssey = async (idea: MindmapRoleIdea) => {
-    const draft = await compass.createDraft('odyssey', undefined, false)
-    const current = compass.getDraftData(draft, emptyOdysseyData())
-    const plans = (
-      current.plans?.length === 3 ? current.plans : emptyOdysseyData().plans
-    ).map((p) => ({ ...p })) as OdysseyData['plans']
-    let idx = plans.findIndex((p) => !p.title.trim())
-    if (idx < 0) idx = 0
-    const plan = plans[idx]
-    const qs = [...plan.questions] as [string, string, string]
-    if (!qs[0].trim() && idea.daySketch.trim()) qs[0] = idea.daySketch
-    plans[idx] = {
-      ...plan,
-      title: idea.title.trim() || plan.title,
-      questions: qs,
-    }
-    await compass.updateDraftData(draft.id, { plans } as unknown as Record<string, unknown>)
-    onRouteChange({ page: 'exercise', key: 'odyssey', snapshotId: draft.id })
   }
 
   if (compass.loading) {
@@ -146,7 +123,6 @@ export function CompassView({
             onRouteChange({ page: 'exercise', key: 'prototype' })
           }}
           protoPlanLink={protoPlanLink}
-          onSendToOdyssey={(idea) => void sendIdeaToOdyssey(idea)}
         />
       )}
 
@@ -209,7 +185,6 @@ function ExerciseShell({
   onOpenExercise,
   onCreatePrototype,
   protoPlanLink,
-  onSendToOdyssey,
 }: {
   exerciseKey: ExerciseKey
   snapshotId?: string
@@ -221,7 +196,6 @@ function ExerciseShell({
   onOpenExercise: (key: ExerciseKey) => void
   onCreatePrototype: (planId: string, title: string) => void
   protoPlanLink: string | null
-  onSendToOdyssey: (idea: MindmapRoleIdea) => void
 }) {
   return (
     <div>
@@ -264,13 +238,13 @@ function ExerciseShell({
         />
       )}
       {exerciseKey === 'goodtime' && (
-        <>
-          <CompassExerciseHeader
-            title="굿타임 저널"
-            subtitle="몰입과 에너지를 매일 짧게 기록"
-          />
-          <CompassGoodtime compass={compass} />
-        </>
+        <CompassGoodtime
+          compass={compass}
+          snapshotId={snapshotId}
+          onNavigateSnapshot={onSnapshot}
+          onCompare={onCompare}
+          onOpenMindmap={() => onOpenExercise('mindmap')}
+        />
       )}
       {exerciseKey === 'odyssey' && (
         <CompassOdyssey
@@ -334,7 +308,8 @@ function ExerciseShell({
           onNavigateSnapshot={onSnapshot}
           onCompare={onCompare}
           onRequestSnapshotAi={onRequestSnapshotAi}
-          onSendToOdyssey={onSendToOdyssey}
+          onOpenGoodtime={() => onOpenExercise('goodtime')}
+          onOpenOdyssey={() => onOpenExercise('odyssey')}
         />
       )}
     </div>

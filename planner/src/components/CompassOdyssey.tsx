@@ -4,7 +4,8 @@ import {
   emptyOdysseyData,
   newId,
   ODYSSEY_DEFAULT_BADGES,
-  type MindmapData,
+  normalizeMindmapData,
+  mindmapRoleIdeasFromData,
   type MindmapRoleIdea,
   type OdysseyData,
   type OdysseyPlan,
@@ -64,7 +65,9 @@ export function CompassOdyssey({
 
   const mindmapIdeas = (() => {
     const mm = compass.completeSnapshotsFor('mindmap').at(-1)
-    return (mm?.data as unknown as MindmapData | undefined)?.roleIdeas ?? []
+    if (!mm) return [] as MindmapRoleIdea[]
+    const d = normalizeMindmapData(mm.data)
+    return d.roleIdeas.length ? d.roleIdeas : mindmapRoleIdeasFromData(d)
   })()
 
   const applyIdea = (idea: MindmapRoleIdea, planIndex: number) => {

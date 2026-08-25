@@ -6,6 +6,10 @@ import {
   formatYm,
   getDashboardGauge,
   normalizeLongformData,
+  normalizeCoherenceData,
+  normalizeGoodtimeRunData,
+  normalizeMindmapData,
+  mindmapRoleIdeasFromData,
   type DashboardData,
   type ExerciseKey,
   type FailureData,
@@ -17,6 +21,7 @@ import {
 } from '../types/compass'
 import type { CompassActions } from '../hooks/useCompass'
 import { cardShadow } from './CompassExerciseShell'
+import { ScatterPlot } from './CompassGoodtime'
 
 interface CompassCompareProps {
   compass: CompassActions
@@ -136,12 +141,19 @@ export function CompassCompare({
           <GaugeCompare snaps={snaps} />
         ) : key === 'workview' || key === 'lifeview' ? (
           <LongformCompare snaps={snaps} />
+        ) : key === 'coherence' ? (
+          <CoherenceCompare snaps={snaps} />
         ) : key === 'odyssey' ? (
           <OdysseyCompare snaps={snaps} />
         ) : key === 'failure' || key === 'gravity' || key === 'team' ? (
           <ListVenn snaps={snaps} exerciseKey={key} />
+        ) : key === 'mindmap' ? (
+          <MindmapCompare snaps={snaps} />
         ) : key === 'goodtime' ? (
-          <GoodtimePeriodCompare compass={compass} />
+          <GoodtimeRunCompare
+            snaps={snaps}
+            journalEntries={compass.journalEntries}
+          />
         ) : (
           <GenericJsonCompare snaps={snaps} />
         )}
@@ -366,6 +378,67 @@ function LongformCompare({ snaps }: { snaps: LdSnapshot[] }) {
   )
 }
 
+function CoherenceCompare({ snaps }: { snaps: LdSnapshot[] }) {
+  const norms = snaps.map((s) => normalizeCoherenceData(s.data))
+  const first = norms[0]
+  const last = norms[norms.length - 1]
+  const count = (d: typeof first, kind: 'complement' | 'clash' | 'drives') =>
+    d.marks.filter((m) => m.kind === kind).length
+
+  const answers: { key: 'complement' | 'clash' | 'drives'; label: string }[] = [
+    { key: 'complement', label: '보완' },
+    { key: 'clash', label: '충돌' },
+    { key: 'drives', label: '이끎' },
+  ]
+
+  return (
+    <div className="space-y-6">
+      <div
+        className="rounded-[18px] border border-[#ECE7E2] bg-white p-4"
+        style={{ boxShadow: cardShadow }}
+      >
+        <p className="mb-2 text-[13px] font-semibold text-[#8A847E]">
+          표시 개수
+        </p>
+        <p className="text-[14px] text-[#1C1B1A]">
+          보완 {count(first, 'complement')}→{count(last, 'complement')}
+          {' / '}
+          충돌 {count(first, 'clash')}→{count(last, 'clash')}
+          {' / '}
+          이끎 {count(first, 'drives')}→{count(last, 'drives')}
+        </p>
+      </div>
+
+      {answers.map(({ key, label }) => (
+        <div key={key}>
+          <p className="mb-3 text-[13px] font-semibold text-[#8A847E]">{label}</p>
+          <div
+            className="grid gap-4"
+            style={{
+              gridTemplateColumns: `repeat(${snaps.length}, minmax(0, 1fr))`,
+            }}
+          >
+            {norms.map((d, i) => (
+              <div
+                key={snaps[i].id}
+                className="rounded-[18px] border border-[#ECE7E2] bg-white p-4"
+                style={{ boxShadow: cardShadow }}
+              >
+                <p className="mb-2 text-[11px] font-semibold text-[#8A847E]">
+                  {formatYm(snaps[i].takenAt)}
+                </p>
+                <p className="whitespace-pre-wrap text-[14px] leading-relaxed text-[#1C1B1A]">
+                  {d.answers[key].trim() || '—'}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function OdysseyCompare({ snaps }: { snaps: LdSnapshot[] }) {
   const plans = ['A', 'B', 'C']
   const gaugeMeta = [
@@ -584,117 +657,192 @@ function GenericJsonCompare({ snaps }: { snaps: LdSnapshot[] }) {
   )
 }
 
-function GoodtimePeriodCompare({ compass }: { compass: CompassActions }) {
-  const dayMs = 86400000
-  const now = Date.now()
-  const recent = compass.journalEntries.filter(
-    (e) => now - Date.parse(e.entryDate) <= 28 * dayMs,
+function MindmapCompare({ snaps }: { snaps: LdSnapshot[] }) {
+  const norms = snaps.map((s) => normalizeMindmapData(s.data))
+  const ideas = norms.map((d) =>
+    d.roleIdeas.length ? d.roleIdeas : mindmapRoleIdeasFromData(d),
   )
-  const prior = compass.journalEntries.filter((e) => {
-    const t = Date.parse(e.entryDate)
-    return t < now - 28 * dayMs && t >= now - 56 * dayMs
-  })
+  const max = Math.max(...ideas.map((x) => x.length), 3)
+
+  return (
+    <div className="space-y-6">
+      {Array.from({ length: max }).map((_, i) => (
+        <div key={i}>
+          <p className="mb-3 text-[13px] font-semibold text-[#8A847E]">
+            역할 {i + 1}
+          </p>
+          <div
+            className="grid gap-4"
+            style={{
+              gridTemplateColumns: `repeat(${snaps.length}, minmax(0, 1fr))`,
+            }}
+          >
+            {ideas.map((list, si) => {
+              const idea = list[i]
+              return (
+                <div
+                  key={snaps[si].id}
+                  className="rounded-[18px] border border-[#ECE7E2] bg-white p-4"
+                  style={{ boxShadow: cardShadow }}
+                >
+                  <p className="mb-1 text-[11px] font-semibold text-[#8A847E]">
+                    {formatYm(snaps[si].takenAt)}
+                  </p>
+                  <p className="text-[16px] font-bold text-[#1C1B1A]">
+                    {idea?.title || '—'}
+                  </p>
+                  <p className="mt-2 whitespace-pre-wrap text-[14px] leading-relaxed text-[#1C1B1A]">
+                    {idea?.daySketch || '—'}
+                  </p>
+                  {idea?.words?.length ? (
+                    <p className="mt-2 text-[12px] text-[#8A847E]">
+                      {idea.words.join(' · ')}
+                    </p>
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function GoodtimeRunCompare({
+  snaps,
+  journalEntries,
+}: {
+  snaps: LdSnapshot[]
+  journalEntries: LdJournalEntry[]
+}) {
+  const first = snaps[0]
+  const last = snaps[snaps.length - 1]
+  const aEntries = journalEntries.filter((e) => e.runId === first.id)
+  const bEntries = journalEntries.filter((e) => e.runId === last.id)
 
   const agg = (list: LdJournalEntry[]) => {
-    const map = new Map<string, { eng: number; ene: number; n: number; label: string }>()
+    const map = new Map<
+      string,
+      { eng: number; ene: number; n: number; minutes: number; flow: boolean; label: string }
+    >()
     for (const e of list) {
       const k = e.activity.trim().toLowerCase()
       const prev = map.get(k)
-      if (!prev) map.set(k, { eng: e.engagement, ene: e.energy, n: 1, label: e.activity })
-      else
+      if (!prev) {
         map.set(k, {
+          eng: e.engagement,
+          ene: e.energy,
+          n: 1,
+          minutes: e.durationMin,
+          flow: e.isFlow,
+          label: e.activity.trim(),
+        })
+      } else {
+        map.set(k, {
+          ...prev,
           eng: prev.eng + e.engagement,
           ene: prev.ene + e.energy,
           n: prev.n + 1,
-          label: prev.label,
+          minutes: prev.minutes + e.durationMin,
+          flow: prev.flow || e.isFlow,
         })
+      }
     }
-    return [...map.entries()].map(([key, v]) => ({
-      key,
+    return [...map.values()].map((v) => ({
       label: v.label,
       x: v.eng / v.n,
       y: v.ene / v.n,
+      n: v.n,
+      minutes: v.minutes,
+      flow: v.flow,
     }))
   }
 
-  const cur = agg(recent)
-  const ghost = agg(prior)
-  const toXY = (x: number, y: number) => ({
-    px: ((x + 5) / 10) * 100,
-    py: 100 - ((y + 5) / 10) * 100,
-  })
+  const ptsA = agg(aEntries)
+  const ptsB = agg(bEntries)
+  const setA = new Set(ptsA.map((p) => p.label.toLowerCase()))
+  const setB = new Set(ptsB.map((p) => p.label.toLowerCase()))
+  const onlyThen = ptsA.filter((p) => !setB.has(p.label.toLowerCase())).map((p) => p.label)
+  const both = ptsA.filter((p) => setB.has(p.label.toLowerCase())).map((p) => p.label)
+  const onlyNow = ptsB.filter((p) => !setA.has(p.label.toLowerCase())).map((p) => p.label)
+
+  const dataA = normalizeGoodtimeRunData(first.data)
+  const dataB = normalizeGoodtimeRunData(last.data)
 
   return (
-    <div>
-      <p className="mb-2 text-[12px] text-[#8A847E]">
-        최근 4주(실선 점) vs 그전 4주(고스트) · 화살표는 이동
-      </p>
-      <div
-        className="relative aspect-square w-full max-w-md overflow-hidden rounded-[18px] border border-[#ECE7E2] bg-white"
-        style={{ boxShadow: cardShadow }}
-      >
-        <div
-          className="pointer-events-none absolute left-1/2 top-0 h-full w-px"
-          style={{ background: COMPASS.line }}
-        />
-        <div
-          className="pointer-events-none absolute left-0 top-1/2 h-px w-full"
-          style={{ background: COMPASS.line }}
-        />
-        <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-          <defs>
-            <marker id="cmp-arrow" markerWidth="4" markerHeight="4" refX="3" refY="2" orient="auto">
-              <path d="M0,0 L4,2 L0,4 Z" fill={COMPASS.accent} opacity={0.5} />
-            </marker>
-          </defs>
-          {ghost.map((g) => {
-            const c = cur.find((p) => p.key === g.key)
-            if (!c) return null
-            const a = toXY(g.x, g.y)
-            const b = toXY(c.x, c.y)
-            return (
-              <line
-                key={g.key}
-                x1={a.px}
-                y1={a.py}
-                x2={b.px}
-                y2={b.py}
-                stroke={COMPASS.accent}
-                strokeWidth={0.5}
-                opacity={0.45}
-                markerEnd="url(#cmp-arrow)"
-              />
-            )
-          })}
-        </svg>
-        {ghost.map((g) => {
-          const { px, py } = toXY(g.x, g.y)
+    <div className="space-y-6">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div>
+          <p className="mb-2 text-[12px] font-semibold text-[#8A847E]">
+            {formatYm(first.takenAt)}
+          </p>
+          <ScatterPlot points={ptsA} ghosts={ptsB} size={420} />
+        </div>
+        <div>
+          <p className="mb-2 text-[12px] font-semibold text-[#8A847E]">
+            {formatYm(last.takenAt)} (고스트 = 이전 런)
+          </p>
+          <ScatterPlot points={ptsB} ghosts={ptsA} size={420} />
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        {[
+          { title: '사라진 것', items: onlyThen },
+          { title: '계속 있는 것', items: both },
+          { title: '새로 생긴 것', items: onlyNow },
+        ].map((col) => (
+          <div
+            key={col.title}
+            className="rounded-[18px] border border-[#ECE7E2] bg-white p-4"
+            style={{ boxShadow: cardShadow }}
+          >
+            <p className="mb-2 text-[12px] font-semibold text-[#8A847E]">
+              {col.title}
+            </p>
+            <ul className="space-y-1 text-[13px] text-[#1C1B1A]">
+              {col.items.length === 0 ? (
+                <li className="text-[#B5AFA8]">—</li>
+              ) : (
+                col.items.map((t) => <li key={t}>· {t}</li>)
+              )}
+            </ul>
+          </div>
+        ))}
+      </div>
+
+      <div>
+        <p className="mb-3 text-[13px] font-semibold text-[#8A847E]">
+          주간 회고 · 놀라운 거
+        </p>
+        {[1, 2, 3].map((week) => {
+          const wa = dataA.weekly.find((w) => w.week === week)
+          const wb = dataB.weekly.find((w) => w.week === week)
+          if (!wa && !wb) return null
           return (
-            <span
-              key={`g-${g.key}`}
-              className="absolute h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full"
-              style={{
-                left: `${px}%`,
-                top: `${py}%`,
-                background: COMPASS.line,
-                opacity: 0.5,
-              }}
-            />
-          )
-        })}
-        {cur.map((p) => {
-          const { px, py } = toXY(p.x, p.y)
-          return (
-            <span
-              key={p.key}
-              title={p.label}
-              className="absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full"
-              style={{
-                left: `${px}%`,
-                top: `${py}%`,
-                background: COMPASS.accent,
-              }}
-            />
+            <div key={week} className="mb-4">
+              <p className="mb-2 text-[12px] text-[#B5AFA8]">{week}주차</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {[
+                  { label: formatYm(first.takenAt), text: wa?.surprise },
+                  { label: formatYm(last.takenAt), text: wb?.surprise },
+                ].map((col) => (
+                  <div
+                    key={col.label}
+                    className="rounded-[18px] border border-[#ECE7E2] bg-white p-4"
+                    style={{ boxShadow: cardShadow }}
+                  >
+                    <p className="mb-1 text-[11px] font-semibold text-[#8A847E]">
+                      {col.label}
+                    </p>
+                    <p className="whitespace-pre-wrap text-[14px] leading-relaxed text-[#1C1B1A]">
+                      {col.text?.trim() || '—'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
           )
         })}
       </div>

@@ -192,6 +192,36 @@ export function isDashboardData(data: unknown): data is DashboardData {
 
 // ─── Journal / Prototype / AI ───────────────────────────────────────────────
 
+export interface AeiouData {
+  activities: string
+  environments: string
+  interactions: string
+  objects: string
+  users: string
+}
+
+export function emptyAeiou(): AeiouData {
+  return {
+    activities: '',
+    environments: '',
+    interactions: '',
+    objects: '',
+    users: '',
+  }
+}
+
+export const JOURNAL_DURATIONS = [15, 30, 60, 120, 180] as const
+export type JournalDuration = (typeof JOURNAL_DURATIONS)[number]
+
+export const JOURNAL_DURATION_LABELS: Record<JournalDuration, string> = {
+  15: '15분',
+  30: '30분',
+  60: '1시간',
+  120: '2시간',
+  180: '3시간+',
+}
+
+/** @deprecated buckets removed in goodtime v2 — kept for legacy reads */
 export const JOURNAL_BUCKETS = [
   'work',
   'study',
@@ -214,36 +244,174 @@ export const JOURNAL_BUCKET_LABELS: Record<JournalBucket, string> = {
   play: '놀이',
 }
 
-export interface AeiouData {
-  activities: string
-  environments: string
-  interactions: string
-  objects: string
-  users: string
-}
-
-export function emptyAeiou(): AeiouData {
-  return {
-    activities: '',
-    environments: '',
-    interactions: '',
-    objects: '',
-    users: '',
-  }
-}
-
 export interface LdJournalEntry {
   id: string
   userId: string
+  /** goodtime snapshot (run) id */
+  runId: string | null
   entryDate: string
   activity: string
-  bucket: JournalBucket | null
+  durationMin: JournalDuration
   engagement: number
   energy: number
   isFlow: boolean
-  note: string | null
+  zoomNote: string | null
   aeiou: AeiouData | null
   createdAt: string
+  /** @deprecated */
+  bucket?: JournalBucket | null
+  /** @deprecated */
+  note?: string | null
+}
+
+export type GoodtimeState =
+  | 'setup'
+  | 'week1'
+  | 'week2'
+  | 'week3'
+  | 'zoom'
+  | 'aeiou'
+  | 'closing'
+  | 'done'
+
+export interface GoodtimeWeeklyReview {
+  week: 1 | 2 | 3
+  range: [string, string]
+  engaging: string
+  draining: string
+  surprise: string
+}
+
+export interface GoodtimeRunData {
+  state: GoodtimeState
+  started_on: string
+  weekly: GoodtimeWeeklyReview[]
+  zoom_picks: string[]
+  closing: string
+  week2_nudge_seen: boolean
+  /** UI: which aeiou activity is focused */
+  aeiou_index?: number
+}
+
+export function emptyGoodtimeRunData(startedOn = ''): GoodtimeRunData {
+  return {
+    state: 'setup',
+    started_on: startedOn,
+    weekly: [],
+    zoom_picks: [],
+    closing: '',
+    week2_nudge_seen: false,
+  }
+}
+
+export function normalizeGoodtimeRunData(raw: unknown): GoodtimeRunData {
+  const empty = emptyGoodtimeRunData()
+  if (!raw || typeof raw !== 'object') return empty
+  const d = raw as Partial<GoodtimeRunData>
+  const weekly = Array.isArray(d.weekly)
+    ? d.weekly
+        .filter((w) => w && typeof w === 'object')
+        .map((w) => ({
+          week: ([1, 2, 3].includes(Number(w.week))
+            ? Number(w.week)
+            : 1) as 1 | 2 | 3,
+          range: Array.isArray(w.range)
+            ? ([String(w.range[0] ?? ''), String(w.range[1] ?? '')] as [
+                string,
+                string,
+              ])
+            : (['', ''] as [string, string]),
+          engaging: String(w.engaging ?? ''),
+          draining: String(w.draining ?? ''),
+          surprise: String(w.surprise ?? ''),
+        }))
+    : []
+  const state = (
+    [
+      'setup',
+      'week1',
+      'week2',
+      'week3',
+      'zoom',
+      'aeiou',
+      'closing',
+      'done',
+    ] as GoodtimeState[]
+  ).includes(d.state as GoodtimeState)
+    ? (d.state as GoodtimeState)
+    : 'setup'
+  return {
+    state,
+    started_on: String(d.started_on ?? ''),
+    weekly,
+    zoom_picks: Array.isArray(d.zoom_picks)
+      ? d.zoom_picks.map(String).filter(Boolean)
+      : [],
+    closing: String(d.closing ?? ''),
+    week2_nudge_seen: Boolean(d.week2_nudge_seen),
+    aeiou_index:
+      typeof d.aeiou_index === 'number' ? d.aeiou_index : undefined,
+  }
+}
+
+export function goodtimeWeekRange(
+  startedOn: string,
+  week: 1 | 2 | 3,
+): [string, string] {
+  const startOffset = (week - 1) * 7
+  const start = addDays(startedOn, startOffset)
+  const end = addDays(startedOn, startOffset + 6)
+  return [start, end]
+}
+
+export function goodtimeWeekForDate(
+  startedOn: string,
+  dateKey: string,
+): 1 | 2 | 3 | null {
+  if (!startedOn || !dateKey) return null
+  const day = daysBetween(startedOn, dateKey)
+  if (day < 0) return null
+  if (day <= 6) return 1
+  if (day <= 13) return 2
+  if (day <= 20) return 3
+  return null
+}
+
+export function normalizeJournalEntry(raw: unknown): LdJournalEntry | null {
+  if (!raw || typeof raw !== 'object') return null
+  const e = raw as Partial<LdJournalEntry> & {
+    duration_min?: number
+    run_id?: string
+    zoom_note?: string
+    is_flow?: boolean
+    entry_date?: string
+    user_id?: string
+    created_at?: string
+  }
+  const durationRaw = e.durationMin ?? e.duration_min ?? 60
+  const durationMin = (
+    JOURNAL_DURATIONS.includes(durationRaw as JournalDuration)
+      ? durationRaw
+      : 60
+  ) as JournalDuration
+  const eng = Number(e.engagement ?? 0)
+  const ene = Number(e.energy ?? 0)
+  return {
+    id: String(e.id ?? ''),
+    userId: String(e.userId ?? e.user_id ?? ''),
+    runId: (e.runId ?? e.run_id ?? null) as string | null,
+    entryDate: String(e.entryDate ?? e.entry_date ?? ''),
+    activity: String(e.activity ?? ''),
+    durationMin,
+    engagement: Math.max(-5, Math.min(5, eng)),
+    energy: Math.max(-5, Math.min(5, ene)),
+    isFlow: Boolean(e.isFlow ?? e.is_flow),
+    zoomNote: (e.zoomNote ?? e.zoom_note ?? null) as string | null,
+    aeiou: e.aeiou ?? null,
+    createdAt: String(e.createdAt ?? e.created_at ?? ''),
+    bucket: (e.bucket as JournalBucket | null | undefined) ?? null,
+    note: e.note ?? null,
+  }
 }
 
 export type PrototypeKind = 'conversation' | 'experience'
@@ -366,8 +534,10 @@ export function normalizeLongformData(raw: unknown): LongformData {
   }
 }
 
+/** @deprecated v1 link kinds — migrated away in normalizeCoherenceData */
 export type CoherenceLinkKind = '맞물림' | '충돌' | '애매'
 
+/** @deprecated v1 */
 export interface CoherenceLink {
   id: string
   leftText: string
@@ -376,25 +546,198 @@ export interface CoherenceLink {
   action?: string
 }
 
+export type CoherenceMarkKind = 'complement' | 'clash' | 'drives'
+export type CoherenceDriveDirection = 'work_to_life' | 'life_to_work'
+export type CoherenceStep = 0 | 1 | 2
+
+export interface CoherenceMark {
+  id: string
+  kind: CoherenceMarkKind
+  work_sid: string
+  life_sid: string
+  work_text: string
+  life_text: string
+  direction: CoherenceDriveDirection | null
+}
+
 export interface CoherenceData {
-  workviewSnapshotId: string | null
-  lifeviewSnapshotId: string | null
-  links: CoherenceLink[]
+  source: {
+    workview_id: string
+    workview_date: string
+    lifeview_id: string
+    lifeview_date: string
+  }
+  marks: CoherenceMark[]
+  answers: {
+    complement: string
+    clash: string
+    drives: string
+  }
+  values_snapshot: {
+    work: string[]
+    life: string[]
+  }
+  step: CoherenceStep
+  /** legacy v1 fields (ignored after normalize) */
+  workviewSnapshotId?: string | null
+  lifeviewSnapshotId?: string | null
+  links?: CoherenceLink[]
 }
 
 export function emptyCoherenceData(): CoherenceData {
-  return { workviewSnapshotId: null, lifeviewSnapshotId: null, links: [] }
+  return {
+    source: {
+      workview_id: '',
+      workview_date: '',
+      lifeview_id: '',
+      lifeview_date: '',
+    },
+    marks: [],
+    answers: { complement: '', clash: '', drives: '' },
+    values_snapshot: { work: [], life: [] },
+    step: 0,
+  }
 }
 
-export interface MindmapNode {
+export function normalizeCoherenceData(raw: unknown): CoherenceData {
+  const empty = emptyCoherenceData()
+  if (!raw || typeof raw !== 'object') return empty
+  const d = raw as Partial<CoherenceData> & {
+    workviewSnapshotId?: string | null
+    lifeviewSnapshotId?: string | null
+    links?: CoherenceLink[]
+  }
+
+  // v2 shape
+  if (d.source || Array.isArray(d.marks) || d.answers) {
+    const source = d.source ?? empty.source
+    const marks = Array.isArray(d.marks)
+      ? d.marks
+          .filter((m) => m && typeof m === 'object')
+          .map((m) => ({
+            id: String(m.id || newId()),
+            kind:
+              m.kind === 'clash' || m.kind === 'drives' || m.kind === 'complement'
+                ? m.kind
+                : ('complement' as CoherenceMarkKind),
+            work_sid: String(m.work_sid ?? ''),
+            life_sid: String(m.life_sid ?? ''),
+            work_text: String(m.work_text ?? ''),
+            life_text: String(m.life_text ?? ''),
+            direction:
+              m.direction === 'work_to_life' || m.direction === 'life_to_work'
+                ? m.direction
+                : null,
+          }))
+      : []
+    const answers = d.answers ?? empty.answers
+    const vs = d.values_snapshot ?? empty.values_snapshot
+    return {
+      source: {
+        workview_id: String(source.workview_id ?? ''),
+        workview_date: String(source.workview_date ?? ''),
+        lifeview_id: String(source.lifeview_id ?? ''),
+        lifeview_date: String(source.lifeview_date ?? ''),
+      },
+      marks,
+      answers: {
+        complement: String(answers.complement ?? ''),
+        clash: String(answers.clash ?? ''),
+        drives: String(answers.drives ?? ''),
+      },
+      values_snapshot: {
+        work: Array.isArray(vs.work)
+          ? vs.work.map(String).filter(Boolean)
+          : [],
+        life: Array.isArray(vs.life)
+          ? vs.life.map(String).filter(Boolean)
+          : [],
+      },
+      step:
+        typeof d.step === 'number' && d.step >= 0 && d.step <= 2
+          ? (d.step as CoherenceStep)
+          : 0,
+    }
+  }
+
+  // v1 → empty-ish with source ids if present
+  return {
+    ...empty,
+    source: {
+      workview_id: String(d.workviewSnapshotId ?? ''),
+      workview_date: '',
+      lifeview_id: String(d.lifeviewSnapshotId ?? ''),
+      lifeview_date: '',
+    },
+  }
+}
+
+export const COHERENCE_MARK_LABEL: Record<CoherenceMarkKind, string> = {
+  complement: '보완',
+  clash: '충돌',
+  drives: '이끎',
+}
+
+export const COHERENCE_MARK_COLOR: Record<CoherenceMarkKind, string> = {
+  complement: COMPASS.accent,
+  clash: '#C08A4A',
+  drives: '#5B4E73',
+}
+
+export type MindmapMapKey = 'engagement' | 'energy' | 'flow'
+
+export const MINDMAP_MAP_KEYS: MindmapMapKey[] = [
+  'engagement',
+  'energy',
+  'flow',
+]
+
+export const MINDMAP_MAP_LABELS: Record<MindmapMapKey, string> = {
+  engagement: '몰입',
+  energy: '에너지',
+  flow: 'flow',
+}
+
+export type MindmapRing = 0 | 1 | 2 | 3
+
+export interface MindmapTreeNode {
   id: string
-  parentId: string | null
   label: string
+  ring: MindmapRing
+  parent: string | null
   x: number
   y: number
-  ring: 0 | 1 | 2
 }
 
+export interface MindmapEdge {
+  source: string
+  target: string
+}
+
+export interface MindmapRole {
+  description: string
+  name: string
+  sketch_url: string
+  sketch_kind: 'draw' | 'photo' | ''
+}
+
+export interface MindmapMapState {
+  key: MindmapMapKey
+  nodes: MindmapTreeNode[]
+  edges: MindmapEdge[]
+  seconds_used: number
+  picked: string[]
+  role: MindmapRole
+  skipped?: boolean
+}
+
+export interface MindmapSourcePick {
+  activity: string
+  from_journal: boolean
+  entry_ref?: string
+}
+
+/** @deprecated v1 — still emitted for Odyssey/Choosing consumers */
 export interface MindmapRoleIdea {
   id: string
   words: string[]
@@ -402,13 +745,178 @@ export interface MindmapRoleIdea {
   daySketch: string
 }
 
+export type MindmapStep =
+  | 'gate'
+  | 'sources'
+  | 'draw'
+  | 'pick'
+  | 'role'
+  | 'summary'
+
 export interface MindmapData {
-  nodes: MindmapNode[]
+  sources: {
+    engagement: MindmapSourcePick | null
+    energy: MindmapSourcePick | null
+    flow: MindmapSourcePick | null
+  }
+  maps: MindmapMapState[]
+  different_enough: boolean | null
+  step: MindmapStep
+  /** which map is active during draw/pick/role */
+  map_index: 0 | 1 | 2
+  /** synced for Odyssey / Choosing */
   roleIdeas: MindmapRoleIdea[]
 }
 
+export function emptyMindmapRole(): MindmapRole {
+  return { description: '', name: '', sketch_url: '', sketch_kind: '' }
+}
+
+export function emptyMindmapMap(key: MindmapMapKey): MindmapMapState {
+  return {
+    key,
+    nodes: [],
+    edges: [],
+    seconds_used: 0,
+    picked: [],
+    role: emptyMindmapRole(),
+  }
+}
+
 export function emptyMindmapData(): MindmapData {
-  return { nodes: [], roleIdeas: [] }
+  return {
+    sources: { engagement: null, energy: null, flow: null },
+    maps: MINDMAP_MAP_KEYS.map(emptyMindmapMap),
+    different_enough: null,
+    step: 'gate',
+    map_index: 0,
+    roleIdeas: [],
+  }
+}
+
+export function mindmapRoleIdeasFromData(data: MindmapData): MindmapRoleIdea[] {
+  return data.maps
+    .filter((m) => !m.skipped && m.role.name.trim())
+    .map((m) => ({
+      id: `role-${m.key}`,
+      words: m.picked
+        .map((id) => m.nodes.find((n) => n.id === id)?.label ?? '')
+        .filter(Boolean),
+      title: m.role.name.trim(),
+      daySketch: m.role.description.trim(),
+    }))
+}
+
+export function normalizeMindmapData(raw: unknown): MindmapData {
+  const empty = emptyMindmapData()
+  if (!raw || typeof raw !== 'object') return empty
+  const d = raw as Partial<MindmapData> & {
+    nodes?: unknown[]
+    roleIdeas?: MindmapRoleIdea[]
+  }
+
+  // v2
+  if (d.sources || d.maps || d.step) {
+    const mapsRaw = Array.isArray(d.maps) ? d.maps : []
+    const maps = MINDMAP_MAP_KEYS.map((key, i) => {
+      const m = mapsRaw.find((x) => x && (x as MindmapMapState).key === key) as
+        | MindmapMapState
+        | undefined
+      const fallback = mapsRaw[i] as MindmapMapState | undefined
+      const src = m ?? fallback
+      if (!src || typeof src !== 'object') return emptyMindmapMap(key)
+      return {
+        key,
+        nodes: Array.isArray(src.nodes)
+          ? src.nodes.map((n) => ({
+              id: String(n.id),
+              label: String(n.label ?? ''),
+              ring: ([0, 1, 2, 3].includes(Number(n.ring))
+                ? Number(n.ring)
+                : 0) as MindmapRing,
+              parent: n.parent ?? null,
+              x: Number(n.x ?? 0),
+              y: Number(n.y ?? 0),
+            }))
+          : [],
+        edges: Array.isArray(src.edges)
+          ? src.edges.map((e) => ({
+              source: String(e.source),
+              target: String(e.target),
+            }))
+          : [],
+        seconds_used: Number(src.seconds_used ?? 0),
+        picked: Array.isArray(src.picked) ? src.picked.map(String) : [],
+        role: {
+          description: String(src.role?.description ?? ''),
+          name: String(src.role?.name ?? ''),
+          sketch_url: String(src.role?.sketch_url ?? ''),
+          sketch_kind:
+            src.role?.sketch_kind === 'draw' || src.role?.sketch_kind === 'photo'
+              ? src.role.sketch_kind
+              : ('' as const),
+        },
+        skipped: Boolean(src.skipped),
+      }
+    })
+    const sources = d.sources ?? empty.sources
+    const normPick = (p: MindmapSourcePick | null | undefined) =>
+      p && p.activity
+        ? {
+            activity: String(p.activity),
+            from_journal: Boolean(p.from_journal),
+            entry_ref: p.entry_ref ? String(p.entry_ref) : undefined,
+          }
+        : null
+    const step = (
+      [
+        'gate',
+        'sources',
+        'draw',
+        'pick',
+        'role',
+        'summary',
+      ] as MindmapStep[]
+    ).includes(d.step as MindmapStep)
+      ? (d.step as MindmapStep)
+      : 'sources'
+    const base: MindmapData = {
+      sources: {
+        engagement: normPick(sources.engagement),
+        energy: normPick(sources.energy),
+        flow: normPick(sources.flow),
+      },
+      maps,
+      different_enough:
+        typeof d.different_enough === 'boolean' ? d.different_enough : null,
+      step,
+      map_index: ([0, 1, 2].includes(Number(d.map_index))
+        ? Number(d.map_index)
+        : 0) as 0 | 1 | 2,
+      roleIdeas: Array.isArray(d.roleIdeas) ? d.roleIdeas : [],
+    }
+    if (!base.roleIdeas.length) {
+      base.roleIdeas = mindmapRoleIdeasFromData(base)
+    }
+    return base
+  }
+
+  // v1 → empty shell with any legacy roleIdeas preserved
+  return {
+    ...empty,
+    step: 'sources',
+    roleIdeas: Array.isArray(d.roleIdeas) ? d.roleIdeas : [],
+  }
+}
+
+/** @deprecated v1 node shape */
+export interface MindmapNode {
+  id: string
+  parentId: string | null
+  label: string
+  x: number
+  y: number
+  ring: 0 | 1 | 2
 }
 
 export interface OdysseyMilestone {
@@ -551,7 +1059,7 @@ export function emptyDataForExercise(key: ExerciseKey): Record<string, unknown> 
     case 'team':
       return emptyTeamData() as unknown as Record<string, unknown>
     case 'goodtime':
-      return {}
+      return emptyGoodtimeRunData() as unknown as Record<string, unknown>
     default:
       return {}
   }
@@ -591,21 +1099,21 @@ export const EXERCISE_META: ExerciseMeta[] = [
   {
     key: 'coherence',
     name: '두 관점 맞춰보기',
-    description: '일과 삶의 관점을 연결해 보기',
-    cadenceDays: 180,
+    description: '보완 · 충돌 · 이끎 세 질문으로 나침반 만들기',
+    cadenceDays: 365,
     phase: 2,
   },
   {
     key: 'goodtime',
     name: '굿타임 저널',
-    description: '몰입과 에너지를 매일 짧게 기록',
-    cadenceDays: null,
+    description: '3주 동안 몰입과 에너지를 기록하고 패턴을 읽기',
+    cadenceDays: 180,
     phase: 2,
   },
   {
     key: 'mindmap',
     name: '마인드맵',
-    description: '관심사를 가지로 펼치고 역할 아이디어 만들기',
+    description: '굿타임에서 고른 셋으로 맵을 그리고 역할 세 개 만들기',
     cadenceDays: 90,
     phase: 3,
   },

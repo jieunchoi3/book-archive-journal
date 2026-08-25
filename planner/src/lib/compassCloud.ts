@@ -3,7 +3,7 @@ import type {
   AiReportOutput,
   AiReportType,
   ExerciseKey,
-  JournalBucket,
+  JournalDuration,
   LdAiReport,
   LdAnswer,
   LdJournalEntry,
@@ -14,6 +14,7 @@ import type {
   PrototypeStatus,
   SnapshotStatus,
 } from '../types/compass'
+import { JOURNAL_DURATIONS } from '../types/compass'
 import { supabase } from './supabase'
 
 type SnapshotRow = {
@@ -52,15 +53,19 @@ type AnswerRow = {
 type JournalRow = {
   id: string
   user_id: string
+  run_id: string | null
   entry_date: string
   activity: string
-  bucket: string | null
+  duration_min: number
   engagement: number
   energy: number
   is_flow: boolean
-  note: string | null
+  zoom_note: string | null
   aeiou: AeiouData | null
   created_at: string
+  /** legacy */
+  bucket?: string | null
+  note?: string | null
 }
 
 type PrototypeRow = {
@@ -168,18 +173,26 @@ function answerToRow(a: LdAnswer) {
 }
 
 function rowToJournal(row: JournalRow): LdJournalEntry {
+  const durationRaw = row.duration_min ?? 60
+  const durationMin = (
+    JOURNAL_DURATIONS.includes(durationRaw as JournalDuration)
+      ? durationRaw
+      : 60
+  ) as JournalDuration
   return {
     id: row.id,
     userId: row.user_id,
+    runId: row.run_id ?? null,
     entryDate: row.entry_date,
     activity: row.activity,
-    bucket: (row.bucket as JournalBucket | null) ?? null,
+    durationMin,
     engagement: row.engagement,
     energy: row.energy,
     isFlow: row.is_flow,
-    note: row.note,
+    zoomNote: row.zoom_note ?? null,
     aeiou: row.aeiou,
     createdAt: row.created_at,
+    note: row.note ?? null,
   }
 }
 
@@ -187,13 +200,14 @@ function journalToRow(e: LdJournalEntry) {
   return {
     id: e.id,
     user_id: e.userId,
+    run_id: e.runId,
     entry_date: e.entryDate,
     activity: e.activity,
-    bucket: e.bucket,
+    duration_min: e.durationMin,
     engagement: e.engagement,
     energy: e.energy,
     is_flow: e.isFlow,
-    note: e.note,
+    zoom_note: e.zoomNote,
     aeiou: e.aeiou,
     created_at: e.createdAt,
   }

@@ -126,3 +126,25 @@ create policy "ld_ai_report_own" on planner.ld_ai_report
 grant all on planner.ld_journal_entry to anon, authenticated, service_role;
 grant all on planner.ld_prototype to anon, authenticated, service_role;
 grant all on planner.ld_ai_report to anon, authenticated, service_role;
+
+-- ─── Goodtime v2 (run-scoped journal) ───────────────────────────────────────
+alter table planner.ld_journal_entry
+  add column if not exists run_id uuid references planner.ld_snapshot(id) on delete cascade,
+  add column if not exists duration_min smallint default 60,
+  add column if not exists zoom_note text;
+
+update planner.ld_journal_entry set duration_min = 60 where duration_min is null;
+alter table planner.ld_journal_entry alter column duration_min set not null;
+
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'planner' and table_name = 'ld_journal_entry' and column_name = 'bucket'
+  ) then
+    alter table planner.ld_journal_entry drop column bucket;
+  end if;
+end $$;
+
+create index if not exists ld_journal_entry_run_date_idx
+  on planner.ld_journal_entry (user_id, run_id, entry_date desc);

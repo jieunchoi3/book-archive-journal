@@ -6,6 +6,7 @@ import type {
   LdQuestion,
   LdSnapshot,
 } from '../types/compass'
+import { normalizeJournalEntry } from '../types/compass'
 
 const DB_NAME = 'compass-db'
 const DB_VERSION = 1
@@ -40,7 +41,9 @@ function normalizeStore(raw: Partial<CompassLocalStore> | undefined): CompassLoc
     snapshots: raw.snapshots ?? [],
     questions: raw.questions ?? [],
     answers: raw.answers ?? [],
-    journalEntries: raw.journalEntries ?? [],
+    journalEntries: (raw.journalEntries ?? [])
+      .map((e) => normalizeJournalEntry(e))
+      .filter((e): e is LdJournalEntry => Boolean(e?.id)),
     prototypes: raw.prototypes ?? [],
     aiReports: raw.aiReports ?? [],
     updatedAt: raw.updatedAt ?? base.updatedAt,

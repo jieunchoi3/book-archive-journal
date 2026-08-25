@@ -3,9 +3,10 @@ import {
   COMPASS,
   emptyChoosingData,
   newId,
+  normalizeMindmapData,
+  mindmapRoleIdeasFromData,
   type ChoosingData,
   type ChoosingOption,
-  type MindmapData,
   type OdysseyData,
 } from '../types/compass'
 import type { CompassActions } from '../hooks/useCompass'
@@ -82,7 +83,12 @@ export function CompassChoosing({
 
   const importRoleIdeas = () => {
     const mm = compass.completeSnapshotsFor('mindmap').at(-1)
-    const ideas = (mm?.data as unknown as MindmapData | undefined)?.roleIdeas ?? []
+    const d = mm ? normalizeMindmapData(mm.data) : null
+    const ideas = d
+      ? d.roleIdeas.length
+        ? d.roleIdeas
+        : mindmapRoleIdeasFromData(d)
+      : []
     for (const r of ideas) {
       if (r.title.trim()) addOption(r.title, 'mindmap')
     }
