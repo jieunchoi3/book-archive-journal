@@ -10,7 +10,10 @@ interface CompassTimelineSpineProps {
   showNowSlot?: boolean
 }
 
-/** §0 Timeline Spine — date-proportional dots; 0 snapshots = grey hint only. */
+/**
+ * Timeline Spine — only complete snapshots.
+ * 0 completes → grey hint line (no spine, no drafts, no “새로 하기”).
+ */
 export function CompassTimelineSpine({
   snapshots,
   activeId,
@@ -22,48 +25,33 @@ export function CompassTimelineSpine({
   const [shiftAnchor, setShiftAnchor] = useState<string | null>(null)
   const dragStart = useRef<string | null>(null)
 
-  const ordered = useMemo(
+  const completes = useMemo(
     () =>
-      [...snapshots].sort(
-        (a, b) =>
-          a.takenAt.localeCompare(b.takenAt) ||
-          a.createdAt.localeCompare(b.createdAt),
-      ),
+      [...snapshots]
+        .filter((s) => s.status === 'complete')
+        .sort(
+          (a, b) =>
+            a.takenAt.localeCompare(b.takenAt) ||
+            a.createdAt.localeCompare(b.createdAt),
+        ),
     [snapshots],
   )
 
-  const completes = ordered.filter((s) => s.status === 'complete')
-  const drafts = ordered.filter((s) => s.status === 'draft')
-
-  // 0 snapshots (no complete, no draft yet counted as "first write"): grey line only
-  if (completes.length === 0 && drafts.length === 0) {
+  if (completes.length === 0) {
     return (
-      <div className="mb-5">
-        <div className="mb-2 flex justify-end">
-          <button
-            type="button"
-            onClick={onCreateNew}
-            className="text-[13px] font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3E6B5E] focus-visible:ring-offset-2"
-            style={{ color: COMPASS.accent }}
-          >
-            + 새로 하기
-          </button>
-        </div>
-        <div
-          className="flex h-11 items-center rounded-xl px-4 text-[13px] text-[#8A847E]"
-          style={{ background: '#FAF8F6' }}
-        >
-          지금 쓰는 게 첫 기록이에요. 다음에 다시 하면 여기서 비교할 수 있어요.
-        </div>
+      <div
+        className="mb-5 flex h-11 items-center rounded-xl px-4 text-[13px] text-[#8A847E]"
+        style={{ background: '#FAF8F6' }}
+      >
+        지금 쓰는 게 첫 기록이에요. 다음에 다시 하면 여기서 비교할 수 있어요.
       </div>
     )
   }
 
-  // Only completes map onto the time axis; drafts sit near "now"
   const today = Date.now()
   const dates = completes.map((s) => Date.parse(s.takenAt))
-  const min = dates.length ? Math.min(...dates) : today
-  const max = Math.max(today, ...(dates.length ? dates : [today]))
+  const min = Math.min(...dates)
+  const max = Math.max(today, ...dates)
   const span = Math.max(max - min, 1)
 
   const positions = completes.map((s, i) => {
@@ -84,21 +72,7 @@ export function CompassTimelineSpine({
 
   return (
     <div className="mb-5">
-      <div className="mb-2 flex justify-end">
-        <button
-          type="button"
-          onClick={onCreateNew}
-          className="text-[13px] font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3E6B5E] focus-visible:ring-offset-2"
-          style={{ color: COMPASS.accent }}
-        >
-          + 새로 하기
-        </button>
-      </div>
-
-      <div
-        className="relative w-full px-8"
-        style={{ height: 96 }}
-      >
+      <div className="relative w-full px-8" style={{ height: 96 }}>
         <div
           className="absolute left-8 right-8 top-1/2 h-px -translate-y-1/2"
           style={{ background: COMPASS.line }}
@@ -113,7 +87,7 @@ export function CompassTimelineSpine({
               key={snap.id}
               type="button"
               title={`${formatYm(snap.takenAt)} ${label}`}
-              className="absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3E6B5E] focus-visible:ring-offset-2"
+              className="absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 overflow-visible focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3E6B5E] focus-visible:ring-offset-2"
               style={{ left: `calc(2rem + (100% - 4rem) * ${pct / 100})` }}
               onClick={(e) => handlePointClick(snap.id, e)}
               onMouseDown={() => {
@@ -154,25 +128,6 @@ export function CompassTimelineSpine({
             </button>
           )
         })}
-
-        {drafts.map((d) => (
-          <button
-            key={d.id}
-            type="button"
-            className="absolute top-1/2 right-14 z-10 -translate-y-1/2 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3E6B5E]"
-            onClick={() => onSelect(d.id)}
-            aria-label="작성 중"
-            title="작성 중"
-          >
-            <span
-              className="mx-auto block rounded-full border-[1.5px] border-dashed bg-transparent"
-              style={{ width: 12, height: 12, borderColor: COMPASS.accent }}
-            />
-            <span className="mt-2.5 block text-center text-[12px] text-[#B5AFA8]">
-              작성 중
-            </span>
-          </button>
-        ))}
 
         {showNowSlot && (
           <button

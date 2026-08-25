@@ -113,6 +113,7 @@ export function ExerciseChrome({
   const [helpOpen, setHelpOpen] = useState(false)
   const meta = EXERCISE_META.find((m) => m.key === exerciseKey)
   const readonly = active?.status === 'complete'
+  const completeCount = all.filter((s) => s.status === 'complete').length
   const timeLabel = savedAt
     ? `저장됨 · ${savedAt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`
     : null
@@ -124,19 +125,63 @@ export function ExerciseChrome({
       : null)
 
   return (
-    <div className="pb-28">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        {readonly && active ? (
-          <span
-            className="rounded-full px-3 py-1 text-[12px] font-semibold"
-            style={{ background: COMPASS.soft, color: COMPASS.ink }}
+    <div className="overflow-visible pb-28">
+      {meta && (
+        <header className="mb-5 flex items-start gap-3 overflow-visible">
+          <div
+            className="flex h-[60px] w-[60px] shrink-0 items-center justify-center rounded-[16px]"
+            style={{ background: COMPASS.soft }}
           >
-            {formatYm(active.takenAt)}의 나 · 읽기 전용
-          </span>
-        ) : (
-          <span className="text-[13px] text-[#B5AFA8]">{timeLabel ?? '자동 저장'}</span>
+            <span
+              className="text-[26px] leading-none"
+              style={{ color: COMPASS.accent }}
+              aria-hidden
+            >
+              ▦
+            </span>
+          </div>
+          <div className="min-w-0 overflow-visible pt-0.5">
+            <h1
+              className="text-[32px] font-bold text-[#1C1B1A]"
+              style={{
+                lineHeight: 1.3,
+                paddingBlock: 4,
+                overflow: 'visible',
+              }}
+            >
+              {meta.name}
+            </h1>
+            <p className="mt-0.5 text-[15px] text-[#8A847E]">{meta.description}</p>
+          </div>
+        </header>
+      )}
+
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          {readonly && active ? (
+            <span
+              className="rounded-full px-3 py-1 text-[12px] font-semibold"
+              style={{ background: COMPASS.soft, color: COMPASS.ink }}
+            >
+              {formatYm(active.takenAt)}의 나 · 읽기 전용
+            </span>
+          ) : (
+            <span className="text-[13px] text-[#B5AFA8]">
+              {timeLabel ?? '자동 저장'}
+            </span>
+          )}
+          {error && <span className="text-[12px] text-[#E0574A]">{error}</span>}
+        </div>
+        {completeCount > 0 && (
+          <button
+            type="button"
+            onClick={onCreateNew}
+            className="shrink-0 text-[13px] font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3E6B5E] focus-visible:ring-offset-2"
+            style={{ color: COMPASS.accent }}
+          >
+            + 새로 하기
+          </button>
         )}
-        {error && <span className="text-[12px] text-[#E0574A]">{error}</span>}
       </div>
 
       <CompassTimelineSpine
@@ -215,3 +260,42 @@ export function ExerciseChrome({
 
 export const cardShadow =
   '0 1px 2px rgba(28,27,26,.04), 0 8px 24px rgba(28,27,26,.05)'
+
+/** Shared page title — use for exercises that don't wrap ExerciseChrome. */
+export function CompassExerciseHeader({
+  title,
+  subtitle,
+}: {
+  title: string
+  subtitle: string
+}) {
+  return (
+    <header className="mb-5 flex items-start gap-3 overflow-visible">
+      <div
+        className="flex h-[60px] w-[60px] shrink-0 items-center justify-center rounded-[16px]"
+        style={{ background: COMPASS.soft }}
+      >
+        <span
+          className="text-[26px] leading-none"
+          style={{ color: COMPASS.accent }}
+          aria-hidden
+        >
+          ▦
+        </span>
+      </div>
+      <div className="min-w-0 overflow-visible pt-0.5">
+        <h1
+          className="text-[32px] font-bold text-[#1C1B1A]"
+          style={{
+            lineHeight: 1.3,
+            paddingBlock: 4,
+            overflow: 'visible',
+          }}
+        >
+          {title}
+        </h1>
+        <p className="mt-0.5 text-[15px] text-[#8A847E]">{subtitle}</p>
+      </div>
+    </header>
+  )
+}

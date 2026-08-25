@@ -1,8 +1,6 @@
 import { useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import {
-  COMPASS,
-  EXERCISE_META,
   emptyOdysseyData,
   type CompassRoute,
   type ExerciseKey,
@@ -13,6 +11,7 @@ import type { CompassActions } from '../hooks/useCompass'
 import { CompassOverview } from './CompassOverview'
 import { CompassDashboard } from './CompassDashboard'
 import { CompassAskDetail, CompassAskList } from './CompassAsk'
+import { CompassExerciseHeader } from './CompassExerciseShell'
 import { CompassLongform } from './CompassLongform'
 import { CompassCoherence } from './CompassCoherence'
 import { CompassGoodtime } from './CompassGoodtime'
@@ -224,8 +223,6 @@ function ExerciseShell({
   protoPlanLink: string | null
   onSendToOdyssey: (idea: MindmapRoleIdea) => void
 }) {
-  const meta = EXERCISE_META.find((m) => m.key === exerciseKey)
-
   return (
     <div>
       <button
@@ -235,24 +232,6 @@ function ExerciseShell({
       >
         <ArrowLeft size={16} /> Compass
       </button>
-      {meta && exerciseKey !== 'goodtime' && exerciseKey !== 'prototype' && (
-        <div className="mb-4 flex items-start gap-3">
-          <div
-            className="flex h-[48px] w-[48px] items-center justify-center rounded-[14px]"
-            style={{ background: COMPASS.soft }}
-          >
-            <span className="text-lg" style={{ color: COMPASS.accent }}>
-              ▦
-            </span>
-          </div>
-          <div>
-            <h1 className="text-[28px] font-bold leading-none text-[#1C1B1A]">
-              {meta.name}
-            </h1>
-            <p className="mt-1.5 text-[14px] text-[#8A847E]">{meta.description}</p>
-          </div>
-        </div>
-      )}
 
       {exerciseKey === 'dashboard' && (
         <CompassDashboard
@@ -286,24 +265,10 @@ function ExerciseShell({
       )}
       {exerciseKey === 'goodtime' && (
         <>
-          <div className="mb-4 flex items-start gap-3">
-            <div
-              className="flex h-[48px] w-[48px] items-center justify-center rounded-[14px]"
-              style={{ background: COMPASS.soft }}
-            >
-              <span className="text-lg" style={{ color: COMPASS.accent }}>
-                ▦
-              </span>
-            </div>
-            <div>
-              <h1 className="text-[28px] font-bold leading-none text-[#1C1B1A]">
-                굿타임 저널
-              </h1>
-              <p className="mt-1.5 text-[14px] text-[#8A847E]">
-                몰입과 에너지를 매일 짧게 기록
-              </p>
-            </div>
-          </div>
+          <CompassExerciseHeader
+            title="굿타임 저널"
+            subtitle="몰입과 에너지를 매일 짧게 기록"
+          />
           <CompassGoodtime compass={compass} />
         </>
       )}
@@ -319,10 +284,10 @@ function ExerciseShell({
       )}
       {exerciseKey === 'prototype' && (
         <>
-          <div className="mb-4">
-            <h1 className="text-[28px] font-bold text-[#1C1B1A]">프로토타입 로그</h1>
-            <p className="mt-1.5 text-[14px] text-[#8A847E]">대화와 작은 실험 기록</p>
-          </div>
+          <CompassExerciseHeader
+            title="프로토타입 로그"
+            subtitle="대화와 작은 실험 기록"
+          />
           <CompassPrototype compass={compass} initialPlanLink={protoPlanLink} />
         </>
       )}
