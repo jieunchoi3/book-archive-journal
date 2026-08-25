@@ -271,6 +271,7 @@ function ExerciseShell({
           onNavigateSnapshot={onSnapshot}
           onCompare={onCompare}
           onRequestSnapshotAi={onRequestSnapshotAi}
+          onOpenExercise={(k) => onOpenExercise(k)}
         />
       )}
       {exerciseKey === 'coherence' && (

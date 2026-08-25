@@ -4,6 +4,7 @@ import {
   emptyDataForExercise,
   EXERCISE_META,
   newId,
+  normalizeDashboardData,
   todayKey,
   type AiReportType,
   type DashboardData,
@@ -651,10 +652,8 @@ export function useCompass() {
 
   const getDashboardDraftData = useCallback((snapshot: LdSnapshot): DashboardData => {
     const fromLs = loadDraftLocal<DashboardData>(`${snapshot.exerciseKey}:${snapshot.id}`)
-    if (fromLs) return fromLs
-    const d = snapshot.data as unknown as DashboardData
-    if (d?.gauges) return d
-    return emptyDataForExercise('dashboard') as unknown as DashboardData
+    if (fromLs) return normalizeDashboardData(fromLs)
+    return normalizeDashboardData(snapshot.data)
   }, [])
 
   const getDraftData = useCallback(<T,>(snapshot: LdSnapshot, fallback: T): T => {

@@ -60,10 +60,24 @@ export interface LdAnswer {
 
 export type DashboardGaugeKey = 'health' | 'work' | 'play' | 'love'
 
+export type DashboardStep = 0 | 1 | 2 | 3 | 4 // health, work, play, love, summary
+
+export interface DashboardAreaState {
+  items: string[]
+  gauge: number | null
+  gauge_touched: boolean
+  note: string
+}
+
 export interface DashboardData {
-  gauges: Record<DashboardGaugeKey, number>
-  reasons: Record<DashboardGaugeKey, string>
-  friction: string
+  order: DashboardGaugeKey[]
+  areas: Record<DashboardGaugeKey, DashboardAreaState>
+  change: string
+  step: DashboardStep
+  /** Legacy fields — ignored when areas present */
+  gauges?: Record<DashboardGaugeKey, number>
+  reasons?: Record<DashboardGaugeKey, string>
+  friction?: string
 }
 
 export const DASHBOARD_GAUGES: {
@@ -74,21 +88,106 @@ export const DASHBOARD_GAUGES: {
   { key: 'health', label: '건강', color: '#5E8C7B' },
   { key: 'work', label: '일', color: '#3E6B5E' },
   { key: 'play', label: '놀이', color: '#C08A4A' },
-  { key: 'love', label: '관계', color: '#B4635A' },
+  { key: 'love', label: '사랑', color: '#B4635A' },
 ]
+
+export const DASHBOARD_ORDER: DashboardGaugeKey[] = [
+  'health',
+  'work',
+  'play',
+  'love',
+]
+
+function emptyArea(): DashboardAreaState {
+  return { items: [], gauge: null, gauge_touched: false, note: '' }
+}
 
 export function emptyDashboardData(): DashboardData {
   return {
-    gauges: { health: 50, work: 50, play: 50, love: 50 },
-    reasons: { health: '', work: '', play: '', love: '' },
-    friction: '',
+    order: [...DASHBOARD_ORDER],
+    areas: {
+      health: emptyArea(),
+      work: emptyArea(),
+      play: emptyArea(),
+      love: emptyArea(),
+    },
+    change: '',
+    step: 0,
   }
+}
+
+/** Read gauge from v2 or legacy snapshot data. */
+export function getDashboardGauge(
+  data: DashboardData | Record<string, unknown> | null | undefined,
+  key: DashboardGaugeKey,
+): number | null {
+  if (!data || typeof data !== 'object') return null
+  const d = data as DashboardData
+  if (d.areas?.[key]) {
+    const g = d.areas[key].gauge
+    return typeof g === 'number' ? g : null
+  }
+  const legacy = d.gauges?.[key]
+  return typeof legacy === 'number' ? legacy : null
+}
+
+export function normalizeDashboardData(raw: unknown): DashboardData {
+  const empty = emptyDashboardData()
+  if (!raw || typeof raw !== 'object') return empty
+  const d = raw as Partial<DashboardData>
+
+  if (d.areas && typeof d.areas === 'object') {
+    const areas = { ...empty.areas }
+    for (const key of DASHBOARD_ORDER) {
+      const a = d.areas[key]
+      areas[key] = {
+        items: Array.isArray(a?.items)
+          ? a!.items.filter((x) => typeof x === 'string')
+          : [],
+        gauge: typeof a?.gauge === 'number' ? a.gauge : null,
+        gauge_touched: Boolean(a?.gauge_touched) || typeof a?.gauge === 'number',
+        note: typeof a?.note === 'string' ? a.note : '',
+      }
+    }
+    const step =
+      typeof d.step === 'number' && d.step >= 0 && d.step <= 4
+        ? (d.step as DashboardStep)
+        : 0
+    return {
+      order: [...DASHBOARD_ORDER],
+      areas,
+      change: typeof d.change === 'string' ? d.change : '',
+      step,
+    }
+  }
+
+  // Migrate legacy flat gauges/reasons/friction
+  if (d.gauges) {
+    const areas = { ...empty.areas }
+    for (const key of DASHBOARD_ORDER) {
+      const g = d.gauges[key]
+      areas[key] = {
+        items: [],
+        gauge: typeof g === 'number' ? Math.min(120, Math.max(0, g)) : null,
+        gauge_touched: typeof g === 'number',
+        note: d.reasons?.[key] ?? '',
+      }
+    }
+    return {
+      order: [...DASHBOARD_ORDER],
+      areas,
+      change: typeof d.friction === 'string' ? d.friction : '',
+      step: 0,
+    }
+  }
+
+  return empty
 }
 
 export function isDashboardData(data: unknown): data is DashboardData {
   if (!data || typeof data !== 'object') return false
   const d = data as DashboardData
-  return Boolean(d.gauges && d.reasons && typeof d.friction === 'string')
+  return Boolean(d.areas) || Boolean(d.gauges)
 }
 
 // ─── Journal / Prototype / AI ───────────────────────────────────────────────
@@ -209,23 +308,61 @@ export interface LdAiReport {
 
 // ─── Exercise snapshot data shapes ──────────────────────────────────────────
 
+export type LongformStep = 0 | 1 | 2
+
 export interface LongformData {
+  reasons: string[]
   body: string
-  /** @deprecated use chips_used */
+  questions_checked: string[]
+  values: [string, string, string]
+  step: LongformStep
+  /** legacy */
+  chips_used?: string[]
   promptsUsed?: string[]
-  chips_used: string[]
 }
 
 export function emptyLongformData(): LongformData {
-  return { body: '', chips_used: [] }
+  return {
+    reasons: [],
+    body: '',
+    questions_checked: [],
+    values: ['', '', ''],
+    step: 0,
+  }
 }
 
 export function normalizeLongformData(raw: unknown): LongformData {
-  const d = (raw ?? {}) as Partial<LongformData>
-  const chips = d.chips_used ?? d.promptsUsed ?? []
+  const empty = emptyLongformData()
+  if (!raw || typeof raw !== 'object') return empty
+  const d = raw as Partial<LongformData>
+
+  if (Array.isArray(d.reasons) || typeof d.step === 'number') {
+    const valuesRaw = Array.isArray(d.values) ? d.values : ['', '', '']
+    return {
+      reasons: Array.isArray(d.reasons)
+        ? d.reasons.filter((x) => typeof x === 'string')
+        : [],
+      body: typeof d.body === 'string' ? d.body : '',
+      questions_checked: Array.isArray(d.questions_checked)
+        ? d.questions_checked.filter((x) => typeof x === 'string')
+        : [],
+      values: [
+        String(valuesRaw[0] ?? ''),
+        String(valuesRaw[1] ?? ''),
+        String(valuesRaw[2] ?? ''),
+      ],
+      step:
+        typeof d.step === 'number' && d.step >= 0 && d.step <= 2
+          ? (d.step as LongformStep)
+          : 0,
+    }
+  }
+
+  // Legacy body-only / chips_used
   return {
+    ...empty,
     body: typeof d.body === 'string' ? d.body : '',
-    chips_used: [...chips],
+    step: typeof d.body === 'string' && d.body.trim() ? 1 : 0,
   }
 }
 
@@ -433,7 +570,7 @@ export const EXERCISE_META: ExerciseMeta[] = [
   {
     key: 'dashboard',
     name: '라이프 대시보드',
-    description: '건강 · 일 · 놀이 · 관계의 충전량을 눈으로 보기',
+    description: '건강 · 일 · 놀이 · 사랑을 순서대로 읽고, 바꾸고 싶은 것을 적기',
     cadenceDays: 30,
     phase: 1,
   },

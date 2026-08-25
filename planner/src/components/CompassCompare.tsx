@@ -4,13 +4,14 @@ import {
   DASHBOARD_GAUGES,
   EXERCISE_META,
   formatYm,
+  getDashboardGauge,
+  normalizeLongformData,
   type DashboardData,
   type ExerciseKey,
   type FailureData,
   type GravityData,
   type LdJournalEntry,
   type LdSnapshot,
-  type LongformData,
   type OdysseyData,
   type TeamData,
 } from '../types/compass'
@@ -174,9 +175,13 @@ function GaugeCompare({ snaps }: { snaps: LdSnapshot[] }) {
         <svg viewBox={`0 0 ${Math.max(320, snaps.length * 120)} 160`} className="h-40 w-full">
           {DASHBOARD_GAUGES.map((g) => {
             const pts = snaps.map((s, i) => {
-              const v = (s.data as unknown as DashboardData).gauges?.[g.key] ?? 50
+              const raw = getDashboardGauge(
+                s.data as unknown as DashboardData,
+                g.key,
+              )
+              const v = raw ?? 0
               const x = 40 + i * 100
-              const y = 140 - v * 1.2
+              const y = 140 - (v / 120) * 120
               return `${x},${y}`
             })
             return (
@@ -205,9 +210,13 @@ function GaugeCompare({ snaps }: { snaps: LdSnapshot[] }) {
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {DASHBOARD_GAUGES.map((g) => {
-          const first = (snaps[0].data as unknown as DashboardData).gauges?.[g.key] ?? 0
+          const first =
+            getDashboardGauge(snaps[0].data as unknown as DashboardData, g.key) ?? 0
           const last =
-            (snaps[snaps.length - 1].data as unknown as DashboardData).gauges?.[g.key] ?? 0
+            getDashboardGauge(
+              snaps[snaps.length - 1].data as unknown as DashboardData,
+              g.key,
+            ) ?? 0
           const delta = last - first
           return (
             <div
@@ -232,58 +241,125 @@ function GaugeCompare({ snaps }: { snaps: LdSnapshot[] }) {
 
 function LongformCompare({ snaps }: { snaps: LdSnapshot[] }) {
   const [diffOnly, setDiffOnly] = useState(false)
-  const a = ((snaps[0].data as unknown as LongformData).body ?? '').split(/\n\n+/).filter(Boolean)
-  const b = ((snaps[snaps.length - 1].data as unknown as LongformData).body ?? '')
-    .split(/\n\n+/)
-    .filter(Boolean)
+  const first = normalizeLongformData(snaps[0].data)
+  const last = normalizeLongformData(snaps[snaps.length - 1].data)
+  const a = (first.body ?? '').split(/\n\n+/).filter(Boolean)
+  const b = (last.body ?? '').split(/\n\n+/).filter(Boolean)
   const max = Math.max(a.length, b.length)
 
+  const setA = new Set(first.reasons.map((r) => r.trim()).filter(Boolean))
+  const setB = new Set(last.reasons.map((r) => r.trim()).filter(Boolean))
+  const onlyThen = [...setA].filter((x) => !setB.has(x))
+  const both = [...setA].filter((x) => setB.has(x))
+  const onlyNow = [...setB].filter((x) => !setA.has(x))
+
   return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setDiffOnly((v) => !v)}
-        className="mb-3 rounded-full px-3 py-1 text-[12px] font-semibold"
-        style={{ background: COMPASS.soft, color: COMPASS.ink }}
-      >
-        {diffOnly ? '전체 보기' : '달라진 데만 보기'}
-      </button>
-      <div className="grid gap-4 sm:grid-cols-2">
+    <div className="space-y-6">
+      {(first.reasons.length > 0 || last.reasons.length > 0) && (
         <div>
-          <p className="mb-2 text-[11px] font-semibold text-[#8A847E]">
-            {formatYm(snaps[0].takenAt)}
+          <p className="mb-3 text-[13px] font-semibold text-[#8A847E]">
+            쏟아낸 이유 · 집합 비교
           </p>
-          {Array.from({ length: max }).map((_, i) => {
-            const changed = a[i] !== b[i]
-            if (diffOnly && !changed) return null
-            return (
-              <p
-                key={i}
-                className="mb-3 border-l-2 pl-3 font-serif text-[15px] leading-relaxed"
-                style={{ borderColor: changed ? COMPASS.accent : 'transparent' }}
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[
+              { title: '그때만 있던 것', items: onlyThen },
+              { title: '계속 있는 것', items: both },
+              { title: '지금 새로 생긴 것', items: onlyNow },
+            ].map((col) => (
+              <div
+                key={col.title}
+                className="rounded-[18px] border border-[#ECE7E2] bg-white p-4"
+                style={{ boxShadow: cardShadow }}
               >
-                {a[i] ?? '—'}
-              </p>
-            )
-          })}
+                <p className="mb-2 text-[12px] font-semibold text-[#8A847E]">
+                  {col.title}
+                </p>
+                <ul className="space-y-1 text-[13px] text-[#1C1B1A]">
+                  {col.items.length === 0 ? (
+                    <li className="text-[#B5AFA8]">—</li>
+                  ) : (
+                    col.items.map((t) => <li key={t}>· {t}</li>)
+                  )}
+                </ul>
+              </div>
+            ))}
+          </div>
         </div>
-        <div>
-          <p className="mb-2 text-[11px] font-semibold text-[#8A847E]">
-            {formatYm(snaps[snaps.length - 1].takenAt)}
-          </p>
-          {Array.from({ length: max }).map((_, i) => {
-            const changed = a[i] !== b[i]
-            if (diffOnly && !changed) return null
-            return (
-              <p
-                key={i}
-                className="mb-3 border-l-2 pl-3 font-serif text-[15px] leading-relaxed"
-                style={{ borderColor: changed ? COMPASS.accent : 'transparent' }}
-              >
-                {b[i] ?? '—'}
+      )}
+
+      {(first.values.some(Boolean) || last.values.some(Boolean)) && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {[
+            { label: formatYm(snaps[0].takenAt), values: first.values },
+            {
+              label: formatYm(snaps[snaps.length - 1].takenAt),
+              values: last.values,
+            },
+          ].map((col) => (
+            <div
+              key={col.label}
+              className="rounded-[18px] border border-[#ECE7E2] bg-white p-4"
+              style={{ boxShadow: cardShadow }}
+            >
+              <p className="mb-2 text-[12px] font-semibold text-[#8A847E]">
+                가치 · {col.label}
               </p>
-            )
-          })}
+              <ol className="list-decimal space-y-1 pl-4 text-[14px]">
+                {col.values.map((v, i) => (
+                  <li key={i}>{v || '—'}</li>
+                ))}
+              </ol>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div>
+        <button
+          type="button"
+          onClick={() => setDiffOnly((v) => !v)}
+          className="mb-3 rounded-full px-3 py-1 text-[12px] font-semibold"
+          style={{ background: COMPASS.soft, color: COMPASS.ink }}
+        >
+          {diffOnly ? '전체 보기' : '달라진 데만 보기'}
+        </button>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <p className="mb-2 text-[11px] font-semibold text-[#8A847E]">
+              {formatYm(snaps[0].takenAt)}
+            </p>
+            {Array.from({ length: max }).map((_, i) => {
+              const changed = a[i] !== b[i]
+              if (diffOnly && !changed) return null
+              return (
+                <p
+                  key={i}
+                  className="mb-3 border-l-[3px] pl-3 font-serif text-[15px] leading-relaxed"
+                  style={{ borderColor: changed ? COMPASS.accent : 'transparent' }}
+                >
+                  {a[i] ?? '—'}
+                </p>
+              )
+            })}
+          </div>
+          <div>
+            <p className="mb-2 text-[11px] font-semibold text-[#8A847E]">
+              {formatYm(snaps[snaps.length - 1].takenAt)}
+            </p>
+            {Array.from({ length: max }).map((_, i) => {
+              const changed = a[i] !== b[i]
+              if (diffOnly && !changed) return null
+              return (
+                <p
+                  key={i}
+                  className="mb-3 border-l-[3px] pl-3 font-serif text-[15px] leading-relaxed"
+                  style={{ borderColor: changed ? COMPASS.accent : 'transparent' }}
+                >
+                  {b[i] ?? '—'}
+                </p>
+              )
+            })}
+          </div>
         </div>
       </div>
     </div>
