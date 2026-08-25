@@ -250,6 +250,24 @@ export function useCompass() {
     [snapshots, upsertSnapshot],
   )
 
+  /** Allows updating a complete snapshot (e.g. filling in skipped Odyssey present). */
+  const updateSnapshotData = useCallback(
+    async (snapshotId: string, data: Record<string, unknown>) => {
+      const snap = snapshots.find((s) => s.id === snapshotId)
+      if (!snap) return
+      const next: LdSnapshot = {
+        ...snap,
+        data,
+        updatedAt: new Date().toISOString(),
+      }
+      if (snap.status !== 'complete') {
+        saveDraftLocal(`${snap.exerciseKey}:${snap.id}`, data)
+      }
+      await upsertSnapshot(next)
+    },
+    [snapshots, upsertSnapshot],
+  )
+
   const completeSnapshot = useCallback(
     async (snapshotId: string, label?: string) => {
       const snap = snapshots.find((s) => s.id === snapshotId)
@@ -680,6 +698,7 @@ export function useCompass() {
     draftFor,
     createDraft,
     updateDraftData,
+    updateSnapshotData,
     completeSnapshot,
     dueQuestions,
     waitingQuestions,

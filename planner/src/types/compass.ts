@@ -919,42 +919,332 @@ export interface MindmapNode {
   ring: 0 | 1 | 2
 }
 
+export type OdysseyPlanKey = 'current' | 'gone' | 'no_object'
+export type OdysseyYearKey = '1' | '2' | '3' | '4' | '5'
+export type OdysseyStep =
+  | 'prep'
+  | 'plan0'
+  | 'plan1'
+  | 'plan2'
+  | 'side'
+  | 'present'
+
+export const ODYSSEY_PLAN_KEYS: OdysseyPlanKey[] = [
+  'current',
+  'gone',
+  'no_object',
+]
+export const ODYSSEY_YEAR_KEYS: OdysseyYearKey[] = ['1', '2', '3', '4', '5']
+
+export const ODYSSEY_PLAN_META: Record<
+  OdysseyPlanKey,
+  { label: string; blurb: string }
+> = {
+  current: {
+    label: '지금 가는 길',
+    blurb:
+      '지금 삶이 그대로 이어지면. 아니면 계속 마음에 품고만 있던 그 아이디어.',
+  },
+  gone: {
+    label: '그게 사라지면',
+    blurb:
+      '①이 갑자기 불가능해지면. 회사가 없어지거나, 그 길이 막히거나. 그럼 뭘 할 거야?',
+  },
+  no_object: {
+    label: '돈도 남 눈도 상관없다면',
+    blurb: '돈이 문제가 안 되고, 아무도 뭐라고 안 하면.',
+  },
+}
+
+export type OdysseyGaugeKey =
+  | 'resources'
+  | 'liking'
+  | 'confidence'
+  | 'coherence'
+
+export const ODYSSEY_GAUGE_META: {
+  key: OdysseyGaugeKey
+  label: string
+  def: string
+  note?: string
+}[] = [
+  {
+    key: 'resources',
+    label: '자원',
+    def: '시간·돈·기술·인맥이 지금 있어?',
+  },
+  { key: 'liking', label: '끌림', def: '얼마나 하고 싶어?' },
+  {
+    key: 'confidence',
+    label: '자신감',
+    def: '해낼 수 있을 것 같아?',
+    note: '자원 없어도 자신 있을 수 있어',
+  },
+  {
+    key: 'coherence',
+    label: '일관성',
+    def: '내 일 관점·삶 관점이랑 맞아?',
+  },
+]
+
+export interface OdysseyTimeline {
+  work: Record<OdysseyYearKey, string[]>
+  life: Record<OdysseyYearKey, string[]>
+}
+
+export interface OdysseyPlan {
+  key: OdysseyPlanKey
+  label: string
+  title: string
+  timeline: OdysseyTimeline
+  questions: [string, string, string]
+  gauges: Record<OdysseyGaugeKey, number | null>
+  sketch_url: string
+  sketch_kind: 'draw' | 'photo' | ''
+  from_role: string
+}
+
+export interface OdysseyPresented {
+  to: string
+  most_alive: 'plan1' | 'plan2' | 'plan3' | 'unsure' | ''
+  their_questions: string
+  my_notice: string
+  skipped: boolean
+}
+
+export interface OdysseyData {
+  plans: [OdysseyPlan, OdysseyPlan, OdysseyPlan]
+  different_enough: boolean | null
+  presented: OdysseyPresented
+  compass_ref: string
+  step: OdysseyStep
+}
+
+function emptyTimeline(): OdysseyTimeline {
+  const mk = () =>
+    Object.fromEntries(ODYSSEY_YEAR_KEYS.map((y) => [y, [] as string[]])) as Record<
+      OdysseyYearKey,
+      string[]
+    >
+  return { work: mk(), life: mk() }
+}
+
+export function emptyOdysseyPlan(key: OdysseyPlanKey): OdysseyPlan {
+  return {
+    key,
+    label: ODYSSEY_PLAN_META[key].label,
+    title: '',
+    timeline: emptyTimeline(),
+    questions: ['', '', ''],
+    gauges: {
+      resources: null,
+      liking: null,
+      confidence: null,
+      coherence: null,
+    },
+    sketch_url: '',
+    sketch_kind: '',
+    from_role: '',
+  }
+}
+
+export function emptyOdysseyData(): OdysseyData {
+  return {
+    plans: [
+      emptyOdysseyPlan('current'),
+      emptyOdysseyPlan('gone'),
+      emptyOdysseyPlan('no_object'),
+    ],
+    different_enough: null,
+    presented: {
+      to: '',
+      most_alive: '',
+      their_questions: '',
+      my_notice: '',
+      skipped: false,
+    },
+    compass_ref: '',
+    step: 'prep',
+  }
+}
+
+function migrateGauge(v: unknown): number | null {
+  if (v === null || v === undefined) return null
+  const n = Number(v)
+  if (!Number.isFinite(n)) return null
+  // v1 was 0–5
+  if (n >= 0 && n <= 5) return Math.round(n * 20)
+  return Math.max(0, Math.min(100, Math.round(n)))
+}
+
+export function normalizeOdysseyData(raw: unknown): OdysseyData {
+  const empty = emptyOdysseyData()
+  if (!raw || typeof raw !== 'object') return empty
+  const d = raw as Partial<OdysseyData> & {
+    plans?: unknown[]
+  }
+
+  // v2 shape
+  if (
+    d.step ||
+    d.presented ||
+    (Array.isArray(d.plans) &&
+      d.plans[0] &&
+      typeof d.plans[0] === 'object' &&
+      'timeline' in (d.plans[0] as object))
+  ) {
+    const plans = ODYSSEY_PLAN_KEYS.map((key, i) => {
+      const src = (Array.isArray(d.plans) ? d.plans[i] : null) as
+        | Partial<OdysseyPlan>
+        | undefined
+      const base = emptyOdysseyPlan(key)
+      if (!src) return base
+      const tl = src.timeline
+      const work = { ...base.timeline.work }
+      const life = { ...base.timeline.life }
+      if (tl && typeof tl === 'object') {
+        for (const y of ODYSSEY_YEAR_KEYS) {
+          work[y] = Array.isArray(tl.work?.[y])
+            ? tl.work![y].map(String).filter(Boolean)
+            : []
+          life[y] = Array.isArray(tl.life?.[y])
+            ? tl.life![y].map(String).filter(Boolean)
+            : []
+        }
+      }
+      const g = src.gauges ?? base.gauges
+      return {
+        ...base,
+        title: String(src.title ?? ''),
+        timeline: { work, life },
+        questions: [
+          String(src.questions?.[0] ?? ''),
+          String(src.questions?.[1] ?? ''),
+          String(src.questions?.[2] ?? ''),
+        ],
+        gauges: {
+          resources: migrateGauge(g.resources),
+          liking: migrateGauge(
+            (g as { liking?: unknown; pull?: unknown }).liking ??
+              (g as { pull?: unknown }).pull,
+          ),
+          confidence: migrateGauge(g.confidence),
+          coherence: migrateGauge(g.coherence),
+        },
+        sketch_url: String(src.sketch_url ?? ''),
+        sketch_kind:
+          src.sketch_kind === 'draw' || src.sketch_kind === 'photo'
+            ? src.sketch_kind
+            : ('' as const),
+        from_role: String(src.from_role ?? ''),
+      }
+    }) as OdysseyData['plans']
+
+    const presented = d.presented ?? empty.presented
+    const step = (
+      ['prep', 'plan0', 'plan1', 'plan2', 'side', 'present'] as OdysseyStep[]
+    ).includes(d.step as OdysseyStep)
+      ? (d.step as OdysseyStep)
+      : 'prep'
+
+    return {
+      plans,
+      different_enough:
+        typeof d.different_enough === 'boolean' ? d.different_enough : null,
+      presented: {
+        to: String(presented.to ?? ''),
+        most_alive: (
+          ['plan1', 'plan2', 'plan3', 'unsure', ''] as const
+        ).includes(presented.most_alive as OdysseyPresented['most_alive'])
+          ? (presented.most_alive as OdysseyPresented['most_alive'])
+          : '',
+        their_questions: String(presented.their_questions ?? ''),
+        my_notice: String(presented.my_notice ?? ''),
+        skipped: Boolean(presented.skipped),
+      },
+      compass_ref: String(d.compass_ref ?? ''),
+      step,
+    }
+  }
+
+  // v1 → migrate milestones into work timeline
+  if (Array.isArray(d.plans) && d.plans.length >= 3) {
+    const plans = ODYSSEY_PLAN_KEYS.map((key, i) => {
+      const src = d.plans![i] as {
+        title?: string
+        questions?: string[]
+        gauges?: Record<string, number>
+        milestones?: { yearIndex: number; label: string }[]
+      }
+      const base = emptyOdysseyPlan(key)
+      const work = { ...base.timeline.work }
+      for (const m of src.milestones ?? []) {
+        const y = String(
+          Math.min(5, Math.max(1, (m.yearIndex ?? 0) + 1)),
+        ) as OdysseyYearKey
+        if (m.label?.trim()) work[y] = [...work[y], m.label.trim()]
+      }
+      return {
+        ...base,
+        title: String(src.title ?? ''),
+        timeline: { work, life: base.timeline.life },
+        questions: [
+          String(src.questions?.[0] ?? ''),
+          String(src.questions?.[1] ?? ''),
+          String(src.questions?.[2] ?? ''),
+        ] as [string, string, string],
+        gauges: {
+          resources: migrateGauge(src.gauges?.resources),
+          liking: migrateGauge(src.gauges?.pull ?? src.gauges?.liking),
+          confidence: migrateGauge(src.gauges?.confidence),
+          coherence: migrateGauge(src.gauges?.coherence),
+        },
+      }
+    }) as OdysseyData['plans']
+    return { ...empty, plans, step: 'prep' }
+  }
+
+  return empty
+}
+
+export function odysseyChipCount(plan: OdysseyPlan): number {
+  let n = 0
+  for (const y of ODYSSEY_YEAR_KEYS) {
+    n += plan.timeline.work[y].length + plan.timeline.life[y].length
+  }
+  return n
+}
+
+export function odysseyLifeChipCount(plan: OdysseyPlan): number {
+  let n = 0
+  for (const y of ODYSSEY_YEAR_KEYS) n += plan.timeline.life[y].length
+  return n
+}
+
+export function countEojeol(text: string): number {
+  return text
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length
+}
+
+export function odysseyYearLabel(yearIndex: number, baseYear = new Date().getFullYear()) {
+  return `${baseYear + yearIndex - 1} · ${yearIndex}년차`
+}
+
+/** @deprecated v1 */
 export interface OdysseyMilestone {
   id: string
   yearIndex: number
   label: string
 }
 
-export interface OdysseyPlan {
-  id: string
-  badge: string
-  title: string
-  milestones: OdysseyMilestone[]
-  questions: [string, string, string]
-  gauges: { resources: number; pull: number; confidence: number; coherence: number }
-}
-
-export interface OdysseyData {
-  plans: [OdysseyPlan, OdysseyPlan, OdysseyPlan]
-}
-
+/** @deprecated */
 export const ODYSSEY_DEFAULT_BADGES = [
   'A 지금 길의 연장',
   'B 그 길이 사라진다면',
   'C 돈도 평판도 상관없다면',
 ] as const
-
-export function emptyOdysseyData(): OdysseyData {
-  const mk = (i: number): OdysseyPlan => ({
-    id: ['A', 'B', 'C'][i],
-    badge: ODYSSEY_DEFAULT_BADGES[i],
-    title: '',
-    milestones: [],
-    questions: ['', '', ''],
-    gauges: { resources: 3, pull: 3, confidence: 3, coherence: 3 },
-  })
-  return { plans: [mk(0), mk(1), mk(2)] }
-}
 
 export interface PrototypeGoalData {
   quarterlyGoal: number
@@ -1120,7 +1410,7 @@ export const EXERCISE_META: ExerciseMeta[] = [
   {
     key: 'odyssey',
     name: '오디세이 플랜',
-    description: '5년짜리 길 세 갈래를 나란히 그리기',
+    description: '5년짜리 길 세 갈래를 하나씩 그리고 말해보기',
     cadenceDays: 180,
     phase: 2,
   },

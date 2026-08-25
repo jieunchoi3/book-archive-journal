@@ -183,7 +183,6 @@ function ExerciseShell({
   onCompare,
   onRequestSnapshotAi,
   onOpenExercise,
-  onCreatePrototype,
   protoPlanLink,
 }: {
   exerciseKey: ExerciseKey
@@ -253,7 +252,8 @@ function ExerciseShell({
           onNavigateSnapshot={onSnapshot}
           onCompare={onCompare}
           onRequestSnapshotAi={onRequestSnapshotAi}
-          onCreatePrototype={onCreatePrototype}
+          onOpenCoherence={() => onOpenExercise('coherence')}
+          onOpenMindmap={() => onOpenExercise('mindmap')}
         />
       )}
       {exerciseKey === 'prototype' && (

@@ -48,7 +48,8 @@ export function CompassTeam({
     }
     setData(compass.getDraftData(active, emptyTeamData()))
     setLockedMsg(false)
-  }, [active, compass])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rehydrate on snapshot switch only
+  }, [active?.id])
 
   const save = useCallback(
     async (id: string, next: TeamData) => {

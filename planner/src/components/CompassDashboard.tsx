@@ -394,7 +394,11 @@ export function CompassDashboard({
     setLockedMsg(false)
     setItemDraft('')
     setEditingIdx(null)
-  }, [active, compass])
+    setEditText('')
+    // Rehydrate only when switching snapshots — not after every autosave
+    // (autosave replaces `active`/`compass` identity and was clearing the input).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: active.id only
+  }, [active?.id])
 
   const save = useCallback(
     async (id: string, next: DashboardData) => {

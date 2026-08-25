@@ -9,14 +9,16 @@ import {
   normalizeCoherenceData,
   normalizeGoodtimeRunData,
   normalizeMindmapData,
+  normalizeOdysseyData,
   mindmapRoleIdeasFromData,
+  ODYSSEY_GAUGE_META,
+  ODYSSEY_YEAR_KEYS,
   type DashboardData,
   type ExerciseKey,
   type FailureData,
   type GravityData,
   type LdJournalEntry,
   type LdSnapshot,
-  type OdysseyData,
   type TeamData,
 } from '../types/compass'
 import type { CompassActions } from '../hooks/useCompass'
@@ -440,143 +442,180 @@ function CoherenceCompare({ snaps }: { snaps: LdSnapshot[] }) {
 }
 
 function OdysseyCompare({ snaps }: { snaps: LdSnapshot[] }) {
-  const plans = ['A', 'B', 'C']
-  const gaugeMeta = [
-    { key: 'resources' as const, label: '자원', color: '#5E8C7B' },
-    { key: 'pull' as const, label: '끌림', color: '#3E6B5E' },
-    { key: 'confidence' as const, label: '자신감', color: '#C08A4A' },
-    { key: 'coherence' as const, label: '내 관점과 맞나', color: '#B4635A' },
-  ]
+  const norms = snaps.map((s) => normalizeOdysseyData(s.data))
+  const first = norms[0]
+  const last = norms[norms.length - 1]
+  const labels = ['① 지금 길', '② 사라지면', '③ 상관없다면']
+  const gaugeKeys = ODYSSEY_GAUGE_META
+
+  const chipSet = (plan: (typeof first.plans)[0]) => {
+    const set = new Set<string>()
+    for (const y of ODYSSEY_YEAR_KEYS) {
+      for (const c of plan.timeline.work[y]) set.add(`일:${c}`)
+      for (const c of plan.timeline.life[y]) set.add(`삶:${c}`)
+    }
+    return set
+  }
+
+  const aliveLabel = (v: string) =>
+    v === 'plan1' ? '①' : v === 'plan2' ? '②' : v === 'plan3' ? '③' : v
+
   return (
-    <div className="space-y-6">
-      {plans.map((pid, pi) => (
-        <div key={pid}>
-          <h3 className="mb-2 text-[14px] font-semibold">플랜 {pid}</h3>
-          <div className="flex gap-3 overflow-x-auto">
-            {snaps.map((s) => {
-              const plan = (s.data as unknown as OdysseyData).plans?.[pi]
-              return (
-                <div
+    <div className="space-y-8">
+      {first.presented.most_alive &&
+        last.presented.most_alive &&
+        first.presented.most_alive !== last.presented.most_alive && (
+          <p
+            className="rounded-xl px-4 py-3 text-[14px]"
+            style={{ background: COMPASS.soft, color: COMPASS.ink }}
+          >
+            {formatYm(snaps[0].takenAt)}엔 {aliveLabel(first.presented.most_alive)}이
+            제일 신났는데 지금은 {aliveLabel(last.presented.most_alive)}이야
+          </p>
+        )}
+
+      <div>
+        <p className="mb-3 text-[13px] font-semibold text-[#8A847E]">제목</p>
+        <div
+          className="grid gap-3"
+          style={{
+            gridTemplateColumns: `repeat(${snaps.length}, minmax(0, 1fr))`,
+          }}
+        >
+          {norms.map((d, si) => (
+            <div
+              key={snaps[si].id}
+              className="rounded-[18px] border border-[#ECE7E2] bg-white p-4"
+              style={{ boxShadow: cardShadow }}
+            >
+              <p className="text-[11px] text-[#8A847E]">
+                {formatYm(snaps[si].takenAt)}
+              </p>
+              {d.plans.map((p, i) => (
+                <p key={p.key} className="mt-2 text-[14px] text-[#1C1B1A]">
+                  <span className="text-[#8A847E]">{labels[i]} </span>
+                  {p.title || '—'}
+                </p>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {[0, 1, 2].map((pi) => (
+        <div key={pi}>
+          <p className="mb-2 text-[13px] font-semibold text-[#8A847E]">
+            {labels[pi]} · 게이지
+          </p>
+          <div
+            className="overflow-x-auto rounded-[18px] border border-[#ECE7E2] bg-white p-4"
+            style={{ boxShadow: cardShadow }}
+          >
+            <svg
+              viewBox={`0 0 ${Math.max(280, snaps.length * 100)} 140`}
+              className="h-32 w-full"
+            >
+              {gaugeKeys.map((g, gi) => {
+                const colors = ['#5E8C7B', '#3E6B5E', '#C08A4A', '#5B4E73']
+                const pts = norms.map((d, i) => {
+                  const v = d.plans[pi].gauges[g.key] ?? 0
+                  const x = 36 + i * 90
+                  const y = 110 - (v / 100) * 90
+                  return `${x},${y}`
+                })
+                return (
+                  <polyline
+                    key={g.key}
+                    fill="none"
+                    stroke={colors[gi]}
+                    strokeWidth={2}
+                    points={pts.join(' ')}
+                  />
+                )
+              })}
+              {snaps.map((s, i) => (
+                <text
                   key={s.id}
-                  className="w-56 shrink-0 rounded-[18px] border border-[#ECE7E2] bg-white p-3"
-                  style={{ boxShadow: cardShadow }}
+                  x={36 + i * 90}
+                  y={130}
+                  textAnchor="middle"
+                  fontSize={10}
+                  fill="#8A847E"
                 >
-                  <p className="text-[11px] text-[#8A847E]">{formatYm(s.takenAt)}</p>
-                  <p className="mt-1 text-[14px] font-semibold">{plan?.title || plan?.badge}</p>
-                  <ul className="mt-2 space-y-1 text-[12px] text-[#5A5550]">
-                    {(plan?.milestones ?? []).map((m) => (
-                      <li key={m.id}>
-                        {m.yearIndex + 1}년 · {m.label}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )
-            })}
+                  {formatYm(s.takenAt)}
+                </text>
+              ))}
+            </svg>
+          </div>
+
+          <p className="mb-2 mt-4 text-[13px] font-semibold text-[#8A847E]">
+            {labels[pi]} · 알고 싶은 것
+          </p>
+          <div
+            className="grid gap-3"
+            style={{
+              gridTemplateColumns: `repeat(${snaps.length}, minmax(0, 1fr))`,
+            }}
+          >
+            {norms.map((d, si) => (
+              <div
+                key={snaps[si].id}
+                className="rounded-[18px] border border-[#ECE7E2] bg-white p-4"
+                style={{ boxShadow: cardShadow }}
+              >
+                <p className="mb-2 text-[11px] text-[#8A847E]">
+                  {formatYm(snaps[si].takenAt)}
+                </p>
+                {d.plans[pi].questions
+                  .filter((q) => q.trim())
+                  .map((q) => (
+                    <p
+                      key={q}
+                      className="mb-2 whitespace-pre-wrap text-[14px] leading-relaxed text-[#1C1B1A]"
+                    >
+                      {q}
+                    </p>
+                  ))}
+              </div>
+            ))}
           </div>
 
           {snaps.length >= 2 && (
-            <div
-              className="mt-3 overflow-x-auto rounded-[18px] border border-[#ECE7E2] bg-white p-4"
-              style={{ boxShadow: cardShadow }}
-            >
-              <svg
-                viewBox={`0 0 ${Math.max(280, snaps.length * 100)} 140`}
-                className="h-32 w-full"
-              >
-                {gaugeMeta.map((g) => {
-                  const pts = snaps.map((s, i) => {
-                    const v =
-                      (s.data as unknown as OdysseyData).plans?.[pi]?.gauges?.[g.key] ?? 0
-                    const x = 36 + i * 90
-                    const y = 110 - (v / 5) * 90
-                    return `${x},${y}`
-                  })
-                  return (
-                    <polyline
-                      key={g.key}
-                      fill="none"
-                      stroke={g.color}
-                      strokeWidth={2}
-                      points={pts.join(' ')}
-                    />
-                  )
-                })}
-                {snaps.map((s, i) => (
-                  <text
-                    key={s.id}
-                    x={36 + i * 90}
-                    y={130}
-                    textAnchor="middle"
-                    fontSize={10}
-                    fill="#8A847E"
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              {(() => {
+                const a = chipSet(first.plans[pi])
+                const b = chipSet(last.plans[pi])
+                const onlyThen = [...a].filter((x) => !b.has(x))
+                const both = [...a].filter((x) => b.has(x))
+                const onlyNow = [...b].filter((x) => !a.has(x))
+                return [
+                  { title: '사라진 것', items: onlyThen },
+                  { title: '남은 것', items: both },
+                  { title: '새로 생긴 것', items: onlyNow },
+                ].map((col) => (
+                  <div
+                    key={col.title}
+                    className="rounded-[18px] border border-[#ECE7E2] bg-white p-4"
+                    style={{ boxShadow: cardShadow }}
                   >
-                    {formatYm(s.takenAt)}
-                  </text>
-                ))}
-              </svg>
-              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {gaugeMeta.map((g) => {
-                  const first =
-                    (snaps[0].data as unknown as OdysseyData).plans?.[pi]?.gauges?.[
-                      g.key
-                    ] ?? 0
-                  const last =
-                    (snaps[snaps.length - 1].data as unknown as OdysseyData).plans?.[
-                      pi
-                    ]?.gauges?.[g.key] ?? 0
-                  const delta = last - first
-                  return (
-                    <div key={g.key} className="rounded-xl bg-[#FAF8F6] px-2 py-2 text-center">
-                      <p className="text-[11px] text-[#8A847E]">{g.label}</p>
-                      <p
-                        className="text-[18px] font-bold tabular-nums"
-                        style={{ color: g.color }}
-                      >
-                        {delta > 0 ? `+${delta}` : delta}
-                      </p>
-                    </div>
-                  )
-                })}
-              </div>
+                    <p className="mb-2 text-[12px] font-semibold text-[#8A847E]">
+                      {col.title}
+                    </p>
+                    <ul className="space-y-1 text-[13px] text-[#1C1B1A]">
+                      {col.items.length === 0 ? (
+                        <li className="text-[#B5AFA8]">—</li>
+                      ) : (
+                        col.items.map((t) => <li key={t}>· {t}</li>)
+                      )}
+                    </ul>
+                  </div>
+                ))
+              })()}
             </div>
-          )}
-
-          {snaps.length >= 2 && (
-            <MilestoneDiff
-              a={(snaps[0].data as unknown as OdysseyData).plans?.[pi]?.milestones ?? []}
-              b={
-                (snaps[snaps.length - 1].data as unknown as OdysseyData).plans?.[pi]
-                  ?.milestones ?? []
-              }
-            />
           )}
         </div>
       ))}
     </div>
-  )
-}
-
-function MilestoneDiff({
-  a,
-  b,
-}: {
-  a: { label: string }[]
-  b: { label: string }[]
-}) {
-  const aSet = new Set(a.map((m) => m.label))
-  const bSet = new Set(b.map((m) => m.label))
-  const gone = [...aSet].filter((x) => !bSet.has(x))
-  if (!gone.length) return null
-  return (
-    <p className="mt-1 text-[12px] text-[#8A847E]">
-      사라진 마일스톤:{' '}
-      {gone.map((g) => (
-        <span key={g} className="mr-2 line-through">
-          {g}
-        </span>
-      ))}
-    </p>
   )
 }
 

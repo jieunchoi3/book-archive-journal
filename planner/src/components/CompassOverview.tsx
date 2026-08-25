@@ -12,6 +12,7 @@ import {
   formatYm,
   normalizeCoherenceData,
   normalizeGoodtimeRunData,
+  normalizeOdysseyData,
   todayKey,
   type CompassRoute,
   type ExerciseKey,
@@ -89,6 +90,13 @@ export function CompassOverview({
   }, [compass, compassData])
 
   const [compassOpen, setCompassOpen] = useState(false)
+
+  const latestOdyssey = useMemo(() => {
+    return compass.completeSnapshotsFor('odyssey').at(-1) ?? null
+  }, [compass])
+  const odysseySkippedPresent = latestOdyssey
+    ? normalizeOdysseyData(latestOdyssey.data).presented.skipped
+    : false
 
   const goodtimeDraft = compass.draftFor('goodtime')
   const goodtimeRun = goodtimeDraft
@@ -333,6 +341,26 @@ export function CompassOverview({
             </div>
           )}
         </section>
+      )}
+
+      {odysseySkippedPresent && latestOdyssey && (
+        <p className="mb-5 flex flex-wrap items-center gap-2 text-[13px] text-[#8A847E]">
+          <span>오디세이 플랜, 아직 아무한테도 말 안 했어.</span>
+          <button
+            type="button"
+            className="font-semibold underline-offset-2 hover:underline"
+            style={{ color: COMPASS.accent }}
+            onClick={() =>
+              onNavigate({
+                page: 'exercise',
+                key: 'odyssey',
+                snapshotId: latestOdyssey.id,
+              })
+            }
+          >
+            지금 적기
+          </button>
+        </p>
       )}
 
       {compass.revisitItems.length > 0 && (

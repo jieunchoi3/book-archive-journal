@@ -5,9 +5,9 @@ import {
   newId,
   normalizeMindmapData,
   mindmapRoleIdeasFromData,
+  normalizeOdysseyData,
   type ChoosingData,
   type ChoosingOption,
-  type OdysseyData,
 } from '../types/compass'
 import type { CompassActions } from '../hooks/useCompass'
 import {
@@ -51,7 +51,8 @@ export function CompassChoosing({
     }
     setData(compass.getDraftData(active, emptyChoosingData()))
     setLockedMsg(false)
-  }, [active, compass])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rehydrate on snapshot switch only
+  }, [active?.id])
 
   const save = useCallback(
     async (id: string, next: ChoosingData) => {
@@ -74,8 +75,8 @@ export function CompassChoosing({
 
   const importFromOdyssey = () => {
     const od = compass.completeSnapshotsFor('odyssey').at(-1)
-    const plans = (od?.data as unknown as OdysseyData | undefined)?.plans
-    if (!plans) return
+    if (!od) return
+    const plans = normalizeOdysseyData(od.data).plans
     for (const p of plans) {
       if (p.title.trim()) addOption(p.title, 'odyssey')
     }

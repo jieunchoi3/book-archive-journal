@@ -214,7 +214,8 @@ export function CompassLongform({
     setLockedMsg(false)
     setReasonDraft('')
     setPromptQ(kind === 'workview' ? '왜 일해?' : '왜 우리는 여기 있을까?')
-  }, [active, compass, kind])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rehydrate on snapshot switch only
+  }, [active?.id, kind])
 
   const save = useCallback(
     async (id: string, next: LongformData) => {

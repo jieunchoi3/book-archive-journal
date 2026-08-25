@@ -460,7 +460,8 @@ export function CompassGoodtime({
       if (e.zoomNote) notes[e.activity.trim()] = e.zoomNote
     }
     setZoomNotes(notes)
-  }, [active, compass])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rehydrate on snapshot switch only
+  }, [active?.id])
 
   const save = useCallback(
     async (id: string, next: GoodtimeRunData) => {
@@ -502,9 +503,6 @@ export function CompassGoodtime({
     .filter((e) => e.entryDate === selectedDate)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 
-  const weekNow = data.started_on
-    ? goodtimeWeekForDate(data.started_on, todayKey())
-    : null
   const selectedWeek = data.started_on
     ? goodtimeWeekForDate(data.started_on, selectedDate)
     : null

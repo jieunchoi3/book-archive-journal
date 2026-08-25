@@ -345,7 +345,8 @@ export function CompassCoherence({
     setPending(null)
     setPairReady(null)
     setKindPick(null)
-  }, [active, compass, readonly, latestWorkId, latestLifeId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rehydrate on snapshot / source switch only
+  }, [active?.id, readonly, latestWorkId, latestLifeId])
 
   useEffect(() => {
     const onResize = () => setWide(window.innerWidth >= 1024)
