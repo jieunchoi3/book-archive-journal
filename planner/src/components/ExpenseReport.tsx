@@ -3,6 +3,7 @@ import type {
   ExpenseCategory,
   ExpensePurpose,
   ExpenseSpendKind,
+  MoneyFlow,
   MoneyTransaction,
 } from '../types/expense'
 import { formatMoney, isDualAxisTransaction } from '../types/expense'
@@ -12,12 +13,14 @@ interface ExpenseReportProps {
   year: number
   month: number
   expenseCategories: ExpenseCategory[]
+  incomeCategories: ExpenseCategory[]
   purposes?: ExpensePurpose[]
   spendKinds?: ExpenseSpendKind[]
   /** When true, filter dual-axis Sep+ transactions by purpose / kind. */
   isHierarchyMonth?: boolean
   transactions: MoneyTransaction[]
   monthOutTotal: number
+  monthInTotal: number
 }
 
 function monthPrefix(year: number, month: number) {
@@ -37,39 +40,47 @@ export function ExpenseReport({
   year,
   month,
   expenseCategories,
+  incomeCategories,
   purposes = [],
   spendKinds = [],
   isHierarchyMonth = false,
   transactions,
   monthOutTotal,
+  monthInTotal,
 }: ExpenseReportProps) {
+  const [flow, setFlow] = useState<MoneyFlow>('out')
   const [selectedIds, setSelectedIds] = useState<Set<string> | null>(null)
   const [purposeFilter, setPurposeFilter] = useState<string | 'all'>('all')
   const [kindFilter, setKindFilter] = useState<string | 'all'>('all')
 
+  const categories = flow === 'out' ? expenseCategories : incomeCategories
+  const monthFlowTotal = flow === 'out' ? monthOutTotal : monthInTotal
+  const showHierarchyFilters = flow === 'out' && isHierarchyMonth
+
   const activeIds = useMemo(() => {
-    if (selectedIds === null) return new Set(expenseCategories.map((c) => c.id))
+    if (selectedIds === null) return new Set(categories.map((c) => c.id))
     return selectedIds
-  }, [selectedIds, expenseCategories])
+  }, [selectedIds, categories])
 
   const allSelected =
     selectedIds === null ||
-    (expenseCategories.length > 0 &&
-      expenseCategories.every((c) => activeIds.has(c.id)))
+    (categories.length > 0 && categories.every((c) => activeIds.has(c.id)))
+
+  const setFlowAndReset = (next: MoneyFlow) => {
+    setFlow(next)
+    setSelectedIds(null)
+    setPurposeFilter('all')
+    setKindFilter('all')
+  }
 
   const toggleCategory = (id: string) => {
     setSelectedIds((prev) => {
       const base =
-        prev === null
-          ? new Set(expenseCategories.map((c) => c.id))
-          : new Set(prev)
+        prev === null ? new Set(categories.map((c) => c.id)) : new Set(prev)
       if (base.has(id)) base.delete(id)
       else base.add(id)
       if (base.size === 0) return new Set()
-      if (
-        expenseCategories.length > 0 &&
-        expenseCategories.every((c) => base.has(c.id))
-      ) {
+      if (categories.length > 0 && categories.every((c) => base.has(c.id))) {
         return null
       }
       return base
@@ -91,11 +102,11 @@ export function ExpenseReport({
     return true
   }
 
-  const filteredOut = useMemo(
+  const filtered = useMemo(
     () =>
       transactions.filter((t) => {
-        if (!t.dateKey.startsWith(prefix) || t.flow !== 'out') return false
-        if (isHierarchyMonth) return matchesDual(t)
+        if (!t.dateKey.startsWith(prefix) || t.flow !== flow) return false
+        if (flow === 'out' && isHierarchyMonth) return matchesDual(t)
         return activeIds.has(t.categoryId)
       }),
     // matchesDual closes over filters
@@ -103,6 +114,7 @@ export function ExpenseReport({
     [
       transactions,
       prefix,
+      flow,
       isHierarchyMonth,
       activeIds,
       purposeFilter,
@@ -110,13 +122,14 @@ export function ExpenseReport({
     ],
   )
 
-  const prevFilteredOut = useMemo(
+  const prevFiltered = useMemo(
     () =>
       transactions.filter((t) => {
-        if (!t.dateKey.startsWith(prevPrefix) || t.flow !== 'out') return false
-        if (isHierarchyMonth) {
+        if (!t.dateKey.startsWith(prevPrefix) || t.flow !== flow) return false
+        if (flow === 'out' && isHierarchyMonth) {
           if (!isDualAxisTransaction(t)) return false
-          if (purposeFilter !== 'all' && t.purposeId !== purposeFilter) return false
+          if (purposeFilter !== 'all' && t.purposeId !== purposeFilter)
+            return false
           if (kindFilter !== 'all' && t.spendKindId !== kindFilter) return false
           return true
         }
@@ -125,6 +138,7 @@ export function ExpenseReport({
     [
       transactions,
       prevPrefix,
+      flow,
       isHierarchyMonth,
       activeIds,
       purposeFilter,
@@ -133,12 +147,12 @@ export function ExpenseReport({
   )
 
   const filteredTotal = useMemo(
-    () => filteredOut.reduce((a, t) => a + t.amount, 0),
-    [filteredOut],
+    () => filtered.reduce((a, t) => a + t.amount, 0),
+    [filtered],
   )
   const prevTotal = useMemo(
-    () => prevFilteredOut.reduce((a, t) => a + t.amount, 0),
-    [prevFilteredOut],
+    () => prevFiltered.reduce((a, t) => a + t.amount, 0),
+    [prevFiltered],
   )
 
   const daily = useMemo(() => {
@@ -147,7 +161,7 @@ export function ExpenseReport({
       const key = `${prefix}${String(d).padStart(2, '0')}`
       map[key] = 0
     }
-    for (const t of filteredOut) {
+    for (const t of filtered) {
       map[t.dateKey] = (map[t.dateKey] ?? 0) + t.amount
     }
     return Array.from({ length: dayCount }, (_, i) => {
@@ -155,7 +169,7 @@ export function ExpenseReport({
       const dateKey = `${prefix}${String(day).padStart(2, '0')}`
       return { day, dateKey, amount: map[dateKey] ?? 0 }
     })
-  }, [filteredOut, dayCount, prefix])
+  }, [filtered, dayCount, prefix])
 
   const maxDay = useMemo(
     () => Math.max(1, ...daily.map((d) => d.amount)),
@@ -163,13 +177,11 @@ export function ExpenseReport({
   )
 
   const byCategory = useMemo(() => {
-    if (isHierarchyMonth) {
-      // Prefer kind breakdown when a purpose is selected; else purpose rollup.
-      // When only kind selected (purpose=all), single kind row is enough via kinds.
+    if (flow === 'out' && isHierarchyMonth) {
       if (purposeFilter !== 'all' || kindFilter === 'all') {
         if (purposeFilter !== 'all' && kindFilter === 'all') {
           const map: Record<string, number> = {}
-          for (const t of filteredOut) {
+          for (const t of filtered) {
             if (!t.spendKindId) continue
             map[t.spendKindId] = (map[t.spendKindId] ?? 0) + t.amount
           }
@@ -185,7 +197,7 @@ export function ExpenseReport({
         }
         if (purposeFilter === 'all' && kindFilter === 'all') {
           const map: Record<string, number> = {}
-          for (const t of filteredOut) {
+          for (const t of filtered) {
             if (!t.purposeId) continue
             map[t.purposeId] = (map[t.purposeId] ?? 0) + t.amount
           }
@@ -200,9 +212,8 @@ export function ExpenseReport({
             .sort((a, b) => b.amount - a.amount)
         }
       }
-      // kind-only or purpose+kind: show matching kinds
       const map: Record<string, number> = {}
-      for (const t of filteredOut) {
+      for (const t of filtered) {
         if (!t.spendKindId) continue
         map[t.spendKindId] = (map[t.spendKindId] ?? 0) + t.amount
       }
@@ -219,10 +230,10 @@ export function ExpenseReport({
     }
 
     const map: Record<string, number> = {}
-    for (const t of filteredOut) {
+    for (const t of filtered) {
       map[t.categoryId] = (map[t.categoryId] ?? 0) + t.amount
     }
-    return expenseCategories
+    return categories
       .filter((c) => activeIds.has(c.id))
       .map((c) => ({
         id: c.id,
@@ -233,10 +244,11 @@ export function ExpenseReport({
       }))
       .sort((a, b) => b.amount - a.amount)
   }, [
-    filteredOut,
-    expenseCategories,
+    filtered,
+    categories,
     activeIds,
     filteredTotal,
+    flow,
     isHierarchyMonth,
     purposes,
     spendKinds,
@@ -254,7 +266,7 @@ export function ExpenseReport({
   const delta = filteredTotal - prevTotal
   const deltaPct = prevTotal > 0 ? (delta / prevTotal) * 100 : null
   const shareOfMonth =
-    monthOutTotal > 0 ? (filteredTotal / monthOutTotal) * 100 : null
+    monthFlowTotal > 0 ? (filteredTotal / monthFlowTotal) * 100 : null
 
   const weekBuckets = useMemo(() => {
     const buckets: { label: string; amount: number }[] = []
@@ -274,7 +286,7 @@ export function ExpenseReport({
 
   const maxWeek = Math.max(1, ...weekBuckets.map((w) => w.amount))
 
-  const filterHint = isHierarchyMonth
+  const filterHint = showHierarchyFilters
     ? [
         purposeFilter === 'all'
           ? 'All purposes'
@@ -286,12 +298,62 @@ export function ExpenseReport({
         .filter(Boolean)
         .join(' · ')
     : allSelected
-      ? 'All categories'
-      : `${activeIds.size} categor${activeIds.size === 1 ? 'y' : 'ies'}`
+      ? flow === 'out'
+        ? 'All categories'
+        : 'All sources'
+      : `${activeIds.size} ${
+          flow === 'out'
+            ? activeIds.size === 1
+              ? 'category'
+              : 'categories'
+            : activeIds.size === 1
+              ? 'source'
+              : 'sources'
+        }`
+
+  const accent = flow === 'out' ? '#8B5A2B' : '#3D7A5A'
+  const barMuted = flow === 'out' ? '#E8E0D8' : '#D8E8DE'
+  const trackBg = flow === 'out' ? '#F3E5D8' : '#E4EFE8'
+  // Spending up = worse (red); income up = better (green)
+  const deltaTone: 'up' | 'down' | 'neutral' =
+    delta === 0
+      ? 'neutral'
+      : flow === 'out'
+        ? delta > 0
+          ? 'up'
+          : 'down'
+        : delta > 0
+          ? 'down'
+          : 'up'
 
   return (
     <>
-      {isHierarchyMonth ? (
+      <div className="mb-4 inline-flex rounded-full bg-[#F2F2F7] p-0.5">
+        <button
+          type="button"
+          onClick={() => setFlowAndReset('out')}
+          className={`rounded-full px-3.5 py-1.5 text-[12px] font-semibold transition-colors ${
+            flow === 'out'
+              ? 'bg-white text-[#8B5A2B] shadow-sm'
+              : 'text-[#8E8E93]'
+          }`}
+        >
+          Spent
+        </button>
+        <button
+          type="button"
+          onClick={() => setFlowAndReset('in')}
+          className={`rounded-full px-3.5 py-1.5 text-[12px] font-semibold transition-colors ${
+            flow === 'in'
+              ? 'bg-white text-[#3D7A5A] shadow-sm'
+              : 'text-[#8E8E93]'
+          }`}
+        >
+          Income
+        </button>
+      </div>
+
+      {showHierarchyFilters ? (
         <div className="mb-4 space-y-3">
           <div>
             <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
@@ -345,6 +407,7 @@ export function ExpenseReport({
               type="button"
               onClick={selectAll}
               className="rounded-lg px-2.5 py-1 font-medium text-[#8B5A2B] hover:bg-[#F3E5D8]"
+              style={flow === 'in' ? { color: '#3D7A5A' } : undefined}
             >
               All
             </button>
@@ -358,7 +421,7 @@ export function ExpenseReport({
           </div>
 
           <div className="mb-4 flex flex-wrap gap-1.5">
-            {expenseCategories.map((cat) => {
+            {categories.map((cat) => {
               const on = activeIds.has(cat.id)
               return (
                 <button
@@ -375,22 +438,30 @@ export function ExpenseReport({
                   <span
                     className="h-2 w-2 rounded-full"
                     style={{
-                      backgroundColor: on ? 'rgba(255,255,255,0.85)' : cat.color,
+                      backgroundColor: on
+                        ? 'rgba(255,255,255,0.85)'
+                        : cat.color,
                     }}
                   />
                   {cat.name}
                 </button>
               )
             })}
-            {expenseCategories.length === 0 && (
-              <p className="text-[12px] text-muted">No categories yet.</p>
+            {categories.length === 0 && (
+              <p className="text-[12px] text-muted">
+                {flow === 'out' ? 'No categories yet.' : 'No income sources yet.'}
+              </p>
             )}
           </div>
         </>
       )}
 
       <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <ResultCard label="Filtered total" value={formatMoney(filteredTotal)} hint={filterHint} />
+        <ResultCard
+          label="Filtered total"
+          value={formatMoney(filteredTotal)}
+          hint={filterHint}
+        />
         <ResultCard
           label="Daily average"
           value={formatMoney(dailyAvg)}
@@ -410,19 +481,21 @@ export function ExpenseReport({
                 : undefined
               : `${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(0)}%`
           }
-          tone={delta > 0 ? 'up' : delta < 0 ? 'down' : 'neutral'}
+          tone={deltaTone}
         />
         <ResultCard
           label="Share of month"
           value={shareOfMonth == null ? '—' : `${Math.round(shareOfMonth)}%`}
-          hint={`of ${formatMoney(monthOutTotal)} total out`}
+          hint={`of ${formatMoney(monthFlowTotal)} total ${flow === 'out' ? 'out' : 'in'}`}
         />
       </div>
 
       <div className="mb-5">
         <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-[13px] font-semibold text-[#1C1C1E]">Daily spending</h3>
-          <span className="text-[11px] text-muted">{filteredOut.length} logs</span>
+          <h3 className="text-[13px] font-semibold text-[#1C1C1E]">
+            {flow === 'out' ? 'Daily spending' : 'Daily income'}
+          </h3>
+          <span className="text-[11px] text-muted">{filtered.length} logs</span>
         </div>
         <div className="flex h-28 items-end gap-px overflow-x-auto rounded-xl bg-[#FAFAFA] px-2 pb-2 pt-3 sm:gap-0.5">
           {daily.map(({ day, amount, dateKey }) => {
@@ -435,13 +508,19 @@ export function ExpenseReport({
                 title={`${dateKey}: ${formatMoney(amount)}`}
               >
                 <div
-                  className={`w-full max-w-[14px] rounded-t-sm transition-colors ${
-                    amount > 0 ? 'bg-[#8B5A2B]' : 'bg-[#E8E0D8]'
-                  } ${isToday ? 'ring-1 ring-[#8B5A2B]/50' : ''}`}
-                  style={{ height: `${h}%` }}
+                  className="w-full max-w-[14px] rounded-t-sm transition-colors"
+                  style={{
+                    height: `${h}%`,
+                    backgroundColor: amount > 0 ? accent : barMuted,
+                    boxShadow: isToday
+                      ? `0 0 0 1px ${accent}80`
+                      : undefined,
+                  }}
                 />
                 {(day === 1 || day % 5 === 0 || day === dayCount) && (
-                  <span className="mt-1 text-[9px] tabular-nums text-muted">{day}</span>
+                  <span className="mt-1 text-[9px] tabular-nums text-muted">
+                    {day}
+                  </span>
                 )}
               </div>
             )
@@ -457,10 +536,16 @@ export function ExpenseReport({
               <span className="w-12 shrink-0 text-[11px] tabular-nums text-muted">
                 {w.label}
               </span>
-              <div className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-[#F3E5D8]">
+              <div
+                className="h-2 min-w-0 flex-1 overflow-hidden rounded-full"
+                style={{ backgroundColor: trackBg }}
+              >
                 <div
-                  className="h-full rounded-full bg-[#8B5A2B]"
-                  style={{ width: `${(w.amount / maxWeek) * 100}%` }}
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${(w.amount / maxWeek) * 100}%`,
+                    backgroundColor: accent,
+                  }}
                 />
               </div>
               <span className="w-16 shrink-0 text-right text-[12px] font-medium tabular-nums text-[#1C1C1E]">
@@ -472,9 +557,15 @@ export function ExpenseReport({
       </div>
 
       <div>
-        <h3 className="mb-2 text-[13px] font-semibold text-[#1C1C1E]">Breakdown</h3>
+        <h3 className="mb-2 text-[13px] font-semibold text-[#1C1C1E]">
+          Breakdown
+        </h3>
         {byCategory.every((c) => c.amount === 0) ? (
-          <p className="text-[12px] text-muted">No spending in the selected filters.</p>
+          <p className="text-[12px] text-muted">
+            {flow === 'out'
+              ? 'No spending in the selected filters.'
+              : 'No income in the selected filters.'}
+          </p>
         ) : (
           <ul className="space-y-2">
             {byCategory
@@ -545,7 +636,9 @@ function ResultCard({
 }) {
   return (
     <div className="rounded-xl bg-[#FAFAFA] px-3 py-2.5">
-      <p className="text-[10px] font-medium uppercase tracking-wide text-muted">{label}</p>
+      <p className="text-[10px] font-medium uppercase tracking-wide text-muted">
+        {label}
+      </p>
       <p
         className={`mt-0.5 text-[16px] font-semibold tabular-nums ${
           tone === 'up'

@@ -476,18 +476,20 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
                 <>
                   <p className="mb-4 text-[12px] text-muted">
                     {isHierarchyMonth
-                      ? 'Filter by purpose and type across the month'
-                      : 'Filter categories and compare spending across the month'}
+                      ? 'Switch between spent and income, then filter across the month'
+                      : 'Switch between spent and income, then filter and compare across the month'}
                   </p>
                   <ExpenseReport
                     year={year}
                     month={month}
                     expenseCategories={expenseCategories}
+                    incomeCategories={incomeCategories}
                     purposes={purposes}
                     spendKinds={spendKinds}
                     isHierarchyMonth={isHierarchyMonth}
                     transactions={transactions}
                     monthOutTotal={monthOutTotal}
+                    monthInTotal={monthInTotal}
                   />
                 </>
               ) : (
