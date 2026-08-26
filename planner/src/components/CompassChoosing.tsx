@@ -136,7 +136,7 @@ export function CompassChoosing({
       .filter((p) => p.status === 'done' && p.answered === 'a_lot')
       .map((p) => ({
         id: `prototype:${p.id}`,
-        label: p.title.trim() || p.learned.slice(0, 40),
+        label: p.title.trim() || (p.learned?.slice(0, 40) ?? ''),
         source: 'prototype' as const,
         source_ref: p.id,
       }))
