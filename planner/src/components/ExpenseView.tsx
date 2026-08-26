@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
-import { Check, ChevronLeft, ChevronRight, Pencil, Trash2, Wallet, X } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Download, Pencil, Trash2, Wallet, X } from 'lucide-react'
 import type { ExpenseActions } from '../hooks/useExpenses'
 import type {
   ExpenseCategory,
@@ -13,6 +13,7 @@ import {
   isDualAxisTransaction,
 } from '../types/expense'
 import { formatDateKey, formatMonthYear, getTodayKey, parseDateKey } from '../lib/weekUtils'
+import { exportExpenseCsvFile } from '../lib/expenseCsv'
 import { ExpenseQuickAdd } from './ExpenseQuickAdd'
 import { ExpensePieChart } from './ExpensePieChart'
 import { ExpenseReport } from './ExpenseReport'
@@ -74,6 +75,7 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
   const [logFilterIds, setLogFilterIds] = useState<Set<string> | null>(null)
   const [logPurposeFilter, setLogPurposeFilter] = useState<string | 'all'>('all')
   const [logKindFilter, setLogKindFilter] = useState<string | 'all'>('all')
+  const [exportOpen, setExportOpen] = useState(false)
 
   const logFilterCategories = useMemo(
     () => [...expenseCategories, ...incomeCategories],
@@ -126,6 +128,21 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
     const now = new Date()
     setMonthKey(now.getFullYear(), now.getMonth())
     setSelectedDateKey(getTodayKey())
+  }
+
+  const exportCsv = (scope: 'month' | 'all') => {
+    const rows =
+      scope === 'month'
+        ? monthTransactions
+        : [...transactions].sort((a, b) => a.dateKey.localeCompare(b.dateKey))
+    const stamp = scope === 'month' ? expenses.monthKey : 'all'
+    exportExpenseCsvFile(rows, {
+      categories: [...expenseCategories, ...incomeCategories],
+      purposes,
+      spendKinds,
+      filename: `expenses-${stamp}.csv`,
+    })
+    setExportOpen(false)
   }
 
   // Keep Quick log date inside the month you're viewing so Sep+ shows purpose/kind pills.
@@ -437,6 +454,49 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
                       {label}
                     </button>
                   ))}
+                </div>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setExportOpen((v) => !v)}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-hairline px-3 py-1.5 text-[12px] font-medium text-[#48484A] hover:bg-[#FAFAFA]"
+                    aria-expanded={exportOpen}
+                    aria-haspopup="menu"
+                  >
+                    <Download size={14} />
+                    Export CSV
+                  </button>
+                  {exportOpen && (
+                    <>
+                      <button
+                        type="button"
+                        className="fixed inset-0 z-10 cursor-default"
+                        aria-label="Close export menu"
+                        onClick={() => setExportOpen(false)}
+                      />
+                      <div
+                        role="menu"
+                        className="absolute right-0 z-20 mt-1.5 min-w-[160px] overflow-hidden rounded-xl border border-hairline bg-white py-1 shadow-md"
+                      >
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => exportCsv('month')}
+                          className="block w-full px-3.5 py-2 text-left text-[13px] text-[#1C1C1E] hover:bg-[#FAFAFA]"
+                        >
+                          This month
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => exportCsv('all')}
+                          className="block w-full px-3.5 py-2 text-left text-[13px] text-[#1C1C1E] hover:bg-[#FAFAFA]"
+                        >
+                          All time
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
