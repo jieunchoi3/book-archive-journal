@@ -177,7 +177,7 @@ export function useTasteStickers(): TasteActions {
     year: today.getFullYear(),
     month: today.getMonth(),
   }))
-  const [browseMode, setBrowseMode] = useState<TasteBrowseMode>('month')
+  const [browseMode, setBrowseMode] = useState<TasteBrowseMode>('atlas')
   const [kindFilter, setKindFilterState] = useState<string | 'all'>('all')
   const [subFilter, setSubFilter] = useState<string | 'all'>('all')
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
