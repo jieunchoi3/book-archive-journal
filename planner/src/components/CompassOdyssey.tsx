@@ -37,6 +37,7 @@ import {
   useExerciseSnapshot,
 } from './CompassExerciseShell'
 import { NapkinSketch } from './NapkinSketch'
+import { odysseyGuideStep } from '../compass/guides'
 
 interface CompassOdysseyProps {
   compass: CompassActions
@@ -344,6 +345,7 @@ export function CompassOdyssey({
       error={error}
       help={HELP}
       helpCadence="보통 6개월~1년마다 다시 해"
+      guideStep={odysseyGuideStep(data.step)}
       lockedMsg={lockedMsg}
       onDismissLock={() => setLockedMsg(false)}
       hideComplete={data.step !== 'present'}

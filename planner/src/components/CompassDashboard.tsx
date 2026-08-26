@@ -19,6 +19,7 @@ import {
   useExerciseSnapshot,
   cardShadow,
 } from './CompassExerciseShell'
+import { dashboardGuideStep } from '../compass/guides'
 
 interface CompassDashboardProps {
   compass: CompassActions
@@ -497,6 +498,7 @@ export function CompassDashboard({
       error={error}
       help={HELP}
       helpCadence="보통 1~2개월마다 다시 해."
+      guideStep={dashboardGuideStep(data.step)}
       lockedMsg={lockedMsg}
       onComplete={() => active && void compass.completeSnapshot(active.id)}
       completeDisabled={!canComplete || data.step !== 4}

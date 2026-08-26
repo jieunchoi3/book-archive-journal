@@ -35,6 +35,12 @@ import {
   useDebouncedDraftSave,
   useExerciseSnapshot,
 } from './CompassExerciseShell'
+import { CompassGuidePanel, GuideInlineHint } from './CompassGuidePanel'
+import {
+  getGuide,
+  goodtimeGuideStep,
+  guideFoldSummary,
+} from '../compass/guides'
 
 interface CompassGoodtimeProps {
   compass: CompassActions
@@ -665,6 +671,11 @@ export function CompassGoodtime({
       ? weekEntries(entries, data.started_on, reviewWeek)
       : []
   const buckets = reviewBuckets(reviewList)
+  const guideStep = goodtimeGuideStep(
+    data.state,
+    tab === '회고' || Boolean(reviewWeek),
+  )
+  const guide = getGuide('goodtime')
 
   return (
     <div className="overflow-visible pb-28">
@@ -708,9 +719,24 @@ export function CompassGoodtime({
       </button>
       {helpOpen && (
         <div className="mb-5 whitespace-pre-wrap rounded-2xl bg-[#FAF8F6] px-4 py-3 text-[14px] leading-relaxed text-[#8A847E]">
-          {HELP}
+          {guide ? (
+            <>
+              <p>{guideFoldSummary(guide)}</p>
+              <p className="mt-2 text-[13px]">
+                {guide.duration} · {guide.cadence}
+              </p>
+            </>
+          ) : (
+            HELP
+          )}
         </div>
       )}
+
+      <GuideInlineHint
+        exerciseKey="goodtime"
+        step={guideStep}
+        className="mb-4"
+      />
 
       {/* Tabs */}
       <div className="mb-4 flex flex-wrap gap-1 rounded-full bg-[#FAF8F6] p-1">
@@ -1199,6 +1225,8 @@ export function CompassGoodtime({
           onMindmap={onOpenMindmap}
         />
       )}
+
+      <CompassGuidePanel exerciseKey="goodtime" guideStep={guideStep} />
     </div>
   )
 }

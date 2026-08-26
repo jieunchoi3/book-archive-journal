@@ -2,7 +2,14 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { LdSnapshot } from '../types/compass'
 import type { CompassActions } from '../hooks/useCompass'
 import { CompassTimelineSpine } from './CompassTimelineSpine'
-import { COMPASS, EXERCISE_META, formatYm, type ExerciseKey } from '../types/compass'
+import { CompassGuidePanel, GuideInlineHint } from './CompassGuidePanel'
+import {
+  COMPASS,
+  EXERCISE_META,
+  formatYm,
+  type ExerciseKey,
+} from '../types/compass'
+import { getGuide, guideFoldSummary } from '../compass/guides'
 
 export function useDebouncedDraftSave<T>(
   snapshot: LdSnapshot | null,
@@ -81,6 +88,10 @@ interface ExerciseChromeProps {
   error: string | null
   help: string
   helpCadence?: string
+  /** Current guide how[].step — drives panel highlight + inline hint */
+  guideStep?: string | null
+  /** Show auto inline hint above children (default true when guideStep set) */
+  showInlineHint?: boolean
   lockedMsg: boolean
   onDismissLock?: () => void
   children: ReactNode
@@ -102,6 +113,8 @@ export function ExerciseChrome({
   error,
   help,
   helpCadence,
+  guideStep,
+  showInlineHint = true,
   lockedMsg,
   onDismissLock,
   children,
@@ -112,17 +125,21 @@ export function ExerciseChrome({
 }: ExerciseChromeProps) {
   const [helpOpen, setHelpOpen] = useState(false)
   const meta = EXERCISE_META.find((m) => m.key === exerciseKey)
+  const guide = getGuide(exerciseKey)
   const readonly = active?.status === 'complete'
   const completeCount = all.filter((s) => s.status === 'complete').length
   const timeLabel = savedAt
     ? `저장됨 · ${savedAt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`
     : null
 
-  const cadenceLine =
-    helpCadence ||
-    (meta?.cadenceDays
-      ? `보통 ${Math.round(meta.cadenceDays / 30)}개월마다 다시 해요`
-      : null)
+  const cadenceLine = guide
+    ? `${guide.duration} · ${guide.cadence}`
+    : helpCadence ||
+      (meta?.cadenceDays
+        ? `보통 ${Math.round(meta.cadenceDays / 30)}개월마다 다시 해요`
+        : null)
+
+  const foldBody = guide ? guideFoldSummary(guide) : help || meta?.description
 
   return (
     <div className="overflow-visible pb-28">
@@ -212,8 +229,8 @@ export function ExerciseChrome({
         이 연습이 뭐예요?
       </button>
       {helpOpen && (
-        <div className="mb-5 rounded-2xl bg-[#FAF8F6] px-4 py-3 text-[14px] leading-relaxed text-[#8A847E]">
-          <p>{help || meta?.description}</p>
+        <div className="mb-5 whitespace-pre-wrap rounded-2xl bg-[#FAF8F6] px-4 py-3 text-[14px] leading-relaxed text-[#8A847E]">
+          <p>{foldBody}</p>
           {cadenceLine && <p className="mt-2 text-[13px]">{cadenceLine}</p>}
         </div>
       )}
@@ -237,6 +254,14 @@ export function ExerciseChrome({
         </div>
       )}
 
+      {showInlineHint && guideStep && (
+        <GuideInlineHint
+          exerciseKey={exerciseKey}
+          step={guideStep}
+          className="mb-4"
+        />
+      )}
+
       {children}
 
       {!readonly && active && !hideComplete && onComplete && (
@@ -254,6 +279,8 @@ export function ExerciseChrome({
           </div>
         </div>
       )}
+
+      <CompassGuidePanel exerciseKey={exerciseKey} guideStep={guideStep} />
     </div>
   )
 }

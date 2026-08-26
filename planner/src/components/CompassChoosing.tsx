@@ -16,6 +16,7 @@ import {
   useExerciseSnapshot,
   cardShadow,
 } from './CompassExerciseShell'
+import { getGuide } from '../compass/guides'
 
 interface CompassChoosingProps {
   compass: CompassActions
@@ -125,7 +126,8 @@ export function CompassChoosing({
       onCreateNew={() => void ensureDraft(true)}
       savedAt={savedAt}
       error={error}
-      help="옵션을 모으고 좁히고 하나 고른 뒤, 나머지는 놓아줘요."
+      help={getGuide('choosing')?.what ?? '옵션을 모으고 좁히고 하나 고른 뒤, 나머지는 놓아줘요.'}
+      guideStep="gather"
       lockedMsg={lockedMsg}
       hideComplete={data.step < 3}
       onComplete={() => active && void compass.completeSnapshot(active.id)}

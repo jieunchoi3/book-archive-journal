@@ -14,6 +14,7 @@ import {
   useExerciseSnapshot,
   cardShadow,
 } from './CompassExerciseShell'
+import { longformGuideStep } from '../compass/guides'
 
 const SERIF = '"Noto Serif KR", Georgia, "Times New Roman", serif'
 
@@ -338,6 +339,7 @@ export function CompassLongform({
       error={error}
       help={help}
       helpCadence="보통 6개월마다 다시 써."
+      guideStep={longformGuideStep(data.step)}
       lockedMsg={lockedMsg}
       onComplete={() => active && void compass.completeSnapshot(active.id)}
       hideComplete={data.step !== 2}

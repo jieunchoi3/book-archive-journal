@@ -21,6 +21,12 @@ import {
 import type { CompassActions } from '../hooks/useCompass'
 import { cardShadow } from './CompassExerciseShell'
 import { CompassBipolarSlider } from './CompassBipolarSlider'
+import { CompassGuidePanel, GuideInlineHint } from './CompassGuidePanel'
+import {
+  getGuide,
+  guideFoldSummary,
+  prototypeGuideStep,
+} from '../compass/guides'
 
 const HELP = `머릿속으로 아무리 굴려도 답 안 나오는 건, 작게 해보면 금방 알아.
 
@@ -123,6 +129,21 @@ export function CompassPrototype({ compass }: CompassPrototypeProps) {
 
   const hasOdyssey = odysseyQs.length > 0
 
+  const guideStepKey = prototypeGuideStep({
+    tab,
+    screen:
+      screen.kind === 'main'
+        ? 'main'
+        : screen.kind === 'brainstorm'
+          ? 'brainstorm'
+          : screen.kind === 'pick'
+            ? 'pick'
+            : screen.kind === 'prep'
+              ? 'prep'
+              : 'reflect',
+  })
+  const guide = getGuide('prototype')
+
   if (screen.kind === 'brainstorm' || screen.kind === 'pick') {
     const q = qById.get(screen.questionId)
     if (!q) {
@@ -134,23 +155,26 @@ export function CompassPrototype({ compass }: CompassPrototypeProps) {
       )
     }
     return (
-      <BrainstormFlow
-        compass={compass}
-        question={q}
-        mode={screen.kind}
-        onBack={() =>
-          setScreen(
-            screen.kind === 'pick'
-              ? { kind: 'brainstorm', questionId: q.id }
-              : { kind: 'main' },
-          )
-        }
-        onPickMode={() => setScreen({ kind: 'pick', questionId: q.id })}
-        onDone={() => {
-          setTab('todo')
-          setScreen({ kind: 'main' })
-        }}
-      />
+      <>
+        <BrainstormFlow
+          compass={compass}
+          question={q}
+          mode={screen.kind}
+          onBack={() =>
+            setScreen(
+              screen.kind === 'pick'
+                ? { kind: 'brainstorm', questionId: q.id }
+                : { kind: 'main' },
+            )
+          }
+          onPickMode={() => setScreen({ kind: 'pick', questionId: q.id })}
+          onDone={() => {
+            setTab('todo')
+            setScreen({ kind: 'main' })
+          }}
+        />
+        <CompassGuidePanel exerciseKey="prototype" guideStep={guideStepKey} />
+      </>
     )
   }
 
@@ -165,16 +189,19 @@ export function CompassPrototype({ compass }: CompassPrototypeProps) {
       )
     }
     return (
-      <PrepScreen
-        compass={compass}
-        prototype={p}
-        question={qById.get(p.questionId) ?? null}
-        teamPeople={teamPeople}
-        onBack={() => setScreen({ kind: 'main' })}
-        onReflect={() =>
-          setScreen({ kind: 'reflect', prototypeId: p.id })
-        }
-      />
+      <>
+        <PrepScreen
+          compass={compass}
+          prototype={p}
+          question={qById.get(p.questionId) ?? null}
+          teamPeople={teamPeople}
+          onBack={() => setScreen({ kind: 'main' })}
+          onReflect={() =>
+            setScreen({ kind: 'reflect', prototypeId: p.id })
+          }
+        />
+        <CompassGuidePanel exerciseKey="prototype" guideStep={guideStepKey} />
+      </>
     )
   }
 
@@ -189,16 +216,19 @@ export function CompassPrototype({ compass }: CompassPrototypeProps) {
       )
     }
     return (
-      <ReflectScreen
-        compass={compass}
-        prototype={p}
-        question={qById.get(p.questionId) ?? null}
-        onBack={() => setScreen({ kind: 'prep', prototypeId: p.id })}
-        onSaved={() => {
-          setTab('learned')
-          setScreen({ kind: 'main' })
-        }}
-      />
+      <>
+        <ReflectScreen
+          compass={compass}
+          prototype={p}
+          question={qById.get(p.questionId) ?? null}
+          onBack={() => setScreen({ kind: 'prep', prototypeId: p.id })}
+          onSaved={() => {
+            setTab('learned')
+            setScreen({ kind: 'main' })
+          }}
+        />
+        <CompassGuidePanel exerciseKey="prototype" guideStep={guideStepKey} />
+      </>
     )
   }
 
@@ -226,14 +256,29 @@ export function CompassPrototype({ compass }: CompassPrototypeProps) {
         onClick={() => setHelpOpen((o) => !o)}
         className="mb-3 flex w-full items-center justify-between rounded-xl px-1 py-1 text-left text-[13px] text-[#8A847E]"
       >
-        <span>이 연습은 뭐예요?</span>
+        <span>이 연습이 뭐예요?</span>
         <span aria-hidden>{helpOpen ? '▾' : '▸'}</span>
       </button>
       {helpOpen && (
         <div className="mb-4 whitespace-pre-wrap rounded-[18px] border border-[#ECE7E2] bg-[#FAF8F6] p-4 text-[13px] leading-relaxed text-[#8A847E]">
-          {HELP}
+          {guide ? (
+            <>
+              <p>{guideFoldSummary(guide)}</p>
+              <p className="mt-2">
+                {guide.duration} · {guide.cadence}
+              </p>
+            </>
+          ) : (
+            HELP
+          )}
         </div>
       )}
+
+      <GuideInlineHint
+        exerciseKey="prototype"
+        step={guideStepKey}
+        className="mb-4"
+      />
 
       <div
         className="mb-4 rounded-[18px] border border-[#ECE7E2] bg-white px-4 py-3 text-[13px] text-[#8A847E]"
@@ -315,6 +360,8 @@ export function CompassPrototype({ compass }: CompassPrototypeProps) {
           setSort={setLearnedSort}
         />
       )}
+
+      <CompassGuidePanel exerciseKey="prototype" guideStep={guideStepKey} />
     </div>
   )
 }

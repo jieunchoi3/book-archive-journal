@@ -32,6 +32,7 @@ import {
   useExerciseSnapshot,
   cardShadow,
 } from './CompassExerciseShell'
+import { coherenceGuideStep } from '../compass/guides'
 
 interface CompassCoherenceProps {
   compass: CompassActions
@@ -760,6 +761,7 @@ export function CompassCoherence({
       error={error}
       help={HELP}
       helpCadence="보통 1년에 한 번 다시 써"
+      guideStep={coherenceGuideStep(data.step)}
       lockedMsg={lockedMsg}
       onDismissLock={() => setLockedMsg(false)}
       hideComplete={data.step !== 2}

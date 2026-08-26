@@ -44,6 +44,7 @@ import {
   useExerciseSnapshot,
 } from './CompassExerciseShell'
 import { NapkinSketch } from './NapkinSketch'
+import { mindmapGuideStep } from '../compass/guides'
 
 interface CompassMindmapProps {
   compass: CompassActions
@@ -707,6 +708,7 @@ export function CompassMindmap({
       savedAt={savedAt}
       error={error}
       help={HELP}
+      guideStep={mindmapGuideStep(data.step)}
       lockedMsg={lockedMsg}
       onDismissLock={() => setLockedMsg(false)}
       hideComplete={data.step !== 'summary'}

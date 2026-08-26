@@ -25,7 +25,6 @@ import {
 import {
   deleteJournalCloud,
   deleteProtoIdeaCloud,
-  deleteProtoQuestionCloud,
   deletePrototypeCloud,
   deleteQuestionCloud,
   fetchCompassCloud,
