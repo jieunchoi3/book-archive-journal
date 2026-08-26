@@ -12,6 +12,7 @@ import {
   formatYm,
   normalizeCoherenceData,
   normalizeGoodtimeRunData,
+  normalizeChoosingData,
   normalizeOdysseyData,
   todayKey,
   type CompassRoute,
@@ -120,6 +121,23 @@ export function CompassOverview({
     return null
   })()
 
+  const choosingDraft = compass.draftFor('choosing')
+  const choosingWear = useMemo(() => {
+    if (!choosingDraft) return null
+    const d = normalizeChoosingData(choosingDraft.data)
+    if (d.closed_on) return null
+    for (const [id, w] of Object.entries(d.wear)) {
+      if (!w.started_on || w.logs.length >= w.days) continue
+      const opt = d.options.find((o) => o.id === id)
+      return {
+        draftId: choosingDraft.id,
+        label: opt?.label?.trim() || '옵션',
+        dayN: Math.min(w.logs.length + 1, w.days),
+      }
+    }
+    return null
+  }, [choosingDraft])
+
   return (
     <div className="pb-24">
       <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
@@ -218,6 +236,28 @@ export function CompassOverview({
             기록하기
           </button>
         </section>
+      )}
+
+      {choosingWear && (
+        <p className="mb-5 flex flex-wrap items-center gap-2 text-[13px] text-[#8A847E]">
+          <span>
+            {choosingWear.label} 입어보는 중 · {choosingWear.dayN}일차
+          </span>
+          <button
+            type="button"
+            className="font-semibold underline-offset-2 hover:underline"
+            style={{ color: COMPASS.accent }}
+            onClick={() =>
+              onNavigate({
+                page: 'exercise',
+                key: 'choosing',
+                snapshotId: choosingWear.draftId,
+              })
+            }
+          >
+            오늘 적기
+          </button>
+        </p>
       )}
 
       {latestCompass && compassData && (

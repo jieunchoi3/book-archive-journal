@@ -10,6 +10,7 @@ import {
   normalizeGoodtimeRunData,
   normalizeMindmapData,
   normalizeOdysseyData,
+  normalizeChoosingData,
   mindmapRoleIdeasFromData,
   ODYSSEY_GAUGE_META,
   ODYSSEY_YEAR_KEYS,
@@ -156,6 +157,8 @@ export function CompassCompare({
             snaps={snaps}
             journalEntries={compass.journalEntries}
           />
+        ) : key === 'choosing' ? (
+          <ChoosingCompare snaps={snaps} />
         ) : (
           <GenericJsonCompare snaps={snaps} />
         )}
@@ -671,6 +674,52 @@ function ListVenn({
           </ul>
         </div>
       ))}
+    </div>
+  )
+}
+
+function ChoosingCompare({ snaps }: { snaps: LdSnapshot[] }) {
+  const norms = snaps.map((s) => normalizeChoosingData(s.data))
+
+  return (
+    <div
+      className="grid gap-4"
+      style={{
+        gridTemplateColumns: `repeat(${snaps.length}, minmax(0, 1fr))`,
+      }}
+    >
+      {norms.map((d, i) => {
+        const chosen = d.options.find((o) => o.id === d.chosen)
+        return (
+          <div
+            key={snaps[i].id}
+            className="rounded-[18px] border border-[#ECE7E2] bg-white p-4"
+            style={{ boxShadow: cardShadow }}
+          >
+            <p className="mb-3 text-[11px] font-semibold text-[#8A847E]">
+              {formatYm(snaps[i].takenAt)}
+            </p>
+            <div className="mb-3">
+              <p className="text-[12px] font-semibold text-[#8A847E]">결정</p>
+              <p className="mt-0.5 text-[14px] leading-relaxed text-[#1C1B1A]">
+                {d.decision.trim() || '—'}
+              </p>
+            </div>
+            <div className="mb-3">
+              <p className="text-[12px] font-semibold text-[#8A847E]">고른 것</p>
+              <p className="mt-0.5 text-[14px] font-medium text-[#1C1B1A]">
+                {chosen?.label.trim() || '—'}
+              </p>
+            </div>
+            <div>
+              <p className="text-[12px] font-semibold text-[#8A847E]">첫 걸음</p>
+              <p className="mt-0.5 text-[14px] leading-relaxed text-[#1C1B1A]">
+                {d.first_step.trim() || '—'}
+              </p>
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }

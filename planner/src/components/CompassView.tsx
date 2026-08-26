@@ -121,6 +121,7 @@ export function CompassView({
             setProtoPlanLink(planId)
             onRouteChange({ page: 'exercise', key: 'prototype' })
           }}
+          onAddWeeklyTask={onAddWeeklyTask}
           protoPlanLink={protoPlanLink}
         />
       )}
@@ -182,6 +183,7 @@ function ExerciseShell({
   onCompare,
   onRequestSnapshotAi,
   onOpenExercise,
+  onAddWeeklyTask,
   protoPlanLink,
 }: {
   exerciseKey: ExerciseKey
@@ -193,6 +195,7 @@ function ExerciseShell({
   onRequestSnapshotAi: (snapshotId: string) => void
   onOpenExercise: (key: ExerciseKey) => void
   onCreatePrototype: (planId: string, title: string) => void
+  onAddWeeklyTask: (label: string) => void
   protoPlanLink: string | null
 }) {
   return (
@@ -265,6 +268,7 @@ function ExerciseShell({
           onNavigateSnapshot={onSnapshot}
           onCompare={onCompare}
           onRequestSnapshotAi={onRequestSnapshotAi}
+          onAddWeeklyTask={onAddWeeklyTask}
         />
       )}
       {exerciseKey === 'failure' && (

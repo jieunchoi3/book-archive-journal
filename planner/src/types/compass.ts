@@ -1446,23 +1446,213 @@ export function emptyPrototypeMeta(): PrototypeGoalData {
   return { quarterlyGoal: 3 }
 }
 
+export type ChoosingStep =
+  | 'decision'
+  | 'gather'
+  | 'narrow'
+  | 'wear'
+  | 'choose'
+  | 'release'
+
+export type ChoosingOptionSource =
+  | 'manual'
+  | 'odyssey'
+  | 'mindmap'
+  | 'prototype'
+
 export interface ChoosingOption {
   id: string
   label: string
-  source?: string
-  head?: string
-  body?: string
+  source: ChoosingOptionSource
+  source_ref?: string
+}
+
+export interface ChoosingWearLog {
+  date: string
+  note: string
+  engagement: number
+  energy: number
+}
+
+export interface ChoosingWearState {
+  started_on: string
+  days: number
+  logs: ChoosingWearLog[]
+}
+
+export interface ChoosingReflection {
+  head: string
+  body: string
+  future: string
 }
 
 export interface ChoosingData {
-  step: 0 | 1 | 2 | 3
+  decision: string
   options: ChoosingOption[]
-  narrowed: string[]
-  chosenId: string | null
+  dropped: string[]
+  shortlist: string[]
+  wear: Record<string, ChoosingWearState>
+  reflections: Record<string, ChoosingReflection>
+  chosen: string | null
+  environment: string
+  first_step: string
+  closed_on: string
+  step: ChoosingStep
+  /** Gather checkboxes — which source packs are included */
+  import_flags: {
+    odyssey: boolean
+    mindmap: boolean
+    prototype: boolean
+  }
 }
 
 export function emptyChoosingData(): ChoosingData {
-  return { step: 0, options: [], narrowed: [], chosenId: null }
+  return {
+    decision: '',
+    options: [],
+    dropped: [],
+    shortlist: [],
+    wear: {},
+    reflections: {},
+    chosen: null,
+    environment: '',
+    first_step: '',
+    closed_on: '',
+    step: 'decision',
+    import_flags: { odyssey: false, mindmap: false, prototype: false },
+  }
+}
+
+export function normalizeChoosingData(raw: unknown): ChoosingData {
+  const empty = emptyChoosingData()
+  if (!raw || typeof raw !== 'object') return empty
+  const d = raw as Partial<ChoosingData> & {
+    step?: number | string
+    narrowed?: string[]
+    chosenId?: string | null
+  }
+
+  const mapLegacyStep = (s: unknown): ChoosingStep => {
+    if (typeof s === 'string') {
+      if (
+        (
+          [
+            'decision',
+            'gather',
+            'narrow',
+            'wear',
+            'choose',
+            'release',
+          ] as ChoosingStep[]
+        ).includes(s as ChoosingStep)
+      ) {
+        return s as ChoosingStep
+      }
+    }
+    if (typeof s === 'number') {
+      return (
+        (['gather', 'narrow', 'choose', 'release'] as ChoosingStep[])[s] ??
+        'gather'
+      )
+    }
+    return 'decision'
+  }
+
+  const options: ChoosingOption[] = Array.isArray(d.options)
+    ? d.options.map((o) => {
+        const src = String(o?.source ?? 'manual')
+        const source: ChoosingOptionSource =
+          src === 'odyssey' ||
+          src === 'mindmap' ||
+          src === 'prototype' ||
+          src === 'manual'
+            ? src
+            : 'manual'
+        return {
+          id: String(o?.id ?? newId()),
+          label: String(o?.label ?? '').trim(),
+          source,
+          source_ref: o?.source_ref ? String(o.source_ref) : undefined,
+        }
+      }).filter((o) => o.label)
+    : []
+
+  const shortlist = Array.isArray(d.shortlist)
+    ? d.shortlist.map(String)
+    : Array.isArray(d.narrowed)
+      ? d.narrowed.map(String)
+      : []
+
+  const wear: Record<string, ChoosingWearState> = {}
+  if (d.wear && typeof d.wear === 'object') {
+    for (const [id, w] of Object.entries(d.wear)) {
+      if (!w || typeof w !== 'object') continue
+      const ww = w as ChoosingWearState
+      wear[id] = {
+        started_on: String(ww.started_on ?? ''),
+        days: typeof ww.days === 'number' && ww.days > 0 ? ww.days : 3,
+        logs: Array.isArray(ww.logs)
+          ? ww.logs.map((l) => ({
+              date: String(l.date ?? ''),
+              note: String(l.note ?? ''),
+              engagement: Number(l.engagement ?? 0),
+              energy: Number(l.energy ?? 0),
+            }))
+          : [],
+      }
+    }
+  }
+
+  const reflections: Record<string, ChoosingReflection> = {}
+  if (d.reflections && typeof d.reflections === 'object') {
+    for (const [id, r] of Object.entries(d.reflections)) {
+      if (!r || typeof r !== 'object') continue
+      const rr = r as ChoosingReflection & { body?: string }
+      reflections[id] = {
+        head: String(rr.head ?? ''),
+        body: String(rr.body ?? ''),
+        future: String(rr.future ?? ''),
+      }
+    }
+  }
+  // migrate v1 head/body on options into reflections
+  for (const o of Array.isArray(d.options) ? d.options : []) {
+    const id = String((o as { id?: string })?.id ?? '')
+    if (!id || reflections[id]) continue
+    const head = String((o as { head?: string })?.head ?? '')
+    const body = String((o as { body?: string })?.body ?? '')
+    if (head || body) {
+      reflections[id] = { head, body, future: '' }
+    }
+  }
+
+  return {
+    decision: String(d.decision ?? ''),
+    options,
+    dropped: Array.isArray(d.dropped) ? d.dropped.map(String) : [],
+    shortlist,
+    wear,
+    reflections,
+    chosen: d.chosen
+      ? String(d.chosen)
+      : d.chosenId
+        ? String(d.chosenId)
+        : null,
+    environment: String(d.environment ?? ''),
+    first_step: String(d.first_step ?? ''),
+    closed_on: String(d.closed_on ?? ''),
+    step: mapLegacyStep(d.step),
+    import_flags: {
+      odyssey: Boolean(d.import_flags?.odyssey),
+      mindmap: Boolean(d.import_flags?.mindmap),
+      prototype: Boolean(d.import_flags?.prototype),
+    },
+  }
+}
+
+export function choosingGuideStep(step: ChoosingStep): string {
+  if (step === 'decision') return 'gather'
+  return step
 }
 
 export type FailureKind = '실수' | '약점' | '성장통'
@@ -1637,7 +1827,7 @@ export const EXERCISE_META: ExerciseMeta[] = [
   {
     key: 'choosing',
     name: '고르기',
-    description: '옵션을 모으고 좁히고 하나 고르기',
+    description: '모으고 좁히고 입어보고 하나 고른 뒤 놓아주기',
     cadenceDays: null,
     phase: 3,
   },
