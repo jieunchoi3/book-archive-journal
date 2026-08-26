@@ -5,6 +5,7 @@ import { useAutoSnapFxRate } from '../hooks/useAutoSnapFxRate'
 import type { SnapBooking, SnapCourse, SnapPaymentMethod } from '../types/snap'
 import {
   COURSE_DEFAULTS,
+  maxSpotCount,
   SNAP_COURSE_OPTIONS,
   SNAP_PURPOSE_OPTIONS,
   SNAP_SPOT_OPTIONS,
@@ -12,6 +13,7 @@ import {
 } from '../types/snap'
 import { formatGbp } from '../types/snap'
 import { revenueGbp } from '../lib/snapRevenue'
+import { KoreanDateInput } from './KoreanDateInput'
 
 interface SnapEditModalProps {
   booking: SnapBooking
@@ -120,9 +122,13 @@ export function SnapEditModal({ booking, onSave, onDelete, onClose }: SnapEditMo
   const preview = formatGbp(revenueGbp({ ...draft, id: booking.id, createdAt: booking.createdAt }))
 
   const toggleSpot = (spot: string) => {
-    setSpots((prev) =>
-      prev.includes(spot) ? prev.filter((s) => s !== spot) : [...prev, spot],
-    )
+    const limit = maxSpotCount(course)
+    setSpots((prev) => {
+      if (prev.includes(spot)) return prev.filter((s) => s !== spot)
+      if (limit === 1) return [spot]
+      if (limit != null && prev.length >= limit) return [...prev.slice(1), spot]
+      return [...prev, spot]
+    })
   }
 
   const handleSave = () => {
@@ -145,11 +151,10 @@ export function SnapEditModal({ booking, onSave, onDelete, onClose }: SnapEditMo
           <div className="grid grid-cols-2 gap-3">
             <label className="block">
               <span className="mb-1 block text-[11px] font-medium text-muted">날짜</span>
-              <input
-                type="date"
+              <KoreanDateInput
                 value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full rounded-xl border border-hairline px-3 py-2 text-[13px]"
+                onChange={setDate}
+                className="w-full rounded-xl border border-hairline px-3 py-2 pr-9 text-[13px]"
               />
             </label>
             <label className="block">
@@ -174,6 +179,8 @@ export function SnapEditModal({ booking, onSave, onDelete, onClose }: SnapEditMo
                   const defs = COURSE_DEFAULTS[c as SnapCourse]
                   if (defs.minutes != null) setMinutes(String(defs.minutes))
                   if (defs.listPriceGbp != null) setListPriceGbp(String(defs.listPriceGbp))
+                  const limit = maxSpotCount(c)
+                  if (limit != null) setSpots((prev) => prev.slice(0, limit))
                 }}
               />
             ))}
@@ -201,7 +208,11 @@ export function SnapEditModal({ booking, onSave, onDelete, onClose }: SnapEditMo
             </label>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div>
+            <span className="mb-1.5 block text-[11px] font-medium text-muted">
+              스팟{maxSpotCount(course) === 1 ? ' (1곳)' : maxSpotCount(course) === 2 ? ' (2곳)' : ''}
+            </span>
+            <div className="flex flex-wrap gap-2">
             {SNAP_SPOT_OPTIONS.map((spot) => (
               <Chip
                 key={spot}
@@ -210,8 +221,8 @@ export function SnapEditModal({ booking, onSave, onDelete, onClose }: SnapEditMo
                 onClick={() => toggleSpot(spot)}
               />
             ))}
-          </div>
-          <div className="flex gap-2">
+            </div>
+          <div className="mt-2 flex gap-2">
             <input
               type="text"
               value={customSpot}
@@ -223,15 +234,22 @@ export function SnapEditModal({ booking, onSave, onDelete, onClose }: SnapEditMo
               type="button"
               onClick={() => {
                 const s = customSpot.trim()
-                if (s && !spots.includes(s)) {
+                if (!s || spots.includes(s)) return
+                const limit = maxSpotCount(course)
+                if (limit === 1) {
+                  setSpots([s])
+                } else if (limit != null && spots.length >= limit) {
+                  setSpots([...spots.slice(1), s])
+                } else {
                   setSpots((p) => [...p, s])
-                  setCustomSpot('')
                 }
+                setCustomSpot('')
               }}
               className="rounded-xl bg-[#F2F2F7] px-3 py-2 text-[12px]"
             >
               추가
             </button>
+          </div>
           </div>
 
           <div className="flex flex-wrap gap-2">

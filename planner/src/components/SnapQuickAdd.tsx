@@ -7,6 +7,7 @@ import {
   COURSE_DEFAULTS,
   formatGbp,
   formatKrw,
+  maxSpotCount,
   SNAP_COURSE_OPTIONS,
   SNAP_PURPOSE_OPTIONS,
   SNAP_SPOT_OPTIONS,
@@ -14,6 +15,7 @@ import {
 } from '../types/snap'
 import { revenueGbp } from '../lib/snapRevenue'
 import { getTodayKey } from '../lib/weekUtils'
+import { KoreanDateInput } from './KoreanDateInput'
 
 interface SnapQuickAddProps {
   onAdd: (input: SnapBookingInput) => void
@@ -81,6 +83,10 @@ export function SnapQuickAdd({ onAdd, embedded = false }: SnapQuickAddProps) {
     if (defs.defaultSpots === 2 && spots.length === 0) {
       setSpots(['빅벤·런던아이', '타워브릿지'])
     }
+    const limit = maxSpotCount(c)
+    if (limit != null) {
+      setSpots((prev) => prev.slice(0, limit))
+    }
   }
 
   const setPayment = (method: SnapPaymentMethod) => {
@@ -137,15 +143,26 @@ export function SnapQuickAdd({ onAdd, embedded = false }: SnapQuickAddProps) {
   }, [draftBooking, paymentMethod, amountKrw, fxRate, listPriceGbp, amountGbp])
 
   const toggleSpot = (spot: string) => {
-    setSpots((prev) =>
-      prev.includes(spot) ? prev.filter((s) => s !== spot) : [...prev, spot],
-    )
+    const limit = maxSpotCount(course)
+    setSpots((prev) => {
+      if (prev.includes(spot)) return prev.filter((s) => s !== spot)
+      if (limit === 1) return [spot]
+      if (limit != null && prev.length >= limit) return [...prev.slice(1), spot]
+      return [...prev, spot]
+    })
   }
 
   const addCustomSpot = () => {
     const s = customSpot.trim()
     if (!s || spots.includes(s)) return
-    setSpots((prev) => [...prev, s])
+    const limit = maxSpotCount(course)
+    if (limit === 1) {
+      setSpots([s])
+    } else if (limit != null && spots.length >= limit) {
+      setSpots([...spots.slice(1), s])
+    } else {
+      setSpots((prev) => [...prev, s])
+    }
     setCustomSpot('')
   }
 
@@ -193,11 +210,10 @@ export function SnapQuickAdd({ onAdd, embedded = false }: SnapQuickAddProps) {
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
             <span className="mb-1 block text-[11px] font-medium text-muted">날짜</span>
-            <input
-              type="date"
+            <KoreanDateInput
               value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-full rounded-xl border border-hairline px-3 py-2 text-[13px]"
+              onChange={setDate}
+              className="w-full rounded-xl border border-hairline px-3 py-2 pr-9 text-[13px]"
             />
           </label>
           <label className="block col-span-1">
@@ -244,7 +260,9 @@ export function SnapQuickAdd({ onAdd, embedded = false }: SnapQuickAddProps) {
         </div>
 
         <div>
-          <span className="mb-1.5 block text-[11px] font-medium text-muted">스팟</span>
+          <span className="mb-1.5 block text-[11px] font-medium text-muted">
+            스팟{maxSpotCount(course) === 1 ? ' (1곳)' : maxSpotCount(course) === 2 ? ' (2곳)' : ''}
+          </span>
           <div className="flex gap-2 overflow-x-auto pb-1">
             {SNAP_SPOT_OPTIONS.map((spot) => (
               <Chip

@@ -83,6 +83,13 @@ export const COURSE_DEFAULTS: Record<SnapCourse, CourseDefaults> = {
   미분류: { minutes: null, defaultSpots: 1, listPriceGbp: null, cashPriceGbp: null },
 }
 
+/** Max selectable spots for a course; `null` = no limit (커스텀). */
+export function maxSpotCount(course: SnapCourse | string): number | null {
+  if (course === '커스텀') return null
+  const defs = COURSE_DEFAULTS[course as SnapCourse]
+  return defs?.defaultSpots ?? null
+}
+
 export function formatGbp(amount: number): string {
   return `£${amount.toFixed(2)}`
 }

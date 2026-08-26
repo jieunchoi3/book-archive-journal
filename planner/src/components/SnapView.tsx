@@ -8,10 +8,12 @@ import { exportSnapCsvFile } from '../lib/snapCsv'
 import { formatDateKey, parseDateKey } from '../lib/weekUtils'
 import { SnapQuickAdd } from './SnapQuickAdd'
 import { SnapMonthlyChart } from './SnapMonthlyChart'
+import { SnapCalendarHeatmap } from './SnapCalendarHeatmap'
 import { SnapEditModal } from './SnapEditModal'
 
 type SnapPanel = 'log' | 'insights' | 'list'
 type BreakdownPanel = 'course' | 'spots' | 'payment' | 'repeat'
+type ListViewMode = 'list' | 'calendar'
 
 interface SnapViewProps {
   snap: SnapActions
@@ -19,10 +21,14 @@ interface SnapViewProps {
 
 function PeriodToggle({
   period,
+  monthFilter,
   onChange,
+  onPickMonth,
 }: {
   period: SnapPeriod
+  monthFilter: string | null
   onChange: (p: SnapPeriod) => void
+  onPickMonth: (monthKey: string) => void
 }) {
   const options: { id: SnapPeriod; label: string }[] = [
     { id: 'month', label: '이번 달' },
@@ -30,21 +36,37 @@ function PeriodToggle({
     { id: 'all', label: '전체' },
   ]
   return (
-    <div className="flex flex-wrap gap-2">
-      {options.map((o) => (
-        <button
-          key={o.id}
-          type="button"
-          onClick={() => onChange(o.id)}
-          className={`rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors ${
-            period === o.id
-              ? 'bg-[#1C1C1E] text-white'
-              : 'bg-white text-[#48484A] ring-1 ring-hairline hover:bg-[#F2F2F7]'
+    <div className="flex flex-col items-end gap-2">
+      <div className="flex flex-wrap justify-end gap-2">
+        {options.map((o) => (
+          <button
+            key={o.id}
+            type="button"
+            onClick={() => onChange(o.id)}
+            className={`rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors ${
+              !monthFilter && period === o.id
+                ? 'bg-[#1C1C1E] text-white'
+                : 'bg-white text-[#48484A] ring-1 ring-hairline hover:bg-[#F2F2F7]'
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+      <label className="flex items-center gap-2 text-[11px] text-muted">
+        <span className="shrink-0">월 선택</span>
+        <input
+          type="month"
+          value={monthFilter ?? ''}
+          min="2025-07"
+          onChange={(e) => {
+            if (e.target.value) onPickMonth(e.target.value)
+          }}
+          className={`rounded-lg border px-2 py-1 text-[12px] text-[#1C1C1E] ${
+            monthFilter ? 'border-[#007AFF] bg-[#007AFF]/5' : 'border-hairline bg-white'
           }`}
-        >
-          {o.label}
-        </button>
-      ))}
+        />
+      </label>
     </div>
   )
 }
@@ -63,13 +85,19 @@ function SectionCard({
   title,
   children,
   action,
+  overflowVisible,
 }: {
   title: string
   children: React.ReactNode
   action?: React.ReactNode
+  overflowVisible?: boolean
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-hairline bg-white shadow-sm">
+    <section
+      className={`rounded-2xl border border-hairline bg-white shadow-sm ${
+        overflowVisible ? 'overflow-visible' : 'overflow-hidden'
+      }`}
+    >
       <div className="flex items-center justify-between gap-2 border-b border-hairline bg-[#FAFAFA] px-4 py-3">
         <h2 className="text-[13px] font-semibold text-[#1C1C1E]">{title}</h2>
         {action}
@@ -178,7 +206,13 @@ export function SnapView({ snap }: SnapViewProps) {
 
   const [panel, setPanel] = useState<SnapPanel>('log')
   const [breakdown, setBreakdown] = useState<BreakdownPanel>('course')
+  const [listViewMode, setListViewMode] = useState<ListViewMode>('calendar')
   const [listUnpaidOnly, setListUnpaidOnly] = useState(false)
+  const [dayFilter, setDayFilter] = useState<string | null>(null)
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const t = new Date()
+    return { year: t.getFullYear(), month: t.getMonth() }
+  })
   const [editingId, setEditingId] = useState<string | null>(null)
   const [exportOpen, setExportOpen] = useState(false)
 
@@ -188,9 +222,24 @@ export function SnapView({ snap }: SnapViewProps) {
   )
 
   const listRows = useMemo(() => {
-    if (listUnpaidOnly) return unpaidBookings
-    return filteredBookings
-  }, [listUnpaidOnly, unpaidBookings, filteredBookings])
+    let rows = listUnpaidOnly ? unpaidBookings : filteredBookings
+    if (dayFilter) rows = rows.filter((b) => b.date.slice(0, 10) === dayFilter)
+    return rows
+  }, [listUnpaidOnly, unpaidBookings, filteredBookings, dayFilter])
+
+  const calendarBookings = useMemo(() => {
+    if (monthFilter) {
+      return bookings.filter((b) => b.date.slice(0, 7) === monthFilter)
+    }
+    return bookings
+  }, [bookings, monthFilter])
+
+  const onPickMonth = (monthKey: string) => {
+    selectMonth(monthKey)
+    const [y, m] = monthKey.split('-').map(Number)
+    setCalendarMonth({ year: y, month: m - 1 })
+    setDayFilter(null)
+  }
 
   const exportCsv = (scope: 'all' | 'period') => {
     const rows = scope === 'all' ? bookings : snap.periodBookings
@@ -202,7 +251,10 @@ export function SnapView({ snap }: SnapViewProps) {
   const onChartMonth = (monthKey: string | null) => {
     selectMonth(monthKey)
     if (monthKey) {
+      const [y, m] = monthKey.split('-').map(Number)
+      setCalendarMonth({ year: y, month: m - 1 })
       setListUnpaidOnly(false)
+      setDayFilter(null)
       setPanel('list')
     }
   }
@@ -217,6 +269,7 @@ export function SnapView({ snap }: SnapViewProps) {
 
   return (
     <div className="min-h-screen p-4 pb-24 sm:p-6">
+      <div className="mx-auto w-[80%] min-w-0 max-w-[1400px]">
       <header className="mb-3 flex items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
@@ -269,7 +322,7 @@ export function SnapView({ snap }: SnapViewProps) {
         <TabPills panel={panel} onChange={setPanel} unpaidCount={unpaidCount} />
       </div>
 
-      <div className="mx-auto max-w-xl space-y-4">
+      <div className="space-y-4">
         {panel === 'log' && (
           <SnapQuickAdd onAdd={addBooking} embedded />
         )}
@@ -278,9 +331,21 @@ export function SnapView({ snap }: SnapViewProps) {
           <>
             <SectionCard
               title="요약"
-              action={<PeriodToggle period={period} onChange={setPeriod} />}
+              action={
+                <PeriodToggle
+                  period={period}
+                  monthFilter={monthFilter}
+                  onChange={setPeriod}
+                  onPickMonth={onPickMonth}
+                />
+              }
             >
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {monthFilter && (
+                <p className="mb-2 text-[11px] font-medium text-[#007AFF]">
+                  {monthFilter} 기준
+                </p>
+              )}
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
                 <StatCard label="총 수익" value={formatGbp(stats.totalRevenue)} />
                 <StatCard
                   label="촬영"
@@ -297,7 +362,7 @@ export function SnapView({ snap }: SnapViewProps) {
               </div>
             </SectionCard>
 
-            <SectionCard title="월별 수익">
+            <SectionCard title="월별 수익" overflowVisible>
               <SnapMonthlyChart
                 months={monthlyRevenue}
                 selectedMonthKey={monthFilter}
@@ -442,17 +507,68 @@ export function SnapView({ snap }: SnapViewProps) {
             <SectionCard
               title="촬영 목록"
               action={
-                monthFilter ? (
-                  <button
-                    type="button"
-                    onClick={() => selectMonth(null)}
-                    className="text-[11px] font-medium text-[#007AFF]"
-                  >
-                    {monthFilter} ✕
-                  </button>
-                ) : undefined
+                <div className="flex items-center gap-2">
+                  <div className="inline-flex rounded-full bg-[#F2F2F7] p-0.5">
+                    {(
+                      [
+                        ['calendar', '캘린더'],
+                        ['list', '목록'],
+                      ] as const
+                    ).map(([id, label]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => {
+                          setListViewMode(id)
+                          setDayFilter(null)
+                        }}
+                        className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${
+                          listViewMode === id
+                            ? 'bg-white text-[#1C1C1E] shadow-sm'
+                            : 'text-muted'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {monthFilter && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        selectMonth(null)
+                        setDayFilter(null)
+                      }}
+                      className="text-[11px] font-medium text-[#007AFF]"
+                    >
+                      {monthFilter} ✕
+                    </button>
+                  )}
+                  {dayFilter && (
+                    <button
+                      type="button"
+                      onClick={() => setDayFilter(null)}
+                      className="text-[11px] font-medium text-[#007AFF]"
+                    >
+                      {dayFilter.slice(5)} ✕
+                    </button>
+                  )}
+                </div>
               }
             >
+              {listViewMode === 'calendar' && (
+                <div className="mb-4">
+                  <SnapCalendarHeatmap
+                    bookings={calendarBookings}
+                    year={calendarMonth.year}
+                    month={calendarMonth.month}
+                    selectedDateKey={dayFilter}
+                    onSelectDate={setDayFilter}
+                    onMonthChange={(year, month) => setCalendarMonth({ year, month })}
+                  />
+                </div>
+              )}
+
               {listRows.length === 0 ? (
                 <p className="text-[12px] text-muted">
                   {listUnpaidOnly ? '미입금 건 없음' : '기록 없음'}
@@ -467,6 +583,7 @@ export function SnapView({ snap }: SnapViewProps) {
             </SectionCard>
           </>
         )}
+      </div>
       </div>
 
       {editingBooking && (
