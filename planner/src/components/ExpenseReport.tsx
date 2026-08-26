@@ -21,6 +21,7 @@ interface ExpenseReportProps {
   transactions: MoneyTransaction[]
   monthOutTotal: number
   monthInTotal: number
+  onEditTransaction?: (id: string) => void
 }
 
 function monthPrefix(year: number, month: number) {
@@ -47,11 +48,13 @@ export function ExpenseReport({
   transactions,
   monthOutTotal,
   monthInTotal,
+  onEditTransaction,
 }: ExpenseReportProps) {
   const [flow, setFlow] = useState<MoneyFlow>('out')
   const [selectedIds, setSelectedIds] = useState<Set<string> | null>(null)
   const [purposeFilter, setPurposeFilter] = useState<string | 'all'>('all')
   const [kindFilter, setKindFilter] = useState<string | 'all'>('all')
+  const [drillId, setDrillId] = useState<string | null>(null)
 
   const categories = flow === 'out' ? expenseCategories : incomeCategories
   const monthFlowTotal = flow === 'out' ? monthOutTotal : monthInTotal
@@ -71,6 +74,26 @@ export function ExpenseReport({
     setSelectedIds(null)
     setPurposeFilter('all')
     setKindFilter('all')
+    setDrillId(null)
+  }
+
+  /** How breakdown rows map onto transactions (category / purpose / kind). */
+  const breakdownAxis = useMemo((): 'category' | 'purpose' | 'kind' => {
+    if (flow === 'out' && isHierarchyMonth) {
+      if (purposeFilter === 'all' && kindFilter === 'all') return 'purpose'
+      return 'kind'
+    }
+    return 'category'
+  }, [flow, isHierarchyMonth, purposeFilter, kindFilter])
+
+  const matchesBreakdown = (t: MoneyTransaction, id: string) => {
+    if (breakdownAxis === 'purpose') return t.purposeId === id
+    if (breakdownAxis === 'kind') return t.spendKindId === id
+    return t.categoryId === id
+  }
+
+  const openDrill = (id: string) => {
+    setDrillId((prev) => (prev === id ? null : id))
   }
 
   const toggleCategory = (id: string) => {
@@ -87,8 +110,14 @@ export function ExpenseReport({
     })
   }
 
-  const selectAll = () => setSelectedIds(null)
-  const clearAll = () => setSelectedIds(new Set())
+  const selectAll = () => {
+    setSelectedIds(null)
+    setDrillId(null)
+  }
+  const clearAll = () => {
+    setSelectedIds(new Set())
+    setDrillId(null)
+  }
 
   const prefix = monthPrefix(year, month)
   const prev = prevYearMonth(year, month)
@@ -286,6 +315,28 @@ export function ExpenseReport({
 
   const maxWeek = Math.max(1, ...weekBuckets.map((w) => w.amount))
 
+  const drillTxns = useMemo(() => {
+    if (!drillId) return []
+    return filtered
+      .filter((t) => matchesBreakdown(t, drillId))
+      .sort((a, b) => {
+        const d = b.dateKey.localeCompare(a.dateKey)
+        if (d !== 0) return d
+        return b.createdAt.localeCompare(a.createdAt)
+      })
+    // matchesBreakdown closes over breakdownAxis
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered, drillId, breakdownAxis])
+
+  const drillMeta = byCategory.find((c) => c.id === drillId)
+
+  const formatTxnDate = (dateKey: string) =>
+    parseDateKey(dateKey).toLocaleDateString(undefined, {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    })
+
   const filterHint = showHierarchyFilters
     ? [
         purposeFilter === 'all'
@@ -364,7 +415,10 @@ export function ExpenseReport({
                 label="All"
                 active={purposeFilter === 'all'}
                 color="#8B5A2B"
-                onClick={() => setPurposeFilter('all')}
+                onClick={() => {
+                  setPurposeFilter('all')
+                  setDrillId(null)
+                }}
               />
               {purposes.map((p) => (
                 <FilterChip
@@ -372,7 +426,10 @@ export function ExpenseReport({
                   label={p.name}
                   active={purposeFilter === p.id}
                   color={p.color}
-                  onClick={() => setPurposeFilter(p.id)}
+                  onClick={() => {
+                    setPurposeFilter(p.id)
+                    setDrillId(null)
+                  }}
                 />
               ))}
             </div>
@@ -386,7 +443,10 @@ export function ExpenseReport({
                 label="All"
                 active={kindFilter === 'all'}
                 color="#8B5A2B"
-                onClick={() => setKindFilter('all')}
+                onClick={() => {
+                  setKindFilter('all')
+                  setDrillId(null)
+                }}
               />
               {spendKinds.map((k) => (
                 <FilterChip
@@ -394,7 +454,10 @@ export function ExpenseReport({
                   label={k.name}
                   active={kindFilter === k.id}
                   color={k.color}
-                  onClick={() => setKindFilter(k.id)}
+                  onClick={() => {
+                    setKindFilter(k.id)
+                    setDrillId(k.id)
+                  }}
                 />
               ))}
             </div>
@@ -421,13 +484,16 @@ export function ExpenseReport({
           </div>
 
           <div className="mb-4 flex flex-wrap gap-1.5">
-            {categories.map((cat) => {
+              {categories.map((cat) => {
               const on = activeIds.has(cat.id)
               return (
                 <button
                   key={cat.id}
                   type="button"
-                  onClick={() => toggleCategory(cat.id)}
+                  onClick={() => {
+                    toggleCategory(cat.id)
+                    setDrillId(cat.id)
+                  }}
                   className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[12px] font-medium transition-colors ${
                     on
                       ? 'text-white shadow-sm'
@@ -560,6 +626,9 @@ export function ExpenseReport({
         <h3 className="mb-2 text-[13px] font-semibold text-[#1C1C1E]">
           Breakdown
         </h3>
+        <p className="mb-2 text-[11px] text-muted">
+          Tap a row to see the exact logs
+        </p>
         {byCategory.every((c) => c.amount === 0) ? (
           <p className="text-[12px] text-muted">
             {flow === 'out'
@@ -567,26 +636,92 @@ export function ExpenseReport({
               : 'No income in the selected filters.'}
           </p>
         ) : (
-          <ul className="space-y-2">
+          <ul className="space-y-1">
             {byCategory
               .filter((c) => c.amount > 0)
-              .map((c) => (
-                <li key={c.id} className="flex items-center gap-3">
-                  <span
-                    className="h-2.5 w-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: c.color }}
-                  />
-                  <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#1C1C1E]">
-                    {c.name}
-                  </span>
-                  <span className="text-[11px] tabular-nums text-muted">
-                    {Math.round(c.share * 100)}%
-                  </span>
-                  <span className="w-16 text-right text-[13px] font-semibold tabular-nums text-[#1C1C1E]">
-                    {formatMoney(c.amount)}
-                  </span>
-                </li>
-              ))}
+              .map((c) => {
+                const open = drillId === c.id
+                return (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      onClick={() => openDrill(c.id)}
+                      className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-colors ${
+                        open ? 'bg-[#F3E5D8]/80' : 'hover:bg-[#FAFAFA]'
+                      }`}
+                      aria-expanded={open}
+                    >
+                      <span
+                        className="h-2.5 w-2.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: c.color }}
+                      />
+                      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#1C1C1E]">
+                        {c.name}
+                      </span>
+                      <span className="text-[11px] tabular-nums text-muted">
+                        {Math.round(c.share * 100)}%
+                      </span>
+                      <span className="w-16 text-right text-[13px] font-semibold tabular-nums text-[#1C1C1E]">
+                        {formatMoney(c.amount)}
+                      </span>
+                    </button>
+                    {open && (
+                      <div className="mb-2 ml-2 mt-1 rounded-xl border border-hairline bg-[#FAFAFA] px-3 py-2">
+                        {drillTxns.length === 0 ? (
+                          <p className="text-[12px] text-muted">No logs here.</p>
+                        ) : (
+                          <ul className="divide-y divide-hairline">
+                            {drillTxns.map((t) => (
+                              <li key={t.id}>
+                                <button
+                                  type="button"
+                                  onClick={() => onEditTransaction?.(t.id)}
+                                  className={`flex w-full items-center gap-3 py-2 text-left ${
+                                    onEditTransaction
+                                      ? 'hover:opacity-80'
+                                      : 'cursor-default'
+                                  }`}
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <p className="truncate text-[13px] font-medium text-[#1C1C1E]">
+                                      {t.note.trim() || (
+                                        <span className="font-normal text-muted">
+                                          No note
+                                        </span>
+                                      )}
+                                    </p>
+                                    <p className="text-[11px] text-muted">
+                                      {formatTxnDate(t.dateKey)}
+                                    </p>
+                                  </div>
+                                  <span
+                                    className={`shrink-0 text-[13px] font-semibold tabular-nums ${
+                                      t.flow === 'in'
+                                        ? 'text-[#3D7A5A]'
+                                        : 'text-[#8B5A2B]'
+                                    }`}
+                                  >
+                                    {t.flow === 'in' ? '+' : '−'}
+                                    {formatMoney(t.amount)}
+                                  </span>
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        {drillMeta && (
+                          <p className="mt-1.5 text-[11px] text-muted">
+                            {drillTxns.length} log
+                            {drillTxns.length === 1 ? '' : 's'} ·{' '}
+                            {formatMoney(drillMeta.amount)}
+                            {onEditTransaction ? ' · tap a log to edit' : ''}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                )
+              })}
           </ul>
         )}
       </div>

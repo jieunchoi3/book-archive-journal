@@ -566,6 +566,7 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
                     transactions={transactions}
                     monthOutTotal={monthOutTotal}
                     monthInTotal={monthInTotal}
+                    onEditTransaction={openEditTxn}
                   />
                 </>
               ) : (
