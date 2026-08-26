@@ -833,13 +833,22 @@ function PolaroidCard({
             onClick={onClick}
             className="relative flex min-h-[5.5rem] flex-col px-0.5 pb-1 pt-0.5 text-left"
           >
-            <p
-              className="line-clamp-2 text-[12px] font-medium leading-snug"
-              style={{ color: titleColor }}
-            >
-              {sticker.title}
-              {sticker.subtitle ? ` ${sticker.subtitle}` : ''}
-            </p>
+            <div>
+              <p
+                className="line-clamp-2 text-[12px] font-medium leading-snug"
+                style={{ color: titleColor }}
+              >
+                {sticker.title}
+              </p>
+              {sticker.subtitle ? (
+                <p
+                  className="mt-0.5 line-clamp-2 text-[12px] font-medium leading-snug"
+                  style={{ color: titleColor }}
+                >
+                  {sticker.subtitle}
+                </p>
+              ) : null}
+            </div>
             {sticker.note ? (
               <p className="mt-1 line-clamp-3 text-[12px] leading-snug" style={{ color: noteColor }}>
                 {sticker.note}
