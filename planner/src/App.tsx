@@ -5,6 +5,7 @@ import { PlannerDataProvider } from './context/PlannerDataContext'
 import { usePlanner } from './hooks/usePlanner'
 import { useItems } from './hooks/useItems'
 import { useExpenses } from './hooks/useExpenses'
+import { useSnapBookings } from './hooks/useSnapBookings'
 import { useLinkedApps } from './hooks/useLinkedApps'
 import { useCompass } from './hooks/useCompass'
 import { ImportLocalDataBanner } from './components/ImportLocalDataBanner'
@@ -12,6 +13,7 @@ import { WeekView } from './components/WeekView'
 import { MonthCalendarView } from './components/MonthCalendarView'
 import { DiaryView } from './components/DiaryView'
 import { ExpenseView } from './components/ExpenseView'
+import { SnapView } from './components/SnapView'
 import { TasteStickerView } from './components/TasteStickerView'
 import { CompassView } from './components/CompassView'
 import { BottomNav, type AppView } from './components/BottomNav'
@@ -28,6 +30,7 @@ function AppContent() {
   const planner = usePlanner()
   const items = useItems(planner.weekStart)
   const expenses = useExpenses()
+  const snap = useSnapBookings()
   const linkedApps = useLinkedApps()
   const compass = useCompass()
 
@@ -63,6 +66,8 @@ function AppContent() {
         <DiaryView expenses={expenses} />
       ) : view === 'expenses' ? (
         <ExpenseView expenses={expenses} />
+      ) : view === 'snap' ? (
+        <SnapView snap={snap} />
       ) : view === 'taste' ? (
         <TasteStickerView />
       ) : view === 'compass' ? (
@@ -98,6 +103,7 @@ function AppContent() {
         }}
         badges={{
           expenses: expenses.missingLogDays.length,
+          snap: snap.unpaidCount,
           compass: compass.badgeCount,
         }}
       />

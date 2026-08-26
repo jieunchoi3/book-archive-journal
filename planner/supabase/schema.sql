@@ -161,6 +161,41 @@ create table if not exists planner.expense_stores (
   updated_at timestamptz not null default now()
 );
 
+-- Snap bookings (코지캡쳐 freelance photo business)
+create table if not exists planner.snap_bookings (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  date date not null,
+  customer_name text not null,
+  spots text[] not null default '{}',
+  minutes int,
+  course text not null,
+  headcount int not null default 1,
+  list_price_gbp numeric not null,
+  payment_method text check (
+    payment_method is null
+    or payment_method in ('cash_gbp', 'krw_transfer', 'unpaid')
+  ),
+  amount_gbp numeric,
+  amount_krw numeric,
+  fx_rate numeric,
+  status text not null default '입금완료',
+  gender text,
+  age_band text,
+  purpose text,
+  stars int check (stars is null or (stars >= 1 and stars <= 5)),
+  photos_url text,
+  note text,
+  source text not null default 'manual' check (source in ('manual', 'notion_import')),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists snap_bookings_user_date_idx
+  on planner.snap_bookings (user_id, date desc);
+
+create unique index if not exists snap_bookings_user_id_uidx
+  on planner.snap_bookings (user_id, id);
+
 -- RLS
 alter table planner.day_templates enable row level security;
 alter table planner.blocks enable row level security;
@@ -176,6 +211,7 @@ alter table planner.linked_apps enable row level security;
 alter table planner.sidebar_notes enable row level security;
 alter table planner.diary_entries enable row level security;
 alter table planner.expense_stores enable row level security;
+alter table planner.snap_bookings enable row level security;
 
 create policy "day_templates_own" on planner.day_templates for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "blocks_own" on planner.blocks for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
@@ -191,6 +227,7 @@ create policy "linked_apps_own" on planner.linked_apps for all using (auth.uid()
 create policy "sidebar_notes_own" on planner.sidebar_notes for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "diary_entries_own" on planner.diary_entries for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "expense_stores_own" on planner.expense_stores for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "snap_bookings_own" on planner.snap_bookings for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- Migration for existing projects:
 -- alter table planner.block_week_logs add column if not exists hidden_tasks jsonb not null default '[]'::jsonb;

@@ -3,6 +3,7 @@ import {
   BookHeart,
   Calendar,
   CalendarDays,
+  Camera,
   Compass,
   Sticker,
   Wallet,
@@ -12,6 +13,7 @@ export type AppView =
   | 'diary'
   | 'expenses'
   | 'taste'
+  | 'snap'
   | 'monthly'
   | 'weekly'
   | 'compass'
@@ -44,19 +46,27 @@ export function BottomNav({ active, onChange, badges }: BottomNavProps) {
           light={transparent}
         />
         <NavButton
-          label="Expenses"
-          icon={<Wallet size={20} />}
-          active={active === 'expenses'}
-          badge={badges?.expenses}
-          onClick={() => onChange('expenses')}
-          light={transparent}
-        />
-        <NavButton
           label="Taste"
           icon={<Sticker size={20} />}
           active={active === 'taste'}
           badge={badges?.taste}
           onClick={() => onChange('taste')}
+          light={transparent}
+        />
+        <NavButton
+          label="Snap"
+          icon={<Camera size={20} />}
+          active={active === 'snap'}
+          badge={badges?.snap}
+          onClick={() => onChange('snap')}
+          light={transparent}
+        />
+        <NavButton
+          label="Expenses"
+          icon={<Wallet size={20} />}
+          active={active === 'expenses'}
+          badge={badges?.expenses}
+          onClick={() => onChange('expenses')}
           light={transparent}
         />
         <NavButton
