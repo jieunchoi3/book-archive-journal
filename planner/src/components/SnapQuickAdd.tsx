@@ -17,6 +17,8 @@ import { getTodayKey } from '../lib/weekUtils'
 
 interface SnapQuickAddProps {
   onAdd: (input: SnapBookingInput) => void
+  /** Hide card header when rendered inside Snap tab panel. */
+  embedded?: boolean
 }
 
 function Chip({
@@ -43,7 +45,7 @@ function Chip({
   )
 }
 
-export function SnapQuickAdd({ onAdd }: SnapQuickAddProps) {
+export function SnapQuickAdd({ onAdd, embedded = false }: SnapQuickAddProps) {
   const [date, setDate] = useState(getTodayKey())
   const [customerName, setCustomerName] = useState('')
   const [course, setCourse] = useState<SnapCourse>('싱글')
@@ -180,12 +182,14 @@ export function SnapQuickAdd({ onAdd }: SnapQuickAddProps) {
 
   return (
     <section className="overflow-hidden rounded-2xl border border-hairline bg-white shadow-sm">
-      <div className="border-b border-hairline bg-[#FAFAFA] px-4 py-3">
-        <h2 className="text-[13px] font-semibold text-[#1C1C1E]">촬영 기록</h2>
-        <p className="text-[11px] text-muted">30초 안에 저장</p>
-      </div>
+      {!embedded && (
+        <div className="border-b border-hairline bg-[#FAFAFA] px-4 py-3">
+          <h2 className="text-[13px] font-semibold text-[#1C1C1E]">촬영 기록</h2>
+          <p className="text-[11px] text-muted">30초 안에 저장</p>
+        </div>
+      )}
 
-      <div className="space-y-4 p-4">
+      <div className={embedded ? 'space-y-3 p-4' : 'space-y-4 p-4'}>
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
             <span className="mb-1 block text-[11px] font-medium text-muted">날짜</span>
@@ -241,7 +245,7 @@ export function SnapQuickAdd({ onAdd }: SnapQuickAddProps) {
 
         <div>
           <span className="mb-1.5 block text-[11px] font-medium text-muted">스팟</span>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex gap-2 overflow-x-auto pb-1">
             {SNAP_SPOT_OPTIONS.map((spot) => (
               <Chip
                 key={spot}
@@ -270,29 +274,27 @@ export function SnapQuickAdd({ onAdd }: SnapQuickAddProps) {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <span className="text-[11px] font-medium text-muted">인원</span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setHeadcount((h) => Math.max(1, h - 1))}
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F2F2F7]"
-            >
-              <Minus size={14} />
-            </button>
-            <span className="min-w-[1.5rem] text-center text-[14px] font-semibold">{headcount}</span>
-            <button
-              type="button"
-              onClick={() => setHeadcount((h) => h + 1)}
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F2F2F7]"
-            >
-              <Plus size={14} />
-            </button>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] font-medium text-muted">인원</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setHeadcount((h) => Math.max(1, h - 1))}
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F2F2F7]"
+              >
+                <Minus size={14} />
+              </button>
+              <span className="min-w-[1.5rem] text-center text-[14px] font-semibold">{headcount}</span>
+              <button
+                type="button"
+                onClick={() => setHeadcount((h) => h + 1)}
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F2F2F7]"
+              >
+                <Plus size={14} />
+              </button>
+            </div>
           </div>
-        </div>
-
-        <div>
-          <span className="mb-1.5 block text-[11px] font-medium text-muted">결제</span>
           <div className="flex flex-wrap gap-2">
             <Chip
               label="현금 £"
