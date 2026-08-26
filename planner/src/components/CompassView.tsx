@@ -8,7 +8,6 @@ import type { CompassActions } from '../hooks/useCompass'
 import { CompassOverview } from './CompassOverview'
 import { CompassDashboard } from './CompassDashboard'
 import { CompassAskDetail, CompassAskList } from './CompassAsk'
-import { CompassExerciseHeader } from './CompassExerciseShell'
 import { CompassLongform } from './CompassLongform'
 import { CompassCoherence } from './CompassCoherence'
 import { CompassGoodtime } from './CompassGoodtime'
@@ -257,13 +256,7 @@ function ExerciseShell({
         />
       )}
       {exerciseKey === 'prototype' && (
-        <>
-          <CompassExerciseHeader
-            title="프로토타입 로그"
-            subtitle="대화와 작은 실험 기록"
-          />
-          <CompassPrototype compass={compass} initialPlanLink={protoPlanLink} />
-        </>
+        <CompassPrototype compass={compass} initialPlanLink={protoPlanLink} />
       )}
       {exerciseKey === 'choosing' && (
         <CompassChoosing

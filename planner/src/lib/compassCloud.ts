@@ -7,6 +7,8 @@ import type {
   LdAiReport,
   LdAnswer,
   LdJournalEntry,
+  LdProtoIdea,
+  LdProtoQuestion,
   LdPrototype,
   LdQuestion,
   LdSnapshot,
@@ -14,7 +16,12 @@ import type {
   PrototypeStatus,
   SnapshotStatus,
 } from '../types/compass'
-import { JOURNAL_DURATIONS } from '../types/compass'
+import {
+  JOURNAL_DURATIONS,
+  normalizeProtoIdea,
+  normalizeProtoQuestion,
+  normalizePrototype,
+} from '../types/compass'
 import { supabase } from './supabase'
 
 type SnapshotRow = {
@@ -71,15 +78,46 @@ type JournalRow = {
 type PrototypeRow = {
   id: string
   user_id: string
+  question_id: string | null
   kind: PrototypeKind
   title: string
   person: string | null
+  how_known: string | null
+  prep_checks: Record<string, unknown> | null
+  questions: string[] | null
+  scope: string | null
+  duration: string | null
+  learn_goal: string | null
   happened_on: string | null
-  going_in_q: string | null
   learned: string | null
+  answered: string | null
+  engagement: number | null
+  energy: number | null
+  referral: string | null
+  going_in_q: string | null
   next_step: string | null
   linked_plan: string | null
   status: PrototypeStatus
+  created_at: string
+}
+
+type ProtoQuestionRow = {
+  id: string
+  user_id: string
+  body: string
+  origin: string
+  origin_ref: Record<string, unknown> | null
+  is_open: boolean
+  created_at: string
+}
+
+type ProtoIdeaRow = {
+  id: string
+  user_id: string
+  question_id: string
+  kind: PrototypeKind
+  body: string
+  promoted: boolean
   created_at: string
 }
 
@@ -214,36 +252,155 @@ function journalToRow(e: LdJournalEntry) {
 }
 
 function rowToPrototype(row: PrototypeRow): LdPrototype {
-  return {
-    id: row.id,
-    userId: row.user_id,
-    kind: row.kind,
-    title: row.title,
-    person: row.person,
-    happenedOn: row.happened_on,
-    goingInQ: row.going_in_q,
-    learned: row.learned,
-    nextStep: row.next_step,
-    linkedPlan: row.linked_plan,
-    status: row.status,
-    createdAt: row.created_at,
-  }
+  return (
+    normalizePrototype({
+      id: row.id,
+      user_id: row.user_id,
+      question_id: row.question_id,
+      kind: row.kind,
+      title: row.title,
+      person: row.person,
+      how_known: row.how_known,
+      prep_checks: row.prep_checks,
+      questions: row.questions,
+      scope: row.scope,
+      duration: row.duration,
+      learn_goal: row.learn_goal,
+      happened_on: row.happened_on,
+      learned: row.learned,
+      answered: row.answered,
+      engagement: row.engagement,
+      energy: row.energy,
+      referral: row.referral,
+      going_in_q: row.going_in_q,
+      next_step: row.next_step,
+      linked_plan: row.linked_plan,
+      status: row.status,
+      created_at: row.created_at,
+    }) ?? {
+      id: row.id,
+      userId: row.user_id,
+      questionId: row.question_id ?? '',
+      kind: row.kind,
+      title: row.title,
+      status: row.status,
+      person: row.person,
+      howKnown: null,
+      prepChecks: null,
+      questions: [],
+      scope: null,
+      duration: null,
+      learnGoal: null,
+      happenedOn: row.happened_on,
+      learned: row.learned,
+      answered: null,
+      engagement: null,
+      energy: null,
+      referral: null,
+      createdAt: row.created_at,
+    }
+  )
 }
 
 function prototypeToRow(p: LdPrototype) {
   return {
     id: p.id,
     user_id: p.userId,
+    question_id: p.questionId || null,
     kind: p.kind,
     title: p.title,
     person: p.person,
+    how_known: p.howKnown,
+    prep_checks: p.prepChecks
+      ? {
+          not_job: p.prepChecks.notJob,
+          listen: p.prepChecks.listen,
+          questions: p.prepChecks.questions,
+        }
+      : null,
+    questions: p.questions,
+    scope: p.scope,
+    duration: p.duration,
+    learn_goal: p.learnGoal,
     happened_on: p.happenedOn,
-    going_in_q: p.goingInQ,
     learned: p.learned,
-    next_step: p.nextStep,
-    linked_plan: p.linkedPlan,
+    answered: p.answered,
+    engagement: p.engagement,
+    energy: p.energy,
+    referral: p.referral,
+    going_in_q: p.goingInQ ?? null,
+    next_step: p.nextStep ?? null,
+    linked_plan: p.linkedPlan ?? null,
     status: p.status,
     created_at: p.createdAt,
+  }
+}
+
+function rowToProtoQuestion(row: ProtoQuestionRow): LdProtoQuestion {
+  return (
+    normalizeProtoQuestion({
+      id: row.id,
+      user_id: row.user_id,
+      body: row.body,
+      origin: row.origin,
+      origin_ref: row.origin_ref,
+      is_open: row.is_open,
+      created_at: row.created_at,
+    }) ?? {
+      id: row.id,
+      userId: row.user_id,
+      body: row.body,
+      origin: 'manual',
+      originRef: null,
+      isOpen: row.is_open,
+      createdAt: row.created_at,
+    }
+  )
+}
+
+function protoQuestionToRow(q: LdProtoQuestion) {
+  return {
+    id: q.id,
+    user_id: q.userId,
+    body: q.body,
+    origin: q.origin,
+    origin_ref: q.originRef,
+    is_open: q.isOpen,
+    created_at: q.createdAt,
+  }
+}
+
+function rowToProtoIdea(row: ProtoIdeaRow): LdProtoIdea {
+  return (
+    normalizeProtoIdea({
+      id: row.id,
+      user_id: row.user_id,
+      question_id: row.question_id,
+      kind: row.kind,
+      body: row.body,
+      promoted: row.promoted,
+      created_at: row.created_at,
+    }) ?? {
+      id: row.id,
+      userId: row.user_id,
+      questionId: row.question_id,
+      kind: row.kind,
+      body: row.body,
+      promoted: row.promoted,
+      createdAt: row.created_at,
+    }
+  )
+}
+
+function protoIdeaToRow(i: LdProtoIdea) {
+  return {
+    id: i.id,
+    user_id: i.userId,
+    question_id: i.questionId,
+    kind: i.kind,
+    body: i.body,
+    promoted: i.promoted,
+    created_at: i.createdAt,
   }
 }
 
@@ -283,14 +440,18 @@ export async function fetchCompassCloud(userId: string): Promise<{
   answers: LdAnswer[]
   journalEntries: LdJournalEntry[]
   prototypes: LdPrototype[]
+  protoQuestions: LdProtoQuestion[]
+  protoIdeas: LdProtoIdea[]
   aiReports: LdAiReport[]
 } | null> {
-  const [snapRes, qRes, aRes, jRes, pRes, aiRes] = await Promise.all([
+  const [snapRes, qRes, aRes, jRes, pRes, pqRes, piRes, aiRes] = await Promise.all([
     supabase.from('ld_snapshot').select('*').eq('user_id', userId),
     supabase.from('ld_question').select('*').eq('user_id', userId),
     supabase.from('ld_answer').select('*').eq('user_id', userId),
     supabase.from('ld_journal_entry').select('*').eq('user_id', userId),
     supabase.from('ld_prototype').select('*').eq('user_id', userId),
+    supabase.from('ld_proto_question').select('*').eq('user_id', userId),
+    supabase.from('ld_proto_idea').select('*').eq('user_id', userId),
     supabase.from('ld_ai_report').select('*').eq('user_id', userId),
   ])
 
@@ -319,6 +480,24 @@ export async function fetchCompassCloud(userId: string): Promise<{
           })()
         : ((pRes.data ?? []) as PrototypeRow[]).map(rowToPrototype)
 
+  const protoQuestions =
+    pqRes.error && isMissingTable(pqRes.error.message)
+      ? []
+      : pqRes.error
+        ? (() => {
+            throw pqRes.error
+          })()
+        : ((pqRes.data ?? []) as ProtoQuestionRow[]).map(rowToProtoQuestion)
+
+  const protoIdeas =
+    piRes.error && isMissingTable(piRes.error.message)
+      ? []
+      : piRes.error
+        ? (() => {
+            throw piRes.error
+          })()
+        : ((piRes.data ?? []) as ProtoIdeaRow[]).map(rowToProtoIdea)
+
   const aiReports =
     aiRes.error && isMissingTable(aiRes.error.message)
       ? []
@@ -334,6 +513,8 @@ export async function fetchCompassCloud(userId: string): Promise<{
     answers: ((aRes.data ?? []) as AnswerRow[]).map(rowToAnswer),
     journalEntries,
     prototypes,
+    protoQuestions,
+    protoIdeas,
     aiReports,
   }
 }
@@ -390,6 +571,32 @@ export async function upsertPrototypeCloud(proto: LdPrototype): Promise<void> {
 
 export async function deletePrototypeCloud(id: string): Promise<void> {
   const { error } = await supabase.from('ld_prototype').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function upsertProtoQuestionCloud(
+  q: LdProtoQuestion,
+): Promise<void> {
+  const { error } = await supabase
+    .from('ld_proto_question')
+    .upsert(protoQuestionToRow(q), { onConflict: 'id' })
+  if (error) throw error
+}
+
+export async function deleteProtoQuestionCloud(id: string): Promise<void> {
+  const { error } = await supabase.from('ld_proto_question').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function upsertProtoIdeaCloud(idea: LdProtoIdea): Promise<void> {
+  const { error } = await supabase
+    .from('ld_proto_idea')
+    .upsert(protoIdeaToRow(idea), { onConflict: 'id' })
+  if (error) throw error
+}
+
+export async function deleteProtoIdeaCloud(id: string): Promise<void> {
+  const { error } = await supabase.from('ld_proto_idea').delete().eq('id', id)
   if (error) throw error
 }
 

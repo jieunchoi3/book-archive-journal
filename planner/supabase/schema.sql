@@ -277,15 +277,51 @@ create index if not exists ld_journal_entry_user_date_idx
 create index if not exists ld_journal_entry_run_date_idx
   on planner.ld_journal_entry (user_id, run_id, entry_date desc);
 
+create table if not exists planner.ld_proto_question (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  body text not null,
+  origin text not null default 'manual'
+    check (origin in ('odyssey', 'prototype', 'manual')),
+  origin_ref jsonb,
+  is_open boolean not null default true,
+  created_at timestamptz not null default now()
+);
+create index if not exists ld_proto_question_user_created_idx
+  on planner.ld_proto_question (user_id, created_at desc);
+
+create table if not exists planner.ld_proto_idea (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  question_id uuid not null references planner.ld_proto_question(id) on delete cascade,
+  kind text not null check (kind in ('conversation', 'experience')),
+  body text not null,
+  promoted boolean not null default false,
+  created_at timestamptz not null default now()
+);
+create index if not exists ld_proto_idea_question_idx
+  on planner.ld_proto_idea (question_id, created_at desc);
+
 create table if not exists planner.ld_prototype (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
+  question_id uuid references planner.ld_proto_question(id),
   kind text not null check (kind in ('conversation', 'experience')),
   title text not null,
   person text,
+  how_known text,
+  prep_checks jsonb,
+  questions jsonb,
+  scope text,
+  duration text,
+  learn_goal text,
   happened_on date,
-  going_in_q text,
   learned text,
+  answered text,
+  engagement smallint,
+  energy smallint,
+  referral text,
+  going_in_q text,
   next_step text,
   linked_plan text,
   status text not null default 'planned' check (status in ('planned', 'done', 'dropped')),
@@ -308,10 +344,16 @@ create unique index if not exists ld_ai_report_user_hash_idx
   on planner.ld_ai_report (user_id, input_hash);
 
 alter table planner.ld_journal_entry enable row level security;
+alter table planner.ld_proto_question enable row level security;
+alter table planner.ld_proto_idea enable row level security;
 alter table planner.ld_prototype enable row level security;
 alter table planner.ld_ai_report enable row level security;
 
 create policy "ld_journal_entry_own" on planner.ld_journal_entry
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "ld_proto_question_own" on planner.ld_proto_question
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "ld_proto_idea_own" on planner.ld_proto_idea
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "ld_prototype_own" on planner.ld_prototype
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
@@ -319,5 +361,7 @@ create policy "ld_ai_report_own" on planner.ld_ai_report
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 grant all on planner.ld_journal_entry to anon, authenticated, service_role;
+grant all on planner.ld_proto_question to anon, authenticated, service_role;
+grant all on planner.ld_proto_idea to anon, authenticated, service_role;
 grant all on planner.ld_prototype to anon, authenticated, service_role;
 grant all on planner.ld_ai_report to anon, authenticated, service_role;

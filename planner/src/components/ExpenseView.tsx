@@ -11,6 +11,7 @@ import {
   dualAxisLabel,
   formatMoney,
   isDualAxisTransaction,
+  catalogSpendKindsForFilters,
 } from '../types/expense'
 import { formatDateKey, formatMonthYear, getTodayKey, parseDateKey } from '../lib/weekUtils'
 import { exportExpenseCsvFile } from '../lib/expenseCsv'
@@ -32,6 +33,7 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
     incomeCategories,
     purposes,
     spendKinds,
+    purposeKindLinks,
     kindsForActivePurpose,
     transactions,
     addTransaction,
@@ -194,6 +196,17 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
     return map
   }, [spendKinds])
 
+  /** Report / log filters: linked kinds only (plus any still used on logs). */
+  const filterSpendKinds = useMemo(
+    () =>
+      catalogSpendKindsForFilters(
+        spendKinds,
+        purposeKindLinks ?? [],
+        transactions,
+      ),
+    [spendKinds, purposeKindLinks, transactions],
+  )
+
   const logDays = useMemo(() => {
     const filtered = monthTransactions.filter((t) => {
       if (isHierarchyMonth) {
@@ -297,7 +310,7 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
       meta: p.budget != null ? `Budget ${formatMoney(p.budget)}` : undefined,
       haystack: ['purpose', 'budget', p.name],
     }))
-    const kindSuggestions = spendKinds.map((k) => ({
+    const kindSuggestions = filterSpendKinds.map((k) => ({
       id: `kind:${k.id}`,
       title: k.name,
       subtitle: 'Spend type',
@@ -317,7 +330,7 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
     expenseCategories,
     incomeCategories,
     purposes,
-    spendKinds,
+    filterSpendKinds,
   ])
 
   const categoryTabLabel = isHierarchyMonth ? 'By purpose' : 'By category'
@@ -561,7 +574,7 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
                     expenseCategories={expenseCategories}
                     incomeCategories={incomeCategories}
                     purposes={purposes}
-                    spendKinds={spendKinds}
+                    spendKinds={filterSpendKinds}
                     isHierarchyMonth={isHierarchyMonth}
                     transactions={transactions}
                     monthOutTotal={monthOutTotal}
@@ -610,7 +623,7 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
                               active={logKindFilter === 'all'}
                               onClick={() => setLogKindFilter('all')}
                             />
-                            {spendKinds.map((k) => (
+                            {filterSpendKinds.map((k) => (
                               <AxisFilterPill
                                 key={k.id}
                                 label={k.name}

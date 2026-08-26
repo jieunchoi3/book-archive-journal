@@ -124,6 +124,13 @@ export function useExpenses(): ExpenseActions {
         } else {
           const normalized = ensureExpenseStore(loaded)
           setStore(normalized)
+          const kindsChanged =
+            JSON.stringify(
+              (loaded.spendKinds ?? []).map((k) => k.id).sort(),
+            ) !==
+            JSON.stringify(
+              (normalized.spendKinds ?? []).map((k) => k.id).sort(),
+            )
           const linksChanged =
             JSON.stringify(loaded.purposeKindLinks ?? []) !==
             JSON.stringify(normalized.purposeKindLinks ?? [])
@@ -133,6 +140,7 @@ export function useExpenses(): ExpenseActions {
           const needsSave =
             !loaded.purposes?.length ||
             linksChanged ||
+            kindsChanged ||
             purposeBudgetsChanged ||
             (loaded.transactions?.length ?? 0) !== normalized.transactions.length ||
             loaded.transactions?.some(

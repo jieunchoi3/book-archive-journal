@@ -2,11 +2,18 @@ import type {
   LdAiReport,
   LdAnswer,
   LdJournalEntry,
+  LdProtoIdea,
+  LdProtoQuestion,
   LdPrototype,
   LdQuestion,
   LdSnapshot,
 } from '../types/compass'
-import { normalizeJournalEntry } from '../types/compass'
+import {
+  normalizeJournalEntry,
+  normalizeProtoIdea,
+  normalizeProtoQuestion,
+  normalizePrototype,
+} from '../types/compass'
 
 const DB_NAME = 'compass-db'
 const DB_VERSION = 1
@@ -18,6 +25,8 @@ export interface CompassLocalStore {
   answers: LdAnswer[]
   journalEntries: LdJournalEntry[]
   prototypes: LdPrototype[]
+  protoQuestions: LdProtoQuestion[]
+  protoIdeas: LdProtoIdea[]
   aiReports: LdAiReport[]
   updatedAt: string
 }
@@ -29,6 +38,8 @@ function emptyStore(): CompassLocalStore {
     answers: [],
     journalEntries: [],
     prototypes: [],
+    protoQuestions: [],
+    protoIdeas: [],
     aiReports: [],
     updatedAt: new Date(0).toISOString(),
   }
@@ -44,7 +55,15 @@ function normalizeStore(raw: Partial<CompassLocalStore> | undefined): CompassLoc
     journalEntries: (raw.journalEntries ?? [])
       .map((e) => normalizeJournalEntry(e))
       .filter((e): e is LdJournalEntry => Boolean(e?.id)),
-    prototypes: raw.prototypes ?? [],
+    prototypes: (raw.prototypes ?? [])
+      .map((p) => normalizePrototype(p))
+      .filter((p): p is LdPrototype => Boolean(p?.id)),
+    protoQuestions: (raw.protoQuestions ?? [])
+      .map((q) => normalizeProtoQuestion(q))
+      .filter((q): q is LdProtoQuestion => Boolean(q?.id)),
+    protoIdeas: (raw.protoIdeas ?? [])
+      .map((i) => normalizeProtoIdea(i))
+      .filter((i): i is LdProtoIdea => Boolean(i?.id)),
     aiReports: raw.aiReports ?? [],
     updatedAt: raw.updatedAt ?? base.updatedAt,
   }

@@ -149,7 +149,6 @@ export const DEFAULT_EXPENSE_SPEND_KINDS: ExpenseSpendKind[] = [
   { id: SEED_KIND_IDS.clothes, name: '옷', color: '#A0522D', budget: null },
   { id: SEED_KIND_IDS.misc, name: '기타 소비', color: '#5C4033', budget: null },
   { id: SEED_KIND_IDS.hobby, name: '취미 활동', color: '#B87333', budget: null },
-  { id: SEED_KIND_IDS.tickets, name: '입장료', color: '#8B5A2B', budget: null },
   { id: SEED_KIND_IDS.bills, name: 'bills', color: '#6B4226', budget: null },
   { id: SEED_KIND_IDS.subscriptions, name: 'subscriptions', color: '#3D7A5A', budget: null },
 ]
@@ -192,6 +191,33 @@ export function kindsForPurpose(
     links.filter((l) => l.purposeId === purposeId).map((l) => l.spendKindId),
   )
   return spendKinds.filter((k) => ids.has(k.id))
+}
+
+/** Spend kinds linked to at least one purpose (what Quick log can pick). */
+export function linkedSpendKinds(
+  spendKinds: ExpenseSpendKind[],
+  links: ExpensePurposeKindLink[],
+): ExpenseSpendKind[] {
+  const ids = new Set(links.map((l) => l.spendKindId))
+  return spendKinds.filter((k) => ids.has(k.id))
+}
+
+/**
+ * Kinds for Report / month-log filters: still linked, or still referenced by
+ * transactions (so old logs remain filterable after a catalog delete).
+ */
+export function catalogSpendKindsForFilters(
+  spendKinds: ExpenseSpendKind[],
+  links: ExpensePurposeKindLink[],
+  transactions: MoneyTransaction[],
+): ExpenseSpendKind[] {
+  const linked = new Set(links.map((l) => l.spendKindId))
+  const used = new Set(
+    transactions
+      .map((t) => t.spendKindId)
+      .filter((id): id is string => Boolean(id)),
+  )
+  return spendKinds.filter((k) => linked.has(k.id) || used.has(k.id))
 }
 
 /** Sum of linked spend-kind budgets for a purpose (null if none set). */
@@ -246,9 +272,18 @@ export function ensureDualAxisCatalogs(store: ExpenseStore): ExpenseStore {
       links.push({ purposeId: forMe, spendKindId: culture })
     }
   }
+  // Drop leftover 입장료 links anywhere — culture replaced it.
+  links = links.filter((l) => l.spendKindId !== tickets)
+
+  const linkedIds = new Set(links.map((l) => l.spendKindId))
+  const usedIds = new Set(
+    (store.transactions ?? [])
+      .map((t) => t.spendKindId)
+      .filter((id): id is string => Boolean(id)),
+  )
 
   const spendKinds = (() => {
-    const kinds = (store.spendKinds ?? []).map((k) => ({
+    let kinds = (store.spendKinds ?? []).map((k) => ({
       ...k,
       budget: k.budget ?? null,
     }))
@@ -256,6 +291,13 @@ export function ensureDualAxisCatalogs(store: ExpenseStore): ExpenseStore {
       const seed = DEFAULT_EXPENSE_SPEND_KINDS.find((k) => k.id === culture)
       if (seed) kinds.push({ ...seed })
     }
+    // Drop catalog orphans (e.g. seeded 입장료 with no purpose link and no logs).
+    kinds = kinds.filter(
+      (k) =>
+        k.id === culture ||
+        linkedIds.has(k.id) ||
+        usedIds.has(k.id),
+    )
     return kinds
   })()
 

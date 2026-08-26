@@ -416,20 +416,212 @@ export function normalizeJournalEntry(raw: unknown): LdJournalEntry | null {
 
 export type PrototypeKind = 'conversation' | 'experience'
 export type PrototypeStatus = 'planned' | 'done' | 'dropped'
+export type ProtoQuestionOrigin = 'odyssey' | 'prototype' | 'manual'
+export type PrototypeAnswered = 'a_lot' | 'some' | 'more_confused'
+export type PrototypeDuration =
+  | '1시간'
+  | '반나절'
+  | '하루'
+  | '주말'
+  | '한 달'
+
+export const PROTOTYPE_DURATIONS: PrototypeDuration[] = [
+  '1시간',
+  '반나절',
+  '하루',
+  '주말',
+  '한 달',
+]
+
+export const PROTOTYPE_STARTER_QUESTIONS = [
+  '어떻게 이 일을 하게 됐어요?',
+  '하루가 실제로 어떻게 흘러가요?',
+  '이 일에서 제일 좋은 게 뭐예요?',
+  '제일 싫은 건요?',
+  '시작할 때 아무도 안 알려준 게 있어요?',
+  '오래 하는 사람이랑 그만두는 사람 차이가 뭐예요?',
+  '제가 또 누구랑 얘기해보면 좋을까요?',
+] as const
+
+export const PROTOTYPE_REFERRAL_QUESTION =
+  '제가 또 누구랑 얘기해보면 좋을까요?'
+
+export interface ProtoQuestionOriginRef {
+  snapshot_id?: string
+  plan_key?: string
+  index?: number
+  prototype_id?: string
+}
+
+export interface LdProtoQuestion {
+  id: string
+  userId: string
+  body: string
+  origin: ProtoQuestionOrigin
+  originRef: ProtoQuestionOriginRef | null
+  isOpen: boolean
+  createdAt: string
+}
+
+export interface LdProtoIdea {
+  id: string
+  userId: string
+  questionId: string
+  kind: PrototypeKind
+  body: string
+  promoted: boolean
+  createdAt: string
+}
+
+export interface PrototypePrepChecks {
+  notJob: boolean
+  listen: boolean
+  questions: boolean
+}
 
 export interface LdPrototype {
   id: string
   userId: string
+  questionId: string
   kind: PrototypeKind
   title: string
-  person: string | null
-  happenedOn: string | null
-  goingInQ: string | null
-  learned: string | null
-  nextStep: string | null
-  linkedPlan: string | null
   status: PrototypeStatus
+  /** conversation */
+  person: string | null
+  howKnown: string | null
+  prepChecks: PrototypePrepChecks | null
+  questions: string[]
+  /** experience */
+  scope: string | null
+  duration: string | null
+  learnGoal: string | null
+  /** reflection */
+  happenedOn: string | null
+  learned: string | null
+  answered: PrototypeAnswered | null
+  engagement: number | null
+  energy: number | null
+  referral: string | null
   createdAt: string
+  /** @deprecated v1 — kept for migration only */
+  goingInQ?: string | null
+  nextStep?: string | null
+  linkedPlan?: string | null
+}
+
+export function emptyPrepChecks(): PrototypePrepChecks {
+  return { notJob: false, listen: false, questions: false }
+}
+
+export function normalizePrototype(raw: unknown): LdPrototype | null {
+  if (!raw || typeof raw !== 'object') return null
+  const e = raw as Record<string, unknown>
+  const id = String(e.id ?? '')
+  if (!id) return null
+  const kind: PrototypeKind =
+    e.kind === 'experience' ? 'experience' : 'conversation'
+  const status: PrototypeStatus =
+    e.status === 'done' || e.status === 'dropped' ? e.status : 'planned'
+  const prepRaw = e.prepChecks ?? e.prep_checks
+  let prepChecks: PrototypePrepChecks | null = null
+  if (prepRaw && typeof prepRaw === 'object') {
+    const p = prepRaw as Record<string, unknown>
+    prepChecks = {
+      notJob: Boolean(p.notJob ?? p.not_job),
+      listen: Boolean(p.listen),
+      questions: Boolean(p.questions),
+    }
+  }
+  const qsRaw = e.questions
+  const questions = Array.isArray(qsRaw)
+    ? qsRaw.filter((x): x is string => typeof x === 'string')
+    : []
+  const answeredRaw = e.answered
+  const answered: PrototypeAnswered | null =
+    answeredRaw === 'a_lot' ||
+    answeredRaw === 'some' ||
+    answeredRaw === 'more_confused'
+      ? answeredRaw
+      : null
+  const eng = e.engagement
+  const ene = e.energy
+  return {
+    id,
+    userId: String(e.userId ?? e.user_id ?? ''),
+    questionId: String(e.questionId ?? e.question_id ?? ''),
+    kind,
+    title: String(e.title ?? ''),
+    status,
+    person: (e.person as string | null | undefined) ?? null,
+    howKnown: (e.howKnown ?? e.how_known ?? null) as string | null,
+    prepChecks,
+    questions,
+    scope: (e.scope as string | null | undefined) ?? null,
+    duration: (e.duration as string | null | undefined) ?? null,
+    learnGoal: (e.learnGoal ?? e.learn_goal ?? null) as string | null,
+    happenedOn: (e.happenedOn ?? e.happened_on ?? null) as string | null,
+    learned: (e.learned as string | null | undefined) ?? null,
+    answered,
+    engagement:
+      typeof eng === 'number' ? Math.max(-5, Math.min(5, eng)) : null,
+    energy: typeof ene === 'number' ? Math.max(-5, Math.min(5, ene)) : null,
+    referral: (e.referral as string | null | undefined) ?? null,
+    createdAt: String(e.createdAt ?? e.created_at ?? ''),
+    goingInQ: (e.goingInQ ?? e.going_in_q ?? null) as string | null,
+    nextStep: (e.nextStep ?? e.next_step ?? null) as string | null,
+    linkedPlan: (e.linkedPlan ?? e.linked_plan ?? null) as string | null,
+  }
+}
+
+export function normalizeProtoQuestion(raw: unknown): LdProtoQuestion | null {
+  if (!raw || typeof raw !== 'object') return null
+  const e = raw as Record<string, unknown>
+  const id = String(e.id ?? '')
+  if (!id) return null
+  const originRaw = e.origin
+  const origin: ProtoQuestionOrigin =
+    originRaw === 'odyssey' || originRaw === 'prototype' || originRaw === 'manual'
+      ? originRaw
+      : 'manual'
+  const refRaw = e.originRef ?? e.origin_ref
+  let originRef: ProtoQuestionOriginRef | null = null
+  if (refRaw && typeof refRaw === 'object') {
+    const r = refRaw as Record<string, unknown>
+    originRef = {
+      snapshot_id: r.snapshot_id ? String(r.snapshot_id) : undefined,
+      plan_key: r.plan_key ? String(r.plan_key) : undefined,
+      index: typeof r.index === 'number' ? r.index : undefined,
+      prototype_id: r.prototype_id ? String(r.prototype_id) : undefined,
+    }
+  }
+  return {
+    id,
+    userId: String(e.userId ?? e.user_id ?? ''),
+    body: String(e.body ?? ''),
+    origin,
+    originRef,
+    isOpen:
+      e.isOpen === undefined && e.is_open === undefined
+        ? true
+        : Boolean(e.isOpen ?? e.is_open),
+    createdAt: String(e.createdAt ?? e.created_at ?? ''),
+  }
+}
+
+export function normalizeProtoIdea(raw: unknown): LdProtoIdea | null {
+  if (!raw || typeof raw !== 'object') return null
+  const e = raw as Record<string, unknown>
+  const id = String(e.id ?? '')
+  if (!id) return null
+  return {
+    id,
+    userId: String(e.userId ?? e.user_id ?? ''),
+    questionId: String(e.questionId ?? e.question_id ?? ''),
+    kind: e.kind === 'experience' ? 'experience' : 'conversation',
+    body: String(e.body ?? ''),
+    promoted: Boolean(e.promoted),
+    createdAt: String(e.createdAt ?? e.created_at ?? new Date().toISOString()),
+  }
 }
 
 export type AiReportType = 'snapshot' | 'compare' | 'pathway'
@@ -1325,6 +1517,27 @@ export function emptyTeamData(): TeamData {
   return { people: [] }
 }
 
+export function normalizeTeamData(raw: unknown): TeamData {
+  if (!raw || typeof raw !== 'object') return emptyTeamData()
+  const d = raw as Partial<TeamData>
+  const people = Array.isArray(d.people) ? d.people : []
+  return {
+    people: people
+      .filter((p): p is TeamPerson => Boolean(p && typeof p === 'object'))
+      .map((p) => ({
+        id: String(p.id ?? ''),
+        name: String(p.name ?? ''),
+        relation: String(p.relation ?? ''),
+        roles: Array.isArray(p.roles)
+          ? (p.roles.filter((r) => typeof r === 'string') as TeamRole[])
+          : [],
+        lastContact: (p.lastContact as string | null) ?? null,
+        note: String(p.note ?? ''),
+        linkedPrototypeId: (p.linkedPrototypeId as string | null) ?? null,
+      })),
+  }
+}
+
 export function emptyDataForExercise(key: ExerciseKey): Record<string, unknown> {
   switch (key) {
     case 'dashboard':
@@ -1416,8 +1629,8 @@ export const EXERCISE_META: ExerciseMeta[] = [
   },
   {
     key: 'prototype',
-    name: '프로토타입 로그',
-    description: '대화와 작은 실험 기록',
+    name: '프로토타입',
+    description: '작게 물어보고 작게 해보기',
     cadenceDays: null,
     phase: 3,
   },

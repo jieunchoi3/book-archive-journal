@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type {
   ExpenseCategory,
   ExpensePurpose,
@@ -76,6 +76,22 @@ export function ExpenseReport({
     setKindFilter('all')
     setDrillId(null)
   }
+
+  // Drop stale kind/purpose filter if the catalog no longer has that id.
+  useEffect(() => {
+    if (
+      kindFilter !== 'all' &&
+      !spendKinds.some((k) => k.id === kindFilter)
+    ) {
+      setKindFilter('all')
+    }
+    if (
+      purposeFilter !== 'all' &&
+      !purposes.some((p) => p.id === purposeFilter)
+    ) {
+      setPurposeFilter('all')
+    }
+  }, [spendKinds, purposes, kindFilter, purposeFilter])
 
   /** How breakdown rows map onto transactions (category / purpose / kind). */
   const breakdownAxis = useMemo((): 'category' | 'purpose' | 'kind' => {

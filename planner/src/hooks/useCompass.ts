@@ -5,6 +5,7 @@ import {
   EXERCISE_META,
   newId,
   normalizeDashboardData,
+  normalizeOdysseyData,
   todayKey,
   type AiReportType,
   type DashboardData,
@@ -12,12 +13,19 @@ import {
   type LdAiReport,
   type LdAnswer,
   type LdJournalEntry,
+  type LdProtoIdea,
+  type LdProtoQuestion,
   type LdPrototype,
   type LdQuestion,
   type LdSnapshot,
+  type ProtoQuestionOrigin,
+  type ProtoQuestionOriginRef,
+  type PrototypeKind,
 } from '../types/compass'
 import {
   deleteJournalCloud,
+  deleteProtoIdeaCloud,
+  deleteProtoQuestionCloud,
   deletePrototypeCloud,
   deleteQuestionCloud,
   fetchCompassCloud,
@@ -25,6 +33,8 @@ import {
   upsertAiReportCloud,
   upsertAnswerCloud,
   upsertJournalCloud,
+  upsertProtoIdeaCloud,
+  upsertProtoQuestionCloud,
   upsertPrototypeCloud,
   upsertQuestionCloud,
   upsertSnapshotCloud,
@@ -64,7 +74,92 @@ type PersistSlice = {
   answers: LdAnswer[]
   journalEntries: LdJournalEntry[]
   prototypes: LdPrototype[]
+  protoQuestions: LdProtoQuestion[]
+  protoIdeas: LdProtoIdea[]
   aiReports: LdAiReport[]
+}
+
+/** Attach legacy prototypes (no questionId) to a migrated manual question. */
+function migrateLegacyPrototypes(
+  userId: string,
+  protos: LdPrototype[],
+  protoQuestions: LdProtoQuestion[],
+): { protos: LdPrototype[]; protoQuestions: LdProtoQuestion[] } {
+  let qs = [...protoQuestions]
+  const next = protos.map((p) => {
+    if (p.questionId) return p
+    const body =
+      (p.goingInQ ?? '').trim() ||
+      `레거시: ${p.title}`.slice(0, 120) ||
+      '이전 프로토타입'
+    let q = qs.find(
+      (x) =>
+        x.origin === 'manual' &&
+        x.body === body &&
+        x.originRef?.prototype_id === p.id,
+    )
+    if (!q) {
+      q = {
+        id: newId(),
+        userId,
+        body,
+        origin: 'manual',
+        originRef: { prototype_id: p.id },
+        isOpen: p.status !== 'done',
+        createdAt: p.createdAt || new Date().toISOString(),
+      }
+      qs = [...qs, q]
+    }
+    return { ...p, questionId: q.id }
+  })
+  return { protos: next, protoQuestions: qs }
+}
+
+function syncOdysseyQuestionsInto(
+  userId: string,
+  snapshots: LdSnapshot[],
+  existing: LdProtoQuestion[],
+): LdProtoQuestion[] {
+  const completes = snapshots
+    .filter((s) => s.exerciseKey === 'odyssey' && s.status === 'complete')
+    .sort(
+      (a, b) =>
+        a.takenAt.localeCompare(b.takenAt) ||
+        a.createdAt.localeCompare(b.createdAt),
+    )
+  const latest = completes[completes.length - 1]
+  if (!latest) return existing
+
+  const data = normalizeOdysseyData(latest.data)
+  const next = [...existing]
+  for (const plan of data.plans) {
+    plan.questions.forEach((body, index) => {
+      const trimmed = body.trim()
+      if (!trimmed) return
+      const already = next.some(
+        (q) =>
+          q.origin === 'odyssey' &&
+          q.originRef?.snapshot_id === latest.id &&
+          q.originRef?.plan_key === plan.key &&
+          q.originRef?.index === index,
+      )
+      if (already) return
+      next.push({
+        id: newId(),
+        userId,
+        body: trimmed,
+        origin: 'odyssey',
+        originRef: {
+          snapshot_id: latest.id,
+          plan_key: plan.key,
+          index,
+        },
+        isOpen: true,
+        createdAt: new Date().toISOString(),
+      })
+    })
+  }
+  return next
 }
 
 export function useCompass() {
@@ -75,6 +170,8 @@ export function useCompass() {
   const [answers, setAnswers] = useState<LdAnswer[]>([])
   const [journalEntries, setJournalEntries] = useState<LdJournalEntry[]>([])
   const [prototypes, setPrototypes] = useState<LdPrototype[]>([])
+  const [protoQuestions, setProtoQuestions] = useState<LdProtoQuestion[]>([])
+  const [protoIdeas, setProtoIdeas] = useState<LdProtoIdea[]>([])
   const [aiReports, setAiReports] = useState<LdAiReport[]>([])
   const [loading, setLoading] = useState(true)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -87,6 +184,8 @@ export function useCompass() {
     answers: [],
     journalEntries: [],
     prototypes: [],
+    protoQuestions: [],
+    protoIdeas: [],
     aiReports: [],
   })
   sliceRef.current = {
@@ -95,6 +194,8 @@ export function useCompass() {
     answers,
     journalEntries,
     prototypes,
+    protoQuestions,
+    protoIdeas,
     aiReports,
   }
 
@@ -119,6 +220,8 @@ export function useCompass() {
         let ans = local.answers
         let journals = local.journalEntries
         let protos = local.prototypes
+        let pqs = local.protoQuestions
+        let pis = local.protoIdeas
         let reports = local.aiReports
 
         if (isSupabaseConfigured && user?.id) {
@@ -130,6 +233,8 @@ export function useCompass() {
               ans = mergeById(ans, remote.answers)
               journals = mergeById(journals, remote.journalEntries)
               protos = mergeById(protos, remote.prototypes)
+              pqs = mergeById(pqs, remote.protoQuestions)
+              pis = mergeById(pis, remote.protoIdeas)
               reports = mergeById(reports, remote.aiReports)
             }
           } catch {
@@ -137,12 +242,19 @@ export function useCompass() {
           }
         }
 
+        const migrated = migrateLegacyPrototypes(userId, protos, pqs)
+        protos = migrated.protos
+        pqs = migrated.protoQuestions
+        pqs = syncOdysseyQuestionsInto(userId, snaps, pqs)
+
         if (!cancelled) {
           setSnapshots(snaps)
           setQuestions(qs)
           setAnswers(ans)
           setJournalEntries(journals)
           setPrototypes(protos)
+          setProtoQuestions(pqs)
+          setProtoIdeas(pis)
           setAiReports(reports)
           hydrated.current = true
           await saveCompassLocal(userId, {
@@ -151,9 +263,27 @@ export function useCompass() {
             answers: ans,
             journalEntries: journals,
             prototypes: protos,
+            protoQuestions: pqs,
+            protoIdeas: pis,
             aiReports: reports,
             updatedAt: new Date().toISOString(),
           })
+          if (isSupabaseConfigured && user?.id) {
+            for (const q of pqs) {
+              try {
+                await upsertProtoQuestionCloud(q)
+              } catch {
+                /* table may be missing */
+              }
+            }
+            for (const p of protos) {
+              try {
+                await upsertPrototypeCloud(p)
+              } catch {
+                /* ignore */
+              }
+            }
+          }
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -480,6 +610,10 @@ export function useCompass() {
 
   const upsertPrototype = useCallback(
     async (proto: LdPrototype) => {
+      if (!proto.questionId) {
+        setSaveError('질문이 없는 프로토타입은 저장할 수 없어요.')
+        return
+      }
       setPrototypes((prev) => {
         const next = prev.some((p) => p.id === proto.id)
           ? prev.map((p) => (p.id === proto.id ? proto : p))
@@ -501,6 +635,7 @@ export function useCompass() {
 
   const addPrototype = useCallback(
     async (input: Omit<LdPrototype, 'id' | 'userId' | 'createdAt'>) => {
+      if (!input.questionId) throw new Error('questionId required')
       const proto: LdPrototype = {
         ...input,
         id: newId(),
@@ -530,6 +665,136 @@ export function useCompass() {
     },
     [persist, user?.id],
   )
+
+  const upsertProtoQuestion = useCallback(
+    async (q: LdProtoQuestion) => {
+      setProtoQuestions((prev) => {
+        const next = prev.some((x) => x.id === q.id)
+          ? prev.map((x) => (x.id === q.id ? q : x))
+          : [...prev, q]
+        void persist({ ...sliceRef.current, protoQuestions: next })
+        return next
+      })
+      setLastSavedAt(new Date())
+      if (isSupabaseConfigured && user?.id) {
+        try {
+          await upsertProtoQuestionCloud(q)
+        } catch {
+          setSaveError('저장 실패. 네트워크 확인하고 다시 눌러주세요.')
+        }
+      }
+    },
+    [persist, user?.id],
+  )
+
+  const addProtoQuestion = useCallback(
+    async (input: {
+      body: string
+      origin?: ProtoQuestionOrigin
+      originRef?: ProtoQuestionOriginRef | null
+      isOpen?: boolean
+    }) => {
+      const q: LdProtoQuestion = {
+        id: newId(),
+        userId,
+        body: input.body.trim(),
+        origin: input.origin ?? 'manual',
+        originRef: input.originRef ?? null,
+        isOpen: input.isOpen ?? true,
+        createdAt: new Date().toISOString(),
+      }
+      await upsertProtoQuestion(q)
+      return q
+    },
+    [upsertProtoQuestion, userId],
+  )
+
+  const upsertProtoIdea = useCallback(
+    async (idea: LdProtoIdea) => {
+      setProtoIdeas((prev) => {
+        const next = prev.some((x) => x.id === idea.id)
+          ? prev.map((x) => (x.id === idea.id ? idea : x))
+          : [...prev, idea]
+        void persist({ ...sliceRef.current, protoIdeas: next })
+        return next
+      })
+      setLastSavedAt(new Date())
+      if (isSupabaseConfigured && user?.id) {
+        try {
+          await upsertProtoIdeaCloud(idea)
+        } catch {
+          setSaveError('저장 실패. 네트워크 확인하고 다시 눌러주세요.')
+        }
+      }
+    },
+    [persist, user?.id],
+  )
+
+  const addProtoIdea = useCallback(
+    async (input: {
+      questionId: string
+      kind: PrototypeKind
+      body: string
+    }) => {
+      const idea: LdProtoIdea = {
+        id: newId(),
+        userId,
+        questionId: input.questionId,
+        kind: input.kind,
+        body: input.body.trim(),
+        promoted: false,
+        createdAt: new Date().toISOString(),
+      }
+      await upsertProtoIdea(idea)
+      return idea
+    },
+    [upsertProtoIdea, userId],
+  )
+
+  const deleteProtoIdea = useCallback(
+    async (id: string) => {
+      setProtoIdeas((prev) => {
+        const next = prev.filter((e) => e.id !== id)
+        void persist({ ...sliceRef.current, protoIdeas: next })
+        return next
+      })
+      if (isSupabaseConfigured && user?.id) {
+        try {
+          await deleteProtoIdeaCloud(id)
+        } catch {
+          setSaveError('저장 실패. 네트워크 확인하고 다시 눌러주세요.')
+        }
+      }
+    },
+    [persist, user?.id],
+  )
+
+  const syncOdysseyProtoQuestions = useCallback(async () => {
+    const prev = sliceRef.current.protoQuestions
+    const next = syncOdysseyQuestionsInto(
+      userId,
+      sliceRef.current.snapshots,
+      prev,
+    )
+    const added = next.filter((q) => !prev.some((x) => x.id === q.id))
+    if (added.length === 0) return
+    setProtoQuestions(next)
+    void persist({ ...sliceRef.current, protoQuestions: next })
+    if (isSupabaseConfigured && user?.id) {
+      for (const q of added) {
+        try {
+          await upsertProtoQuestionCloud(q)
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }, [persist, user?.id, userId])
+
+  useEffect(() => {
+    if (!hydrated.current || loading) return
+    void syncOdysseyProtoQuestions()
+  }, [loading, snapshots, syncOdysseyProtoQuestions])
 
   const saveAiReport = useCallback(
     async (report: LdAiReport) => {
@@ -690,6 +955,8 @@ export function useCompass() {
     answers,
     journalEntries,
     prototypes,
+    protoQuestions,
+    protoIdeas,
     aiReports,
     saveError,
     lastSavedAt,
@@ -713,6 +980,12 @@ export function useCompass() {
     upsertPrototype,
     addPrototype,
     deletePrototype,
+    upsertProtoQuestion,
+    addProtoQuestion,
+    upsertProtoIdea,
+    addProtoIdea,
+    deleteProtoIdea,
+    syncOdysseyProtoQuestions,
     saveAiReport,
     requestAiReport,
     revisitItems,
