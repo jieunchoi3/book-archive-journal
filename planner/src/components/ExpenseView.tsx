@@ -17,6 +17,7 @@ import { exportExpenseCsvFile } from '../lib/expenseCsv'
 import { ExpenseQuickAdd } from './ExpenseQuickAdd'
 import { ExpensePieChart } from './ExpensePieChart'
 import { ExpenseReport } from './ExpenseReport'
+import { ExpenseEditModal } from './ExpenseEditModal'
 import { MissingExpenseDaysSection } from './MissingExpenseDaysSection'
 import { PageSearch, type SearchSuggestion } from './PageSearch'
 
@@ -35,6 +36,7 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
     transactions,
     addTransaction,
     deleteTransaction,
+    updateTransaction,
     markDayNoSpend,
     markDaysNoSpend,
     missingLogDays,
@@ -76,6 +78,25 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
   const [logPurposeFilter, setLogPurposeFilter] = useState<string | 'all'>('all')
   const [logKindFilter, setLogKindFilter] = useState<string | 'all'>('all')
   const [exportOpen, setExportOpen] = useState(false)
+  const [editingTxnId, setEditingTxnId] = useState<string | null>(null)
+
+  const editingTxn = useMemo(
+    () =>
+      editingTxnId
+        ? (transactions.find((t) => t.id === editingTxnId) ?? null)
+        : null,
+    [editingTxnId, transactions],
+  )
+
+  const openEditTxn = (id: string) => {
+    const txn = transactions.find((t) => t.id === id)
+    if (!txn) return
+    const d = parseDateKey(txn.dateKey)
+    setMonthKey(d.getFullYear(), d.getMonth())
+    setSelectedDateKey(txn.dateKey)
+    setOverviewPanel('log')
+    setEditingTxnId(id)
+  }
 
   const logFilterCategories = useMemo(
     () => [...expenseCategories, ...incomeCategories],
@@ -355,12 +376,7 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
             accentClassName="text-[#8B5A2B]"
             onSelect={(s) => {
               if (s.id.startsWith('txn:')) {
-                const id = s.id.slice(4)
-                const txn = transactions.find((t) => t.id === id)
-                if (!txn) return
-                const d = parseDateKey(txn.dateKey)
-                setMonthKey(d.getFullYear(), d.getMonth())
-                setSelectedDateKey(txn.dateKey)
+                openEditTxn(s.id.slice(4))
                 return
               }
               if (s.id.startsWith('cat:')) {
@@ -688,7 +704,11 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
                               ? (kind?.color ?? purpose?.color ?? '#8E8E93')
                               : (cat?.color ?? '#8E8E93')
                             return (
-                              <li key={t.id} className="flex items-center gap-3 py-2.5">
+                              <li
+                                key={t.id}
+                                className="flex cursor-pointer items-center gap-3 py-2.5"
+                                onClick={() => openEditTxn(t.id)}
+                              >
                                 <span
                                   className="h-2.5 w-2.5 shrink-0 rounded-full"
                                   style={{ backgroundColor: rowColor }}
@@ -714,7 +734,10 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
                                 </span>
                                 <button
                                   type="button"
-                                  onClick={() => deleteTransaction(t.id)}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    deleteTransaction(t.id)
+                                  }}
                                   className="rounded-md p-1.5 text-muted hover:bg-white hover:text-[#FF3B30]"
                                   aria-label="Delete"
                                 >
@@ -741,6 +764,25 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
           </div>
         </div>
       </div>
+
+      {editingTxn && (
+        <ExpenseEditModal
+          transaction={editingTxn}
+          expenseCategories={expenseCategories}
+          incomeCategories={incomeCategories}
+          purposes={purposes}
+          kindsForActivePurpose={kindsForActivePurpose}
+          onClose={() => setEditingTxnId(null)}
+          onDelete={() => {
+            deleteTransaction(editingTxn.id)
+            setEditingTxnId(null)
+          }}
+          onSave={(input) => {
+            updateTransaction(editingTxn.id, input)
+            setEditingTxnId(null)
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -48,6 +48,18 @@ export interface ExpenseActions {
     dateKey: string
     note?: string
   }) => void
+  updateTransaction: (
+    id: string,
+    input: {
+      amount: number
+      flow: MoneyFlow
+      categoryId?: string
+      purposeId?: string
+      spendKindId?: string
+      dateKey: string
+      note?: string
+    },
+  ) => void
   deleteTransaction: (id: string) => void
   /** Mark a day as intentionally empty (no spending to record). */
   markDayNoSpend: (dateKey: string) => void
@@ -265,6 +277,36 @@ export function useExpenses(): ExpenseActions {
       persist({
         ...store,
         transactions: [tx, ...store.transactions],
+        dayMarks,
+      })
+    },
+    [persist, store],
+  )
+
+  const updateTransaction: ExpenseActions['updateTransaction'] = useCallback(
+    (id, { amount, flow, categoryId, purposeId, spendKindId, dateKey, note }) => {
+      if (!(amount > 0)) return
+      const existing = store.transactions.find((t) => t.id === id)
+      if (!existing) return
+      const key = dateKey || existing.dateKey
+      const dual =
+        flow === 'out' && Boolean(purposeId?.trim()) && Boolean(spendKindId?.trim())
+      const next: MoneyTransaction = {
+        ...existing,
+        amount,
+        flow,
+        categoryId: dual ? '' : categoryId?.trim() || '',
+        purposeId: dual ? purposeId!.trim() : '',
+        spendKindId: dual ? spendKindId!.trim() : '',
+        dateKey: key,
+        note: note?.trim() ?? '',
+      }
+      if (!dual && !next.categoryId) return
+      const dayMarks = { ...(store.dayMarks ?? {}) }
+      delete dayMarks[key]
+      persist({
+        ...store,
+        transactions: store.transactions.map((t) => (t.id === id ? next : t)),
         dayMarks,
       })
     },
@@ -491,6 +533,7 @@ export function useExpenses(): ExpenseActions {
     purposeKindLinks,
     kindsForActivePurpose,
     addTransaction,
+    updateTransaction,
     deleteTransaction,
     markDayNoSpend,
     clearDayMark,
