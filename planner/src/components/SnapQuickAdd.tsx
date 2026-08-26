@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
-import { Check, ChevronDown, ChevronUp, Minus, Plus } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Minus, Plus, RefreshCw } from 'lucide-react'
 import type { SnapBookingInput } from '../hooks/useSnapBookings'
+import { useAutoSnapFxRate } from '../hooks/useAutoSnapFxRate'
 import type { SnapCourse, SnapPaymentMethod } from '../types/snap'
 import {
   COURSE_DEFAULTS,
@@ -64,6 +65,8 @@ export function SnapQuickAdd({ onAdd }: SnapQuickAddProps) {
   const [note, setNote] = useState('')
   const [optionalOpen, setOptionalOpen] = useState(false)
   const [savedFlash, setSavedFlash] = useState(false)
+
+  const fxAuto = useAutoSnapFxRate({ date, paymentMethod, setFxRate })
 
   const applyCourse = (c: SnapCourse) => {
     setCourse(c)
@@ -336,15 +339,33 @@ export function SnapQuickAdd({ onAdd }: SnapQuickAddProps) {
               />
             </label>
             <label className="block">
-              <span className="mb-1 block text-[11px] font-medium text-muted">환율 (₩/£)</span>
+              <span className="mb-1 flex items-center justify-between text-[11px] font-medium text-muted">
+                <span>환율 (₩/£)</span>
+                {paymentMethod === 'krw_transfer' && (
+                  <button
+                    type="button"
+                    onClick={fxAuto.refresh}
+                    className="inline-flex items-center gap-1 text-[10px] text-[#007AFF]"
+                  >
+                    <RefreshCw size={10} className={fxAuto.loading ? 'animate-spin' : ''} />
+                    {fxAuto.loading ? '불러오는 중…' : '다시 불러오기'}
+                  </button>
+                )}
+              </span>
               <input
                 type="number"
                 step="0.01"
                 value={fxRate}
-                onChange={(e) => setFxRate(e.target.value)}
+                onChange={(e) => fxAuto.onFxRateChange(e.target.value)}
                 placeholder="1870"
                 className="w-full rounded-xl border border-hairline px-3 py-2 text-[13px]"
               />
+              {fxAuto.hint && (
+                <span className="mt-1 block text-[10px] text-muted">{fxAuto.hint}</span>
+              )}
+              {fxAuto.error && (
+                <span className="mt-1 block text-[10px] text-[#FF3B30]">{fxAuto.error}</span>
+              )}
             </label>
           </div>
         )}
