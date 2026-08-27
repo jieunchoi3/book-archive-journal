@@ -71,6 +71,8 @@ export interface TasteActions {
   addSticker: (input: TasteStickerInput) => TasteSticker | null
   updateSticker: (id: string, patch: TasteStickerPatch) => void
   deleteSticker: (id: string) => void
+  deleteStickers: (ids: string[]) => void
+  updateStickersCategory: (ids: string[], categoryId: string, subcategoryId?: string) => void
   addCategory: (name: string) => TasteCategory | null
   renameCategory: (id: string, name: string) => void
   deleteCategory: (id: string) => void
@@ -347,6 +349,37 @@ export function useTasteStickers(): TasteActions {
     [persist, store],
   )
 
+  const deleteStickers = useCallback(
+    (ids: string[]) => {
+      if (!ids.length) return
+      const idSet = new Set(ids)
+      persist({ ...store, stickers: store.stickers.filter((s) => !idSet.has(s.id)) })
+    },
+    [persist, store],
+  )
+
+  const updateStickersCategory = useCallback(
+    (ids: string[], categoryId: string, subcategoryId?: string) => {
+      if (!ids.length) return
+      const idSet = new Set(ids)
+      const meta = tasteCategoryMeta(store.categories, categoryId)
+      const resolvedSub = resolveSubcategoryId(meta, subcategoryId ?? '')
+      persist({
+        ...store,
+        stickers: store.stickers.map((s) => {
+          if (!idSet.has(s.id)) return s
+          return {
+            ...s,
+            categoryId: meta.id,
+            accent: meta.accent,
+            subcategoryId: resolvedSub,
+          }
+        }),
+      })
+    },
+    [persist, store],
+  )
+
   const addCategory = useCallback(
     (name: string) => {
       const trimmed = name.trim()
@@ -540,6 +573,8 @@ export function useTasteStickers(): TasteActions {
     addSticker,
     updateSticker,
     deleteSticker,
+    deleteStickers,
+    updateStickersCategory,
     addCategory,
     renameCategory,
     deleteCategory,

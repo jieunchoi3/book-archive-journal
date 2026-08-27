@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   Check,
+  CheckSquare,
   ChevronLeft,
   ChevronRight,
   ImageIcon,
@@ -64,6 +65,57 @@ export function TasteStickerView() {
   const [selected, setSelected] = useState<TasteSticker | null>(null)
   const [showCategories, setShowCategories] = useState(false)
   const [showBackground, setShowBackground] = useState(false)
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const [showBatchCategory, setShowBatchCategory] = useState(false)
+
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false)
+    setSelectedIds(new Set())
+    setShowBatchCategory(false)
+  }, [])
+
+  const toggleSelectMode = () => {
+    if (selectMode) {
+      exitSelectMode()
+      return
+    }
+    setSelected(null)
+    setShowAdd(false)
+    setSelectMode(true)
+    setSelectedIds(new Set())
+  }
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const selectAllVisible = () => {
+    setSelectedIds(new Set(taste.visibleStickers.map((s) => s.id)))
+  }
+
+  const selectedCount = selectedIds.size
+  const allVisibleSelected =
+    taste.visibleStickers.length > 0 &&
+    taste.visibleStickers.every((s) => selectedIds.has(s.id))
+
+  const batchDelete = () => {
+    if (!selectedCount) return
+    if (!confirm(`Delete ${selectedCount} polaroid${selectedCount === 1 ? '' : 's'}?`)) return
+    taste.deleteStickers([...selectedIds])
+    exitSelectMode()
+  }
+
+  const batchMoveCategory = (categoryId: string, subcategoryId?: string) => {
+    taste.updateStickersCategory([...selectedIds], categoryId, subcategoryId)
+    setShowBatchCategory(false)
+    exitSelectMode()
+  }
 
   const shiftMonth = (delta: number) => {
     taste.setBrowseMode('month')
@@ -72,7 +124,7 @@ export function TasteStickerView() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden pb-24">
+    <div className={`relative min-h-screen overflow-x-hidden ${selectMode ? 'pb-36' : 'pb-24'}`}>
       <img
         aria-hidden
         key={taste.backgroundUrl.slice(0, 64)}
@@ -154,6 +206,18 @@ export function TasteStickerView() {
             <Settings2 size={13} />
             Categories
           </button>
+          <button
+            type="button"
+            onClick={toggleSelectMode}
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold ring-1 transition ${
+              selectMode
+                ? 'bg-[#fffac0] text-[#3a2010] ring-[#fffac0] shadow-sm'
+                : 'bg-[#fffde8]/35 text-[#fffac0] ring-[#fffac0]/35 hover:bg-[#fffde8]/50'
+            }`}
+          >
+            <CheckSquare size={13} />
+            {selectMode ? 'Selecting…' : 'Select'}
+          </button>
         </div>
 
         {(() => {
@@ -210,7 +274,9 @@ export function TasteStickerView() {
           <p className="py-24 text-center text-sm text-[#fffac0]/80">Loading…</p>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 md:gap-3">
-            <AddPolaroidCard delayMs={0} onClick={() => setShowAdd(true)} />
+            {!selectMode && (
+              <AddPolaroidCard delayMs={0} onClick={() => setShowAdd(true)} />
+            )}
             {taste.visibleStickers.map((sticker, i) => (
               <PolaroidCard
                 key={sticker.id}
@@ -218,6 +284,9 @@ export function TasteStickerView() {
                 category={tasteCategoryMeta(taste.categories, sticker.categoryId)}
                 delayMs={Math.min((i + 1) * 30, 240)}
                 soundUnlocked={soundUnlocked}
+                selectMode={selectMode}
+                selected={selectedIds.has(sticker.id)}
+                onToggleSelect={() => toggleSelected(sticker.id)}
                 onClick={() => setSelected(sticker)}
               />
             ))}
@@ -294,7 +363,7 @@ export function TasteStickerView() {
         />
       )}
 
-      {selected && (
+      {selected && !selectMode && (
         <PolaroidEditor
           mode="edit"
           sticker={selected}
@@ -308,6 +377,27 @@ export function TasteStickerView() {
             taste.deleteSticker(selected.id)
             setSelected(null)
           }}
+        />
+      )}
+
+      {selectMode && (
+        <BatchSelectBar
+          selectedCount={selectedCount}
+          allVisibleSelected={allVisibleSelected}
+          onSelectAll={selectAllVisible}
+          onClear={() => setSelectedIds(new Set())}
+          onMove={() => setShowBatchCategory(true)}
+          onDelete={batchDelete}
+          onCancel={exitSelectMode}
+        />
+      )}
+
+      {showBatchCategory && selectedCount > 0 && (
+        <BatchCategorySheet
+          categories={taste.categories}
+          count={selectedCount}
+          onClose={() => setShowBatchCategory(false)}
+          onApply={batchMoveCategory}
         />
       )}
     </div>
@@ -756,12 +846,18 @@ function PolaroidCard({
   category,
   delayMs,
   soundUnlocked,
+  selectMode = false,
+  selected = false,
+  onToggleSelect,
   onClick,
 }: {
   sticker: TasteSticker
   category: TasteCategory
   delayMs: number
   soundUnlocked: boolean
+  selectMode?: boolean
+  selected?: boolean
+  onToggleSelect?: () => void
   onClick: () => void
 }) {
   const strip = sticker.stripColor || '#fffac0'
@@ -769,7 +865,7 @@ function PolaroidCard({
   const titleColor = lightFrame ? '#000' : '#fffac0'
   const noteColor = lightFrame ? 'rgba(53,42,42,0.62)' : 'rgba(255,250,192,0.7)'
   const dateColor = lightFrame ? 'rgba(112,105,105,0.79)' : 'rgba(255,250,192,0.55)'
-  const youtubeId = categoryAllowsYoutube(category)
+  const youtubeId = !selectMode && categoryAllowsYoutube(category)
     ? parseYouTubeId(sticker.link)
     : null
   const coverSrc =
@@ -777,18 +873,51 @@ function PolaroidCard({
   const [hovering, setHovering] = useState(false)
   const playOnHover = Boolean(youtubeId && hovering)
 
+  const handleActivate = () => {
+    if (selectMode) onToggleSelect?.()
+    else onClick()
+  }
+
   return (
     <div style={{ animation: `taste-pop 420ms ease-out ${delayMs}ms both` }}>
       <div
-        className="group w-full text-left transition-transform duration-200 hover:-translate-y-1.5"
-        style={{ transform: `rotate(${sticker.tilt}deg)` }}
+        className={`group relative w-full text-left transition-transform duration-200 ${
+          selectMode ? 'cursor-pointer' : 'hover:-translate-y-1.5'
+        }`}
+        style={{ transform: `rotate(${selectMode ? 0 : sticker.tilt}deg)` }}
         onMouseEnter={() => setHovering(true)}
         onMouseLeave={() => setHovering(false)}
       >
         <div
-          className="flex aspect-[293/425] flex-col gap-2.5 overflow-hidden p-2.5 ring-1 ring-black/15 transition-[box-shadow] duration-200 [box-shadow:0_1px_2px_rgba(20,10,0,0.18),0_8px_16px_-4px_rgba(20,10,0,0.35),0_22px_40px_-12px_rgba(20,10,0,0.45)] group-hover:[box-shadow:0_2px_4px_rgba(20,10,0,0.2),0_14px_28px_-6px_rgba(20,10,0,0.4),0_36px_56px_-16px_rgba(20,10,0,0.5)]"
+          role="button"
+          tabIndex={0}
+          onClick={handleActivate}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              handleActivate()
+            }
+          }}
+          className={`flex aspect-[293/425] flex-col gap-2.5 overflow-hidden p-2.5 ring-1 transition-[box-shadow,ring-color] duration-200 [box-shadow:0_1px_2px_rgba(20,10,0,0.18),0_8px_16px_-4px_rgba(20,10,0,0.35),0_22px_40px_-12px_rgba(20,10,0,0.45)] ${
+            selected
+              ? 'ring-2 ring-[#fffac0] ring-offset-2 ring-offset-[#2b1508]/40'
+              : 'ring-black/15 group-hover:[box-shadow:0_2px_4px_rgba(20,10,0,0.2),0_14px_28px_-6px_rgba(20,10,0,0.4),0_36px_56px_-16px_rgba(20,10,0,0.5)]'
+          }`}
           style={{ backgroundColor: strip }}
         >
+          {selectMode && (
+            <span
+              className={`absolute right-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-full shadow-sm ${
+                selected
+                  ? 'bg-[#fffac0] text-[#3a2010]'
+                  : 'bg-white/90 text-transparent ring-1 ring-black/20'
+              }`}
+              aria-hidden
+            >
+              <Check size={14} strokeWidth={3} />
+            </span>
+          )}
+
           <div className="relative min-h-0 flex-[1.15] overflow-hidden bg-white">
             {coverSrc ? (
               <img
@@ -828,11 +957,7 @@ function PolaroidCard({
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={onClick}
-            className="relative flex min-h-[5.5rem] flex-col px-0.5 pb-1 pt-0.5 text-left"
-          >
+          <div className="relative flex min-h-[5.5rem] flex-col px-0.5 pb-1 pt-0.5 text-left">
             <div>
               <p
                 className="line-clamp-2 text-[12px] font-medium leading-snug"
@@ -871,6 +996,170 @@ function PolaroidCard({
                 </p>
               ) : null}
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BatchSelectBar({
+  selectedCount,
+  allVisibleSelected,
+  onSelectAll,
+  onClear,
+  onMove,
+  onDelete,
+  onCancel,
+}: {
+  selectedCount: number
+  allVisibleSelected: boolean
+  onSelectAll: () => void
+  onClear: () => void
+  onMove: () => void
+  onDelete: () => void
+  onCancel: () => void
+}) {
+  return (
+    <div className="fixed inset-x-0 bottom-[4.5rem] z-40 px-4 sm:bottom-[5rem] sm:px-6">
+      <div className="mx-auto flex max-w-[1240px] flex-wrap items-center gap-2 rounded-2xl border border-[#fffac0]/25 bg-[#2b1508]/92 px-3 py-3 shadow-xl backdrop-blur-md sm:gap-3 sm:px-4">
+        <p className="min-w-[5.5rem] text-[12px] font-semibold text-[#fffac0]">
+          {selectedCount > 0 ? `${selectedCount} selected` : 'Tap to select'}
+        </p>
+        <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={allVisibleSelected ? onClear : onSelectAll}
+            className="rounded-full bg-[#fffde8]/15 px-3 py-1.5 text-[11px] font-semibold text-[#fffac0] ring-1 ring-[#fffac0]/25 hover:bg-[#fffde8]/25"
+          >
+            {allVisibleSelected ? 'Clear all' : 'Select all'}
+          </button>
+          <button
+            type="button"
+            disabled={selectedCount === 0}
+            onClick={onMove}
+            className="rounded-full bg-[#fffac0] px-3 py-1.5 text-[11px] font-semibold text-[#3a2010] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Move category
+          </button>
+          <button
+            type="button"
+            disabled={selectedCount === 0}
+            onClick={onDelete}
+            className="inline-flex items-center gap-1 rounded-full bg-[#ff453a]/90 px-3 py-1.5 text-[11px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Trash2 size={12} />
+            Delete
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-full px-3 py-1.5 text-[11px] font-semibold text-[#fffac0]/80 hover:text-[#fffac0]"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BatchCategorySheet({
+  categories,
+  count,
+  onClose,
+  onApply,
+}: {
+  categories: TasteCategory[]
+  count: number
+  onClose: () => void
+  onApply: (categoryId: string, subcategoryId?: string) => void
+}) {
+  const [categoryId, setCategoryId] = useState(categories[0]?.id ?? '')
+  const activeCategory = tasteCategoryMeta(categories, categoryId)
+  const [subcategoryId, setSubcategoryId] = useState('')
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 sm:items-center">
+      <div className="w-full max-w-md rounded-t-2xl bg-[#fffde8] shadow-2xl sm:rounded-2xl">
+        <div className="flex items-center justify-between border-b border-[#3a2010]/10 px-4 py-3">
+          <h2 className="text-[15px] font-semibold text-[#3a2010]">
+            Move {count} polaroid{count === 1 ? '' : 's'}
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-[#8A7A6A] hover:bg-black/5"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="space-y-4 px-4 py-4">
+          <div>
+            <span className="mb-1.5 block text-[11px] font-medium text-[#8A7A6A]">Category</span>
+            <div className="flex flex-wrap gap-1.5">
+              {categories.map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => {
+                    setCategoryId(cat.id)
+                    setSubcategoryId('')
+                  }}
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                    categoryId === cat.id
+                      ? 'bg-[#3a2010] text-[#fffac0]'
+                      : 'bg-[#f0e6d4] text-[#3a2010] hover:bg-[#e8dcc8]'
+                  }`}
+                >
+                  {cat.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {activeCategory.subcategories.length > 0 ? (
+            <div>
+              <span className="mb-1.5 block text-[11px] font-medium text-[#8A7A6A]">
+                Subcategory
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setSubcategoryId('')}
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                    !subcategoryId
+                      ? 'bg-[#3a2010] text-[#fffac0]'
+                      : 'bg-[#f0e6d4] text-[#3a2010] hover:bg-[#e8dcc8]'
+                  }`}
+                >
+                  None
+                </button>
+                {activeCategory.subcategories.map((sub) => (
+                  <button
+                    key={sub.id}
+                    type="button"
+                    onClick={() => setSubcategoryId(sub.id)}
+                    className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                      subcategoryId === sub.id
+                        ? 'bg-[#3a2010] text-[#fffac0]'
+                        : 'bg-[#f0e6d4] text-[#3a2010] hover:bg-[#e8dcc8]'
+                    }`}
+                  >
+                    {sub.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() => onApply(categoryId, subcategoryId || undefined)}
+            className="w-full rounded-xl bg-[#3a2010] py-2.5 text-[13px] font-semibold text-[#fffac0]"
+          >
+            Apply to {count} polaroid{count === 1 ? '' : 's'}
           </button>
         </div>
       </div>
