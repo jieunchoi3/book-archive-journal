@@ -369,6 +369,19 @@ export function TasteStickerView() {
           sticker={selected}
           categories={taste.categories}
           onClose={() => setSelected(null)}
+          onCategoryChange={(categoryId, subcategoryId) => {
+            taste.updateSticker(selected.id, { categoryId, subcategoryId })
+            setSelected((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    categoryId,
+                    subcategoryId: subcategoryId ?? '',
+                    accent: tasteCategoryMeta(taste.categories, categoryId).accent,
+                  }
+                : null,
+            )
+          }}
           onSave={async (input) => {
             taste.updateSticker(selected.id, input)
             setSelected(null)
@@ -1202,6 +1215,7 @@ function PolaroidEditor({
   initialSubcategoryId,
   onClose,
   onSave,
+  onCategoryChange,
   onDelete,
 }: {
   mode: 'create' | 'edit'
@@ -1222,6 +1236,8 @@ function PolaroidEditor({
     dateKey?: string
     imageDataUrl?: string
   }) => void | Promise<void>
+  /** Edit mode: persist category/subcategory immediately on pill tap. */
+  onCategoryChange?: (categoryId: string, subcategoryId?: string) => void
   onDelete?: () => void
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
@@ -1287,6 +1303,14 @@ function PolaroidEditor({
   const activeCategory = tasteCategoryMeta(categories, categoryId)
   const youtubeEnabled = categoryAllowsYoutube(activeCategory)
   const subs = activeCategory.subcategories
+
+  const applyCategoryChange = (nextCategoryId: string, nextSubcategoryId: string) => {
+    setCategoryId(nextCategoryId)
+    setSubcategoryId(nextSubcategoryId)
+    if (mode === 'edit') {
+      onCategoryChange?.(nextCategoryId, nextSubcategoryId || undefined)
+    }
+  }
 
   const onPickFile = useCallback(async (file: File | null) => {
     if (!file) return
@@ -1430,17 +1454,19 @@ function PolaroidEditor({
           />
 
           <div>
-            <span className="mb-1.5 block text-[11px] font-medium text-[#8A7A6A]">Category</span>
+            <span className="mb-1.5 block text-[11px] font-medium text-[#8A7A6A]">
+              Category{mode === 'edit' ? ' · saves instantly' : ''}
+            </span>
             <div className="flex flex-wrap gap-1.5">
               {categories.map((k) => (
                 <button
                   key={k.id}
                   type="button"
                   onClick={() => {
-                    setCategoryId(k.id)
-                    setSubcategoryId((prev) =>
-                      k.subcategories.some((s) => s.id === prev) ? prev : '',
-                    )
+                    const nextSub = k.subcategories.some((s) => s.id === subcategoryId)
+                      ? subcategoryId
+                      : ''
+                    applyCategoryChange(k.id, nextSub)
                   }}
                   className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
                     categoryId === k.id
@@ -1462,7 +1488,7 @@ function PolaroidEditor({
               <div className="flex flex-wrap gap-1.5">
                 <button
                   type="button"
-                  onClick={() => setSubcategoryId('')}
+                  onClick={() => applyCategoryChange(categoryId, '')}
                   className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
                     !subcategoryId
                       ? 'bg-[#3a2010] text-[#fffac0]'
@@ -1475,7 +1501,7 @@ function PolaroidEditor({
                   <button
                     key={s.id}
                     type="button"
-                    onClick={() => setSubcategoryId(s.id)}
+                    onClick={() => applyCategoryChange(categoryId, s.id)}
                     className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
                       subcategoryId === s.id
                         ? 'bg-[#3a2010] text-[#fffac0]'
