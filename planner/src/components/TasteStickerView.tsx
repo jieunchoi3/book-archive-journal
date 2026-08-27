@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { useTasteStickers } from '../hooks/useTasteStickers'
 import { compressImageSource } from '../lib/diaryImage'
+import { handleClipboardImagePaste } from '../lib/clipboardImage'
 import { getTodayKey } from '../lib/weekUtils'
 import {
   categoryAllowsYoutube,
@@ -471,7 +472,7 @@ function BackgroundEditor({
 
   const applyFile = useCallback(async (file: File | null) => {
     if (!file) return
-    if (!file.type.startsWith('image/')) {
+    if (!file.type.startsWith('image/') && !/\.(png|jpe?g|gif|webp)$/i.test(file.name)) {
       setError('Please paste or choose an image file.')
       return
     }
@@ -488,22 +489,26 @@ function BackgroundEditor({
     }
   }, [])
 
+  const applyImage = useCallback(async (source: File | string) => {
+    setBusy(true)
+    setError(null)
+    try {
+      const compressed = await compressImageSource(source, 2000, 0.82)
+      setDraftUrl(compressed)
+    } catch {
+      setError('Couldn’t read that image. Try another one.')
+    } finally {
+      setBusy(false)
+    }
+  }, [])
+
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
-      const items = e.clipboardData?.items
-      if (!items?.length) return
-      for (const item of items) {
-        if (!item.type.startsWith('image/')) continue
-        const file = item.getAsFile()
-        if (!file) continue
-        e.preventDefault()
-        void applyFile(file)
-        return
-      }
+      handleClipboardImagePaste(e, (source) => void applyImage(source))
     }
-    window.addEventListener('paste', onPaste)
-    return () => window.removeEventListener('paste', onPaste)
-  }, [applyFile])
+    document.addEventListener('paste', onPaste, true)
+    return () => document.removeEventListener('paste', onPaste, true)
+  }, [applyImage])
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-6">
@@ -1314,7 +1319,7 @@ function PolaroidEditor({
 
   const onPickFile = useCallback(async (file: File | null) => {
     if (!file) return
-    if (!file.type.startsWith('image/')) {
+    if (!file.type.startsWith('image/') && !/\.(png|jpe?g|gif|webp)$/i.test(file.name)) {
       setError('Please choose an image file.')
       return
     }
@@ -1330,22 +1335,26 @@ function PolaroidEditor({
     }
   }, [])
 
+  const applyImage = useCallback(async (source: File | string) => {
+    setBusy(true)
+    setError(null)
+    try {
+      const compressed = await compressImageSource(source, 1200, 0.86)
+      setImageDataUrl(compressed)
+    } catch {
+      setError('Couldn’t read that photo. Try another file.')
+    } finally {
+      setBusy(false)
+    }
+  }, [])
+
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
-      const items = e.clipboardData?.items
-      if (!items?.length) return
-      for (const item of items) {
-        if (!item.type.startsWith('image/')) continue
-        const file = item.getAsFile()
-        if (!file) continue
-        e.preventDefault()
-        void onPickFile(file)
-        return
-      }
+      handleClipboardImagePaste(e, (source) => void applyImage(source))
     }
-    window.addEventListener('paste', onPaste)
-    return () => window.removeEventListener('paste', onPaste)
-  }, [onPickFile])
+    document.addEventListener('paste', onPaste, true)
+    return () => document.removeEventListener('paste', onPaste, true)
+  }, [applyImage])
 
   const submit = async () => {
     if (!title.trim()) {
@@ -1408,6 +1417,9 @@ function PolaroidEditor({
               <button
                 type="button"
                 onClick={() => fileRef.current?.click()}
+                onPaste={(e) => {
+                  handleClipboardImagePaste(e.nativeEvent, (source) => void applyImage(source))
+                }}
                 disabled={busy}
                 className="relative flex aspect-square w-full items-center justify-center overflow-hidden bg-white disabled:opacity-60"
               >
