@@ -6,6 +6,10 @@ interface ColourWheelPickerProps {
   onChange: (hex: string) => void
 }
 
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n))
+}
+
 function pickHueFromPointer(
   clientX: number,
   clientY: number,
@@ -17,40 +21,64 @@ function pickHueFromPointer(
   const dy = clientY - cy
   const dist = Math.hypot(dx, dy)
   const outer = rect.width / 2
-  const inner = outer * 0.38
+  const inner = outer * 0.72
   if (dist < inner || dist > outer) return null
   return (Math.atan2(dy, dx) * 180) / Math.PI + 90
 }
 
+function pickSlFromPointer(
+  clientX: number,
+  clientY: number,
+  rect: DOMRect,
+): { s: number; l: number } {
+  const x = clamp((clientX - rect.left) / rect.width, 0, 1)
+  const y = clamp((clientY - rect.top) / rect.height, 0, 1)
+  return {
+    s: x * 100,
+    l: (1 - y) * 100,
+  }
+}
+
 export function ColourWheelPicker({ value, onChange }: ColourWheelPickerProps) {
   const wheelRef = useRef<HTMLDivElement>(null)
-  const dragging = useRef(false)
+  const padRef = useRef<HTMLDivElement>(null)
+  const hueDragging = useRef(false)
+  const padDragging = useRef(false)
+
   const normalized = normalizeHexColor(value) ?? '#4A90D9'
   const initial = hexToHsl(normalized)
   const [hue, setHue] = useState(initial.h)
+  const [saturation, setSaturation] = useState(initial.s)
   const [lightness, setLightness] = useState(initial.l)
 
-  const currentHex = hslToHex(hue, 100, lightness)
+  const emit = useCallback(
+    (h: number, s: number, l: number) => {
+      onChange(hslToHex(h, s, l))
+    },
+    [onChange],
+  )
+
+  const applySl = useCallback(
+    (s: number, l: number) => {
+      const nextS = clamp(s, 0, 100)
+      const nextL = clamp(l, 0, 100)
+      setSaturation(nextS)
+      setLightness(nextL)
+      emit(hue, nextS, nextL)
+    },
+    [emit, hue],
+  )
 
   const applyHue = useCallback(
     (nextHue: number) => {
       const wrapped = ((nextHue % 360) + 360) % 360
       setHue(wrapped)
-      onChange(hslToHex(wrapped, 100, lightness))
+      emit(wrapped, saturation, lightness)
     },
-    [lightness, onChange],
+    [emit, saturation, lightness],
   )
 
-  const applyLightness = useCallback(
-    (nextLightness: number) => {
-      const clamped = Math.max(8, Math.min(92, nextLightness))
-      setLightness(clamped)
-      onChange(hslToHex(hue, 100, clamped))
-    },
-    [hue, onChange],
-  )
-
-  const handlePointer = (clientX: number, clientY: number) => {
+  const handleHuePointer = (clientX: number, clientY: number) => {
     const rect = wheelRef.current?.getBoundingClientRect()
     if (!rect) return
     const nextHue = pickHueFromPointer(clientX, clientY, rect)
@@ -58,70 +86,135 @@ export function ColourWheelPicker({ value, onChange }: ColourWheelPickerProps) {
     applyHue(nextHue)
   }
 
+  const handlePadPointer = (clientX: number, clientY: number) => {
+    const rect = padRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const { s, l } = pickSlFromPointer(clientX, clientY, rect)
+    applySl(s, l)
+  }
+
+  const currentHex = hslToHex(hue, saturation, lightness)
+
   const markerAngle = hue - 90
   const markerRad = (markerAngle * Math.PI) / 180
-  const markerR = 42
+  const markerR = 46
   const markerX = 50 + Math.cos(markerRad) * markerR
   const markerY = 50 + Math.sin(markerRad) * markerR
 
+  const padMarkerX = saturation
+  const padMarkerY = 100 - lightness
+
   return (
     <div className="space-y-4">
-      <div
-        ref={wheelRef}
-        className="relative mx-auto aspect-square w-full max-w-[220px] touch-none select-none"
-        onPointerDown={(e) => {
-          dragging.current = true
-          wheelRef.current?.setPointerCapture(e.pointerId)
-          handlePointer(e.clientX, e.clientY)
-        }}
-        onPointerMove={(e) => {
-          if (!dragging.current) return
-          handlePointer(e.clientX, e.clientY)
-        }}
-        onPointerUp={(e) => {
-          dragging.current = false
-          wheelRef.current?.releasePointerCapture(e.pointerId)
-        }}
-        onPointerCancel={() => {
-          dragging.current = false
-        }}
-      >
+      <div className="relative mx-auto aspect-square w-full max-w-[240px]">
         <div
-          className="absolute inset-0 rounded-full shadow-inner ring-1 ring-black/10"
-          style={{
-            background:
-              'conic-gradient(from 0deg, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)',
+          ref={wheelRef}
+          className="absolute inset-0 touch-none select-none"
+          onPointerDown={(e) => {
+            const rect = wheelRef.current?.getBoundingClientRect()
+            if (!rect) return
+            const nextHue = pickHueFromPointer(e.clientX, e.clientY, rect)
+            if (nextHue == null) return
+            hueDragging.current = true
+            wheelRef.current?.setPointerCapture(e.pointerId)
+            applyHue(nextHue)
           }}
-        />
-        <div className="absolute inset-[19%] rounded-full bg-[#fffaf0] shadow-inner ring-1 ring-black/5" />
+          onPointerMove={(e) => {
+            if (!hueDragging.current) return
+            handleHuePointer(e.clientX, e.clientY)
+          }}
+          onPointerUp={(e) => {
+            hueDragging.current = false
+            wheelRef.current?.releasePointerCapture(e.pointerId)
+          }}
+          onPointerCancel={() => {
+            hueDragging.current = false
+          }}
+        >
+          <div
+            className="absolute inset-0 rounded-full shadow-inner ring-1 ring-black/10"
+            style={{
+              background:
+                'conic-gradient(from 0deg, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)',
+            }}
+          />
+          <span
+            className="absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-md"
+            style={{
+              left: `${markerX}%`,
+              top: `${markerY}%`,
+              backgroundColor: hslToHex(hue, 100, 50),
+            }}
+          />
+        </div>
+
         <div
-          className="absolute inset-[28%] rounded-full shadow-md ring-2 ring-white"
-          style={{ backgroundColor: currentHex }}
-        />
-        <span
-          className="absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-md"
+          ref={padRef}
+          className="absolute inset-[22%] touch-none select-none overflow-hidden rounded-full shadow-md ring-2 ring-white"
           style={{
-            left: `${markerX}%`,
-            top: `${markerY}%`,
-            backgroundColor: hslToHex(hue, 100, 50),
+            background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(${hue}, 100%, 50%))`,
           }}
-        />
+          onPointerDown={(e) => {
+            padDragging.current = true
+            padRef.current?.setPointerCapture(e.pointerId)
+            handlePadPointer(e.clientX, e.clientY)
+          }}
+          onPointerMove={(e) => {
+            if (!padDragging.current) return
+            handlePadPointer(e.clientX, e.clientY)
+          }}
+          onPointerUp={(e) => {
+            padDragging.current = false
+            padRef.current?.releasePointerCapture(e.pointerId)
+          }}
+          onPointerCancel={() => {
+            padDragging.current = false
+          }}
+        >
+          <span
+            className="absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-md"
+            style={{
+              left: `${padMarkerX}%`,
+              top: `${padMarkerY}%`,
+              backgroundColor: currentHex,
+            }}
+          />
+        </div>
       </div>
 
-      <label className="block">
-        <span className="mb-1.5 flex items-center justify-between text-[11px] font-medium text-[#8A7A6A]">
-          <span>Brightness</span>
-          <span className="tabular-nums text-[#3a2010]">{Math.round(lightness)}%</span>
-        </span>
-        <input
-          type="range"
-          min={8}
-          max={92}
-          value={lightness}
-          onChange={(e) => applyLightness(Number(e.target.value))}
-          className="w-full accent-[#3a2010]"
-        />
-      </label>
+      <div className="grid grid-cols-2 gap-3">
+        <label className="block">
+          <span className="mb-1.5 flex items-center justify-between text-[11px] font-medium text-[#8A7A6A]">
+            <span>Saturation</span>
+            <span className="tabular-nums text-[#3a2010]">{Math.round(saturation)}%</span>
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={saturation}
+            onChange={(e) => applySl(Number(e.target.value), lightness)}
+            className="w-full accent-[#3a2010]"
+            style={{
+              background: `linear-gradient(to right, hsl(${hue}, 0%, ${lightness}%), hsl(${hue}, 100%, ${lightness}%))`,
+            }}
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1.5 flex items-center justify-between text-[11px] font-medium text-[#8A7A6A]">
+            <span>Brightness</span>
+            <span className="tabular-nums text-[#3a2010]">{Math.round(lightness)}%</span>
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={lightness}
+            onChange={(e) => applySl(saturation, Number(e.target.value))}
+            className="w-full accent-[#3a2010]"
+          />
+        </label>
+      </div>
 
       <label className="block">
         <span className="mb-1.5 block text-[11px] font-medium text-[#8A7A6A]">Hex</span>
@@ -133,6 +226,7 @@ export function ColourWheelPicker({ value, onChange }: ColourWheelPickerProps) {
             if (!hex) return
             const hsl = hexToHsl(hex)
             setHue(hsl.h)
+            setSaturation(hsl.s)
             setLightness(hsl.l)
             onChange(hex)
           }}
