@@ -26,6 +26,8 @@ export interface TasteSticker {
   link: string
   /** Compressed JPEG data URL for the polaroid photo. */
   imageDataUrl: string
+  /** Solid swatch hex for the colours category (e.g. #3A7BD5). */
+  colorHex: string
   /** YYYY-MM-DD when this taste felt true; empty = undated (View all only). */
   dateKey: string
   createdAt: string
@@ -156,6 +158,83 @@ export function categoryAllowsYoutube(category: TasteCategory | undefined): bool
   if (!category) return false
   if (category.youtube) return true
   return category.name.trim().toLowerCase() === 'music'
+}
+
+/** User-created scrapbook category for colour swatches instead of photos. */
+export function isColourCategory(category: TasteCategory | undefined): boolean {
+  if (!category) return false
+  const id = category.id.trim().toLowerCase()
+  const name = category.name.trim().toLowerCase()
+  return id === 'colours' || id === 'colors' || name === 'colours' || name === 'colors'
+}
+
+export function normalizeHexColor(input: string): string | null {
+  const raw = input.trim()
+  if (!raw) return null
+  const m = raw.match(/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i)
+  if (!m) return null
+  let hex = m[1]!
+  if (hex.length === 3) {
+    hex = hex
+      .split('')
+      .map((c) => c + c)
+      .join('')
+  }
+  return `#${hex.toUpperCase()}`
+}
+
+export function hexToHsl(hex: string): { h: number; s: number; l: number } {
+  const norm = normalizeHexColor(hex) ?? '#808080'
+  const n = parseInt(norm.slice(1), 16)
+  const r = ((n >> 16) & 255) / 255
+  const g = ((n >> 8) & 255) / 255
+  const b = (n & 255) / 255
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const l = (max + min) / 2
+  if (max === min) return { h: 0, s: 0, l: l * 100 }
+  const d = max - min
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+  let h = 0
+  if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6
+  else if (max === g) h = ((b - r) / d + 2) / 6
+  else h = ((r - g) / d + 4) / 6
+  return { h: h * 360, s: s * 100, l: l * 100 }
+}
+
+export function hslToHex(h: number, s: number, l: number): string {
+  const sat = Math.max(0, Math.min(100, s)) / 100
+  const lig = Math.max(0, Math.min(100, l)) / 100
+  const c = (1 - Math.abs(2 * lig - 1)) * sat
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1))
+  const m = lig - c / 2
+  let r = 0
+  let g = 0
+  let b = 0
+  if (h < 60) {
+    r = c
+    g = x
+  } else if (h < 120) {
+    r = x
+    g = c
+  } else if (h < 180) {
+    g = c
+    b = x
+  } else if (h < 240) {
+    g = x
+    b = c
+  } else if (h < 300) {
+    r = x
+    b = c
+  } else {
+    r = c
+    b = x
+  }
+  const toByte = (v: number) =>
+    Math.round(Math.max(0, Math.min(255, (v + m) * 255)))
+      .toString(16)
+      .padStart(2, '0')
+  return `#${toByte(r)}${toByte(g)}${toByte(b)}`.toUpperCase()
 }
 
 export function monthKeyFromDateKey(dateKey: string): string {

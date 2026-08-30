@@ -6,6 +6,7 @@ import {
   ChevronRight,
   ImageIcon,
   ImagePlus,
+  Palette,
   Pencil,
   Plus,
   Settings2,
@@ -14,13 +15,16 @@ import {
   X,
 } from 'lucide-react'
 import { useTasteStickers } from '../hooks/useTasteStickers'
+import { ColourPolaroidEditor } from './ColourPolaroidEditor'
 import { compressImageSource } from '../lib/diaryImage'
 import { handleClipboardImagePaste } from '../lib/clipboardImage'
 import { getTodayKey } from '../lib/weekUtils'
 import {
   categoryAllowsYoutube,
   hasTasteDate,
+  isColourCategory,
   isLightPolaroidStrip,
+  normalizeHexColor,
   parseYouTubeId,
   tasteCategoryMeta,
   tasteTagLabel,
@@ -123,6 +127,18 @@ export function TasteStickerView() {
     const d = new Date(taste.year, taste.month + delta, 1)
     taste.setViewMonth(d.getFullYear(), d.getMonth())
   }
+
+  const activeCategoryForAdd =
+    taste.kindFilter !== 'all'
+      ? taste.categories.find((c) => c.id === taste.kindFilter)
+      : null
+  const colourAddMode = Boolean(
+    activeCategoryForAdd && isColourCategory(activeCategoryForAdd),
+  )
+  const selectedCategory = selected
+    ? tasteCategoryMeta(taste.categories, selected.categoryId)
+    : null
+  const selectedIsColour = Boolean(selectedCategory && isColourCategory(selectedCategory))
 
   return (
     <div className={`relative min-h-screen overflow-x-hidden ${selectMode ? 'pb-36' : 'pb-24'}`}>
@@ -276,7 +292,11 @@ export function TasteStickerView() {
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 md:gap-3">
             {!selectMode && (
-              <AddPolaroidCard delayMs={0} onClick={() => setShowAdd(true)} />
+              <AddPolaroidCard
+                delayMs={0}
+                colourMode={colourAddMode}
+                onClick={() => setShowAdd(true)}
+              />
             )}
             {taste.visibleStickers.map((sticker, i) => (
               <PolaroidCard
@@ -328,7 +348,27 @@ export function TasteStickerView() {
         />
       )}
 
-      {showAdd && (
+      {showAdd && colourAddMode && activeCategoryForAdd && (
+        <ColourPolaroidEditor
+          mode="create"
+          category={activeCategoryForAdd}
+          onClose={() => setShowAdd(false)}
+          onSave={async (input) => {
+            const created = taste.addSticker(input)
+            if (created) {
+              setShowAdd(false)
+              if (!hasTasteDate(created.dateKey)) {
+                taste.setBrowseMode('atlas')
+              } else if (taste.browseMode === 'month') {
+                const [y, m] = created.dateKey.split('-').map(Number)
+                if (y && m) taste.setViewMonth(y, m - 1)
+              }
+            }
+          }}
+        />
+      )}
+
+      {showAdd && !colourAddMode && (
         <PolaroidEditor
           key={`create-${taste.kindFilter}-${taste.subFilter}`}
           mode="create"
@@ -364,7 +404,24 @@ export function TasteStickerView() {
         />
       )}
 
-      {selected && !selectMode && (
+      {selected && !selectMode && selectedIsColour && selectedCategory && (
+        <ColourPolaroidEditor
+          mode="edit"
+          category={selectedCategory}
+          sticker={selected}
+          onClose={() => setSelected(null)}
+          onSave={async (input) => {
+            taste.updateSticker(selected.id, input)
+            setSelected(null)
+          }}
+          onDelete={() => {
+            taste.deleteSticker(selected.id)
+            setSelected(null)
+          }}
+        />
+      )}
+
+      {selected && !selectMode && !selectedIsColour && (
         <PolaroidEditor
           mode="edit"
           sticker={selected}
@@ -883,11 +940,12 @@ function PolaroidCard({
   const titleColor = lightFrame ? '#000' : '#fffac0'
   const noteColor = lightFrame ? 'rgba(53,42,42,0.62)' : 'rgba(255,250,192,0.7)'
   const dateColor = lightFrame ? 'rgba(112,105,105,0.79)' : 'rgba(255,250,192,0.55)'
-  const youtubeId = !selectMode && categoryAllowsYoutube(category)
+  const youtubeId = !selectMode && !sticker.colorHex && categoryAllowsYoutube(category)
     ? parseYouTubeId(sticker.link)
     : null
+  const swatchHex = normalizeHexColor(sticker.colorHex)
   const coverSrc =
-    sticker.imageDataUrl || (youtubeId ? youtubeThumbUrl(youtubeId) : '')
+    !swatchHex && (sticker.imageDataUrl || (youtubeId ? youtubeThumbUrl(youtubeId) : ''))
   const [hovering, setHovering] = useState(false)
   const playOnHover = Boolean(youtubeId && hovering)
 
@@ -937,7 +995,9 @@ function PolaroidCard({
           )}
 
           <div className="relative min-h-0 flex-[1.15] overflow-hidden bg-white">
-            {coverSrc ? (
+            {swatchHex ? (
+              <div className="h-full w-full" style={{ backgroundColor: swatchHex }} />
+            ) : coverSrc ? (
               <img
                 src={coverSrc}
                 alt=""
@@ -1185,13 +1245,21 @@ function BatchCategorySheet({
   )
 }
 
-function AddPolaroidCard({ delayMs, onClick }: { delayMs: number; onClick: () => void }) {
+function AddPolaroidCard({
+  delayMs,
+  onClick,
+  colourMode = false,
+}: {
+  delayMs: number
+  onClick: () => void
+  colourMode?: boolean
+}) {
   return (
     <div style={{ animation: `taste-pop 420ms ease-out ${delayMs}ms both` }}>
       <button
         type="button"
         onClick={onClick}
-        aria-label="Add polaroid"
+        aria-label={colourMode ? 'Add colour' : 'Add polaroid'}
         className="group w-full text-left transition-transform duration-200 hover:-translate-y-1.5"
       >
         <div
@@ -1201,7 +1269,7 @@ function AddPolaroidCard({ delayMs, onClick }: { delayMs: number; onClick: () =>
           <div className="relative min-h-0 flex-[1.15] overflow-hidden bg-white">
             <span className="absolute inset-0 flex items-center justify-center">
               <span className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#d8d8d8] text-[#2b2118] transition group-hover:bg-[#cfcfcf] sm:h-12 sm:w-12">
-                <Plus size={22} strokeWidth={2.25} />
+                {colourMode ? <Palette size={22} strokeWidth={2.25} /> : <Plus size={22} strokeWidth={2.25} />}
               </span>
             </span>
           </div>

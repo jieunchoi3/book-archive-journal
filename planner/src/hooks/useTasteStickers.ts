@@ -33,6 +33,7 @@ export type TasteStickerInput = {
   link?: string
   dateKey?: string
   imageDataUrl?: string
+  colorHex?: string
 }
 
 export type TasteStickerPatch = Partial<
@@ -46,6 +47,7 @@ export type TasteStickerPatch = Partial<
     | 'subcategoryId'
     | 'dateKey'
     | 'imageDataUrl'
+    | 'colorHex'
   >
 >
 
@@ -92,11 +94,12 @@ type LegacyCategory = Omit<TasteCategory, 'subcategories'> & {
   subcategories?: TasteSubcategory[]
 }
 
-type LegacySticker = Omit<TasteSticker, 'stripColor' | 'categoryId' | 'subcategoryId'> & {
+type LegacySticker = Omit<TasteSticker, 'stripColor' | 'categoryId' | 'subcategoryId' | 'colorHex'> & {
   kind?: string
   categoryId?: string
   subcategoryId?: string
   stripColor?: string
+  colorHex?: string
 }
 
 function normalizeSubcategories(raw: TasteSubcategory[] | undefined): TasteSubcategory[] {
@@ -149,6 +152,7 @@ function normalizeSticker(raw: LegacySticker, categories: TasteCategory[]): Tast
     note: raw.note ?? '',
     link: raw.link ?? '',
     imageDataUrl: raw.imageDataUrl ?? '',
+    colorHex: raw.colorHex ?? '',
     dateKey: typeof raw.dateKey === 'string' ? raw.dateKey : '',
     createdAt: raw.createdAt,
     tilt: raw.tilt ?? randomTilt(),
@@ -161,7 +165,7 @@ function normalizeStore(loaded: TasteStore): TasteStore {
   const categories = normalizeCategories(loaded.categories)
   const stickers = (loaded.stickers as LegacySticker[])
     .map((s) => normalizeSticker(s, categories))
-    .filter((s) => s.imageDataUrl || Boolean(parseYouTubeId(s.link)))
+    .filter((s) => s.imageDataUrl || s.colorHex || Boolean(parseYouTubeId(s.link)))
   const monthBackgrounds =
     loaded.monthBackgrounds && typeof loaded.monthBackgrounds === 'object'
       ? { ...loaded.monthBackgrounds }
@@ -280,19 +284,21 @@ export function useTasteStickers(): TasteActions {
   )
 
   const addSticker: TasteActions['addSticker'] = useCallback(
-    ({ categoryId, subcategoryId, title, subtitle, note, link, dateKey, imageDataUrl }) => {
+    ({ categoryId, subcategoryId, title, subtitle, note, link, dateKey, imageDataUrl, colorHex }) => {
       const trimmed = title.trim()
-      if (!trimmed) return null
+      const hex = colorHex?.trim() ?? ''
+      if (!trimmed && !hex) return null
       const meta = tasteCategoryMeta(store.categories, categoryId)
       const sticker: TasteSticker = {
         id: generateId(),
         categoryId: meta.id,
         subcategoryId: resolveSubcategoryId(meta, subcategoryId),
-        title: trimmed,
+        title: trimmed || hex.toUpperCase(),
         subtitle: subtitle?.trim() ?? '',
         note: note?.trim() ?? '',
         link: link?.trim() ?? '',
-        imageDataUrl: imageDataUrl ?? '',
+        imageDataUrl: hex ? '' : (imageDataUrl ?? ''),
+        colorHex: hex,
         dateKey:
           dateKey === undefined
             ? getTodayKey()
@@ -331,6 +337,14 @@ export function useTasteStickers(): TasteActions {
           if (patch.subtitle != null) next.subtitle = patch.subtitle.trim()
           if (patch.note != null) next.note = patch.note.trim()
           if (patch.link != null) next.link = patch.link.trim()
+          if (patch.colorHex != null) {
+            next.colorHex = patch.colorHex.trim()
+            if (next.colorHex) next.imageDataUrl = ''
+          }
+          if (patch.imageDataUrl != null) {
+            next.imageDataUrl = patch.imageDataUrl
+            if (patch.imageDataUrl) next.colorHex = ''
+          }
           if (patch.dateKey != null) {
             const trimmed = patch.dateKey.trim()
             next.dateKey = hasTasteDate(trimmed) ? trimmed : ''
