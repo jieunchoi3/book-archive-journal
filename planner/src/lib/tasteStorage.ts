@@ -100,33 +100,22 @@ async function mergeLocalAndCloud(userId: string, local: StoredRow | null): Prom
       return local?.store ?? emptyTasteStore()
     }
 
-    let cloudStore: TasteStore | null = null
-    const shouldFetchCloud =
-      localEmpty || !local || cloudMeta.updatedAt > local.updatedAt
+    const cloud = await fetchTasteStoreCloud(userId)
+    const cloudStore = cloud?.store ?? null
+    const cloudEmpty = !cloudStore || isEmptyStore(cloudStore)
 
-    if (shouldFetchCloud) {
-      const cloud = await fetchTasteStoreCloud(userId)
-      cloudStore = cloud?.store ?? null
-    } else {
-      cloudStore = await fetchTasteStoreCloudRaw(userId)
-    }
-
-    if (local && !localEmpty && localHasUnsyncedTasteImages(local.store, cloudStore)) {
-      await backfillTasteImagesToCloud(userId, local.store)
-    }
-
-    if (localEmpty && cloudStore && !isEmptyStore(cloudStore)) {
+    if (localEmpty && cloudStore && !cloudEmpty) {
       await saveTasteStoreLocal(userId, cloudStore, cloudMeta.updatedAt)
       return cloudStore
     }
 
-    if (local && !localEmpty && cloudStore && !isEmptyStore(cloudStore)) {
+    if (local && !localEmpty && cloudStore && !cloudEmpty) {
       const merged = mergeTasteStores(local.store, cloudStore)
       const updatedAt = new Date().toISOString()
       await saveTasteStoreLocal(userId, merged, updatedAt)
       if (localHasUnsyncedTasteImages(merged, cloudStore)) {
         await backfillTasteImagesToCloud(userId, merged)
-      } else {
+      } else if (merged.stickers.length >= local.store.stickers.length) {
         void upsertTasteStoreCloud(userId, merged, updatedAt).catch((e) =>
           console.warn('[taste] cloud merge upsert failed', e),
         )
@@ -135,9 +124,13 @@ async function mergeLocalAndCloud(userId: string, local: StoredRow | null): Prom
     }
 
     if (local && !localEmpty) {
-      void upsertTasteStoreCloud(userId, local.store, local.updatedAt).catch((e) =>
-        console.warn('[taste] cloud refresh failed', e),
-      )
+      if (localHasUnsyncedTasteImages(local.store, cloudStore)) {
+        await backfillTasteImagesToCloud(userId, local.store)
+      } else if (!cloudStore || local.store.stickers.length >= cloudStore.stickers.length) {
+        void upsertTasteStoreCloud(userId, local.store, local.updatedAt).catch((e) =>
+          console.warn('[taste] cloud refresh failed', e),
+        )
+      }
       return local.store
     }
 
@@ -166,13 +159,29 @@ export async function loadTasteStore(userId: string): Promise<TasteStore> {
 }
 
 export async function saveTasteStore(userId: string, store: TasteStore): Promise<void> {
+  let nextStore = store
+  if (isSupabaseConfigured) {
+    try {
+      const cloudStore = await fetchTasteStoreCloudRaw(userId)
+      const cloudCount = cloudStore?.stickers.length ?? 0
+      if (cloudCount > store.stickers.length + 2) {
+        nextStore = mergeTasteStores(store, cloudStore!)
+        console.warn(
+          `[taste] merged cloud stickers before save (${store.stickers.length} -> ${nextStore.stickers.length})`,
+        )
+      }
+    } catch (e) {
+      console.warn('[taste] pre-save cloud merge check failed', e)
+    }
+  }
+
   const updatedAt = new Date().toISOString()
-  await saveTasteStoreLocal(userId, store, updatedAt)
+  await saveTasteStoreLocal(userId, nextStore, updatedAt)
 
   if (!isSupabaseConfigured) return
 
   try {
-    await upsertTasteStoreCloud(userId, store, updatedAt)
+    await upsertTasteStoreCloud(userId, nextStore, updatedAt)
   } catch (e) {
     console.warn('[taste] cloud save failed', e)
   }

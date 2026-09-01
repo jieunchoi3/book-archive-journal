@@ -53,23 +53,39 @@ export function stripInlineTasteImages(store: TasteStore): TasteStore {
 export function mergeTasteStores(local: TasteStore, cloud: TasteStore): TasteStore {
   const categories = mergeCategories(local.categories, cloud.categories)
   const stickerMap = new Map<string, TasteStore['stickers'][number]>()
-  for (const sticker of local.stickers) stickerMap.set(sticker.id, sticker)
-  for (const sticker of cloud.stickers) {
+
+  for (const sticker of cloud.stickers) stickerMap.set(sticker.id, sticker)
+  for (const sticker of local.stickers) {
     const prev = stickerMap.get(sticker.id)
-    if (!prev || sticker.createdAt >= prev.createdAt) {
-      const merged = { ...sticker }
-      if (prev?.imageDataUrl && isTasteDataUrl(prev.imageDataUrl) && !isTasteDataUrl(merged.imageDataUrl)) {
-        merged.imageDataUrl = prev.imageDataUrl
-      }
-      stickerMap.set(sticker.id, merged)
+    if (!prev) {
+      stickerMap.set(sticker.id, sticker)
+      continue
     }
+    stickerMap.set(sticker.id, mergeTasteSticker(prev, sticker))
   }
+
   const monthBackgrounds = { ...cloud.monthBackgrounds, ...local.monthBackgrounds }
   return {
     categories,
     stickers: [...stickerMap.values()],
     monthBackgrounds,
   }
+}
+
+function mergeTasteSticker(
+  a: TasteStore['stickers'][number],
+  b: TasteStore['stickers'][number],
+): TasteStore['stickers'][number] {
+  const newer = a.createdAt >= b.createdAt ? a : b
+  const older = a.createdAt >= b.createdAt ? b : a
+  const merged = { ...newer }
+  if (older.imageDataUrl && !merged.imageDataUrl) merged.imageDataUrl = older.imageDataUrl
+  if (older.colorHex && !merged.colorHex) merged.colorHex = older.colorHex
+  if (older.title && !merged.title.trim()) merged.title = older.title
+  if (older.subtitle && !merged.subtitle.trim()) merged.subtitle = older.subtitle
+  if (older.note && !merged.note.trim()) merged.note = older.note
+  if (older.link && !merged.link.trim()) merged.link = older.link
+  return merged
 }
 
 function mergeCategories(local: TasteCategory[], cloud: TasteCategory[]): TasteCategory[] {

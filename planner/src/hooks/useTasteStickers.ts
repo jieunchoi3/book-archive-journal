@@ -11,7 +11,6 @@ import {
   emptyTasteStore,
   monthKeyFromParts,
   nextCategoryAccent,
-  parseYouTubeId,
   randomPolaroidStripColor,
   hasTasteDate,
   stripColorFromId,
@@ -167,14 +166,30 @@ function normalizeSticker(raw: LegacySticker, categories: TasteCategory[]): Tast
 
 function normalizeStore(loaded: TasteStore): TasteStore {
   const categories = normalizeCategories(loaded.categories)
-  const stickers = (loaded.stickers as LegacySticker[])
-    .map((s) => normalizeSticker(s, categories))
-    .filter((s) => s.imageDataUrl || s.colorHex || Boolean(parseYouTubeId(s.link)))
+  const stickers = (loaded.stickers as LegacySticker[]).map((s) =>
+    normalizeSticker(s, categories),
+  )
   const monthBackgrounds =
     loaded.monthBackgrounds && typeof loaded.monthBackgrounds === 'object'
       ? { ...loaded.monthBackgrounds }
       : {}
   return { categories, stickers, monthBackgrounds }
+}
+
+function storeNeedsMigration(loaded: TasteStore, normalized: TasteStore): boolean {
+  return (
+    (loaded.stickers as LegacySticker[]).some(
+      (s) => !s.stripColor || !s.categoryId || s.subcategoryId === undefined,
+    ) ||
+    (loaded.categories as LegacyCategory[] | undefined)?.some(
+      (c) => !Array.isArray(c.subcategories),
+    ) ||
+    loaded.stickers.some((s, i) => {
+      const n = normalized.stickers[i]
+      const legacy = s as LegacySticker
+      return !n || n.categoryId !== (legacy.categoryId || legacy.kind)
+    })
+  )
 }
 
 export function useTasteStickers(): TasteActions {
@@ -200,24 +215,13 @@ export function useTasteStickers(): TasteActions {
   useEffect(() => {
     let cancelled = false
 
-    const applyLoaded = (loaded: TasteStore) => {
+    const applyLoaded = (loaded: TasteStore, allowPersist: boolean) => {
       const next = normalizeStore(loaded)
       setStore(next)
-      const needsSave =
-        !loaded.categories?.length ||
-        next.stickers.length !== loaded.stickers.length ||
-        (loaded.stickers as LegacySticker[]).some(
-          (s) => !s.stripColor || !s.categoryId || s.subcategoryId === undefined,
-        ) ||
-        (loaded.categories as LegacyCategory[] | undefined)?.some(
-          (c) => !Array.isArray(c.subcategories),
-        ) ||
-        loaded.stickers.some((s, i) => {
-          const n = next.stickers[i]
-          const legacy = s as LegacySticker
-          return !n || n.categoryId !== (legacy.categoryId || legacy.kind)
-        })
-      if (needsSave) void saveTasteStore(userId, next)
+      if (!allowPersist) return
+      if (storeNeedsMigration(loaded, next)) {
+        void saveTasteStore(userId, next)
+      }
     }
 
     void (async () => {
@@ -225,7 +229,7 @@ export function useTasteStickers(): TasteActions {
       try {
         const local = await loadTasteStoreLocalOnly(userId)
         if (cancelled) return
-        applyLoaded(local)
+        applyLoaded(local, false)
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -233,7 +237,7 @@ export function useTasteStickers(): TasteActions {
       try {
         const synced = await syncTasteStoreWithCloud(userId)
         if (cancelled) return
-        applyLoaded(synced)
+        applyLoaded(synced, true)
       } catch (e) {
         console.warn('[taste] background sync failed', e)
       }
