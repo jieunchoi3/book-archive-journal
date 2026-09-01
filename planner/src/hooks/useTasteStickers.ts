@@ -19,6 +19,7 @@ import {
 } from '../types/taste'
 import {
   loadTasteStoreLocalOnly,
+  reloadTasteStoreFromCloud,
   saveTasteStore,
   syncTasteStoreWithCloud,
 } from '../lib/tasteStorage'
@@ -237,9 +238,21 @@ export function useTasteStickers(): TasteActions {
       try {
         const synced = await syncTasteStoreWithCloud(userId)
         if (cancelled) return
+        if (synced.stickers.length === 0) {
+          const forced = await reloadTasteStoreFromCloud(userId)
+          if (cancelled) return
+          applyLoaded(forced, true)
+          return
+        }
         applyLoaded(synced, true)
       } catch (e) {
         console.warn('[taste] background sync failed', e)
+        try {
+          const forced = await reloadTasteStoreFromCloud(userId)
+          if (!cancelled) applyLoaded(forced, false)
+        } catch {
+          /* keep local */
+        }
       }
     })()
 
