@@ -2,6 +2,7 @@ import type { TasteStore } from '../types/taste'
 import { emptyTasteStore } from '../types/taste'
 import {
   fetchTasteStoreCloud,
+  fetchTasteStoreCloudMeta,
   mergeTasteStores,
   upsertTasteStoreCloud,
 } from './tasteCloud'
@@ -83,13 +84,35 @@ async function mergeLocalAndCloud(userId: string, local: StoredRow | null): Prom
   }
 
   try {
-    const cloud = await fetchTasteStoreCloud(userId)
     const localStore = local?.store
     const localEmpty = !localStore || isEmptyStore(localStore)
+    const cloudMeta = await fetchTasteStoreCloudMeta(userId)
+
+    if (!cloudMeta && local && !localEmpty) {
+      void upsertTasteStoreCloud(userId, local.store, local.updatedAt).catch((e) =>
+        console.warn('[taste] cloud seed failed', e),
+      )
+      return local.store
+    }
+
+    if (!cloudMeta) {
+      return local?.store ?? emptyTasteStore()
+    }
+
+    if (!localEmpty && local && cloudMeta.updatedAt <= local.updatedAt) {
+      void upsertTasteStoreCloud(userId, local.store, local.updatedAt).catch((e) =>
+        console.warn('[taste] cloud refresh failed', e),
+      )
+      return local.store
+    }
+
+    const cloud = await fetchTasteStoreCloud(userId)
     const cloudEmpty = !cloud || isEmptyStore(cloud.store)
 
     if (cloudEmpty && local && !localEmpty) {
-      await upsertTasteStoreCloud(userId, local.store, local.updatedAt)
+      void upsertTasteStoreCloud(userId, local.store, local.updatedAt).catch((e) =>
+        console.warn('[taste] cloud seed failed', e),
+      )
       return local.store
     }
 
@@ -102,7 +125,9 @@ async function mergeLocalAndCloud(userId: string, local: StoredRow | null): Prom
       const merged = mergeTasteStores(local.store, cloud!.store)
       const updatedAt = new Date().toISOString()
       await saveTasteStoreLocal(userId, merged, updatedAt)
-      await upsertTasteStoreCloud(userId, merged, updatedAt)
+      void upsertTasteStoreCloud(userId, merged, updatedAt).catch((e) =>
+        console.warn('[taste] cloud merge upsert failed', e),
+      )
       return merged
     }
 
@@ -111,6 +136,18 @@ async function mergeLocalAndCloud(userId: string, local: StoredRow | null): Prom
     console.warn('[taste] cloud load failed, using local', e)
     return local?.store ?? emptyTasteStore()
   }
+}
+
+/** Fast path: IndexedDB only (for instant UI). */
+export async function loadTasteStoreLocalOnly(userId: string): Promise<TasteStore> {
+  const local = await loadTasteStoreLocal(userId)
+  return local?.store ?? emptyTasteStore()
+}
+
+/** Background merge with Supabase. */
+export async function syncTasteStoreWithCloud(userId: string): Promise<TasteStore> {
+  const local = await loadTasteStoreLocal(userId)
+  return mergeLocalAndCloud(userId, local)
 }
 
 export async function loadTasteStore(userId: string): Promise<TasteStore> {
@@ -127,7 +164,6 @@ export async function saveTasteStore(userId: string, store: TasteStore): Promise
   try {
     await upsertTasteStoreCloud(userId, store, updatedAt)
   } catch (e) {
-    console.error('[taste] cloud save failed', e)
-    throw e
+    console.warn('[taste] cloud save failed', e)
   }
 }

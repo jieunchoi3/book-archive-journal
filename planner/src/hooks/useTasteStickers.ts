@@ -18,7 +18,11 @@ import {
   tasteCategoryMeta,
   tasteSubcategoryMeta,
 } from '../types/taste'
-import { loadTasteStore, saveTasteStore } from '../lib/tasteStorage'
+import {
+  loadTasteStoreLocalOnly,
+  saveTasteStore,
+  syncTasteStoreWithCloud,
+} from '../lib/tasteStorage'
 import { generateId, getTodayKey } from '../lib/weekUtils'
 import { useAuth } from './useAuth'
 
@@ -195,32 +199,46 @@ export function useTasteStickers(): TasteActions {
 
   useEffect(() => {
     let cancelled = false
+
+    const applyLoaded = (loaded: TasteStore) => {
+      const next = normalizeStore(loaded)
+      setStore(next)
+      const needsSave =
+        !loaded.categories?.length ||
+        next.stickers.length !== loaded.stickers.length ||
+        (loaded.stickers as LegacySticker[]).some(
+          (s) => !s.stripColor || !s.categoryId || s.subcategoryId === undefined,
+        ) ||
+        (loaded.categories as LegacyCategory[] | undefined)?.some(
+          (c) => !Array.isArray(c.subcategories),
+        ) ||
+        loaded.stickers.some((s, i) => {
+          const n = next.stickers[i]
+          const legacy = s as LegacySticker
+          return !n || n.categoryId !== (legacy.categoryId || legacy.kind)
+        })
+      if (needsSave) void saveTasteStore(userId, next)
+    }
+
     void (async () => {
       setLoading(true)
       try {
-        const loaded = await loadTasteStore(userId)
+        const local = await loadTasteStoreLocalOnly(userId)
         if (cancelled) return
-        const next = normalizeStore(loaded)
-        setStore(next)
-        const needsSave =
-          !loaded.categories?.length ||
-          next.stickers.length !== loaded.stickers.length ||
-          (loaded.stickers as LegacySticker[]).some(
-            (s) => !s.stripColor || !s.categoryId || s.subcategoryId === undefined,
-          ) ||
-          (loaded.categories as LegacyCategory[] | undefined)?.some(
-            (c) => !Array.isArray(c.subcategories),
-          ) ||
-          loaded.stickers.some((s, i) => {
-            const n = next.stickers[i]
-            const legacy = s as LegacySticker
-            return !n || n.categoryId !== (legacy.categoryId || legacy.kind)
-          })
-        if (needsSave) void saveTasteStore(userId, next)
+        applyLoaded(local)
       } finally {
         if (!cancelled) setLoading(false)
       }
+
+      try {
+        const synced = await syncTasteStoreWithCloud(userId)
+        if (cancelled) return
+        applyLoaded(synced)
+      } catch (e) {
+        console.warn('[taste] background sync failed', e)
+      }
     })()
+
     return () => {
       cancelled = true
     }
