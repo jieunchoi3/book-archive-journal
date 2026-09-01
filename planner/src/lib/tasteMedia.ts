@@ -65,19 +65,35 @@ async function signedUrls(paths: string[]): Promise<Map<string, string>> {
   return out
 }
 
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let index = 0
+  async function worker() {
+    while (index < items.length) {
+      const i = index++
+      results[i] = await fn(items[i])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()))
+  return results
+}
+
 /** Upload inline images and return a lean store safe for jsonb sync. */
 export async function prepareTasteStoreForCloud(
   userId: string,
   store: TasteStore,
 ): Promise<TasteStore> {
-  const stickers = await Promise.all(
-    store.stickers.map(async (sticker) => {
-      if (!isTasteDataUrl(sticker.imageDataUrl)) return sticker
-      const path = stickerImagePath(userId, sticker.id)
-      await uploadDataUrl(path, sticker.imageDataUrl)
-      return { ...sticker, imageDataUrl: toTasteStorageRef(path) }
-    }),
-  )
+  const stickers = await mapWithConcurrency(store.stickers, 4, async (sticker) => {
+    if (isTasteStorageRef(sticker.imageDataUrl)) return sticker
+    if (!isTasteDataUrl(sticker.imageDataUrl)) return sticker
+    const path = stickerImagePath(userId, sticker.id)
+    await uploadDataUrl(path, sticker.imageDataUrl)
+    return { ...sticker, imageDataUrl: toTasteStorageRef(path) }
+  })
 
   const monthBackgrounds: Record<string, string> = {}
   for (const [monthKey, bg] of Object.entries(store.monthBackgrounds)) {

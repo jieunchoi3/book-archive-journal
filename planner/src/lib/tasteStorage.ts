@@ -1,8 +1,11 @@
 import type { TasteStore } from '../types/taste'
 import { emptyTasteStore } from '../types/taste'
 import {
+  backfillTasteImagesToCloud,
   fetchTasteStoreCloud,
   fetchTasteStoreCloudMeta,
+  fetchTasteStoreCloudRaw,
+  localHasUnsyncedTasteImages,
   mergeTasteStores,
   upsertTasteStoreCloud,
 } from './tasteCloud'
@@ -89,9 +92,7 @@ async function mergeLocalAndCloud(userId: string, local: StoredRow | null): Prom
     const cloudMeta = await fetchTasteStoreCloudMeta(userId)
 
     if (!cloudMeta && local && !localEmpty) {
-      void upsertTasteStoreCloud(userId, local.store, local.updatedAt).catch((e) =>
-        console.warn('[taste] cloud seed failed', e),
-      )
+      await backfillTasteImagesToCloud(userId, local.store)
       return local.store
     }
 
@@ -99,39 +100,48 @@ async function mergeLocalAndCloud(userId: string, local: StoredRow | null): Prom
       return local?.store ?? emptyTasteStore()
     }
 
-    if (!localEmpty && local && cloudMeta.updatedAt <= local.updatedAt) {
+    let cloudStore: TasteStore | null = null
+    const shouldFetchCloud =
+      localEmpty || !local || cloudMeta.updatedAt > local.updatedAt
+
+    if (shouldFetchCloud) {
+      const cloud = await fetchTasteStoreCloud(userId)
+      cloudStore = cloud?.store ?? null
+    } else {
+      cloudStore = await fetchTasteStoreCloudRaw(userId)
+    }
+
+    if (local && !localEmpty && localHasUnsyncedTasteImages(local.store, cloudStore)) {
+      await backfillTasteImagesToCloud(userId, local.store)
+    }
+
+    if (localEmpty && cloudStore && !isEmptyStore(cloudStore)) {
+      await saveTasteStoreLocal(userId, cloudStore, cloudMeta.updatedAt)
+      return cloudStore
+    }
+
+    if (local && !localEmpty && cloudStore && !isEmptyStore(cloudStore)) {
+      const merged = mergeTasteStores(local.store, cloudStore)
+      const updatedAt = new Date().toISOString()
+      await saveTasteStoreLocal(userId, merged, updatedAt)
+      if (localHasUnsyncedTasteImages(merged, cloudStore)) {
+        await backfillTasteImagesToCloud(userId, merged)
+      } else {
+        void upsertTasteStoreCloud(userId, merged, updatedAt).catch((e) =>
+          console.warn('[taste] cloud merge upsert failed', e),
+        )
+      }
+      return merged
+    }
+
+    if (local && !localEmpty) {
       void upsertTasteStoreCloud(userId, local.store, local.updatedAt).catch((e) =>
         console.warn('[taste] cloud refresh failed', e),
       )
       return local.store
     }
 
-    const cloud = await fetchTasteStoreCloud(userId)
-    const cloudEmpty = !cloud || isEmptyStore(cloud.store)
-
-    if (cloudEmpty && local && !localEmpty) {
-      void upsertTasteStoreCloud(userId, local.store, local.updatedAt).catch((e) =>
-        console.warn('[taste] cloud seed failed', e),
-      )
-      return local.store
-    }
-
-    if (!cloudEmpty && localEmpty) {
-      await saveTasteStoreLocal(userId, cloud!.store, cloud!.updatedAt)
-      return cloud!.store
-    }
-
-    if (!cloudEmpty && local && !localEmpty) {
-      const merged = mergeTasteStores(local.store, cloud!.store)
-      const updatedAt = new Date().toISOString()
-      await saveTasteStoreLocal(userId, merged, updatedAt)
-      void upsertTasteStoreCloud(userId, merged, updatedAt).catch((e) =>
-        console.warn('[taste] cloud merge upsert failed', e),
-      )
-      return merged
-    }
-
-    return cloud?.store ?? local?.store ?? emptyTasteStore()
+    return cloudStore ?? local?.store ?? emptyTasteStore()
   } catch (e) {
     console.warn('[taste] cloud load failed, using local', e)
     return local?.store ?? emptyTasteStore()

@@ -3,6 +3,7 @@ import { supabase } from './supabase'
 import {
   hydrateTasteStoreFromCloud,
   isTasteDataUrl,
+  isTasteStorageRef,
   prepareTasteStoreForCloud,
 } from './tasteMedia'
 
@@ -87,6 +88,17 @@ function mergeCategories(local: TasteCategory[], cloud: TasteCategory[]): TasteC
   return [...map.values()]
 }
 
+export async function fetchTasteStoreCloudRaw(userId: string): Promise<TasteStore | null> {
+  const { data, error } = await supabase
+    .from('taste_stores')
+    .select('store')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) return null
+  return (data as { store?: TasteStore }).store ?? null
+}
+
 export async function fetchTasteStoreCloudMeta(
   userId: string,
 ): Promise<{ updatedAt: string } | null> {
@@ -130,6 +142,30 @@ export async function fetchTasteStoreCloud(
   }
 }
 
+export function localHasUnsyncedTasteImages(
+  local: TasteStore,
+  cloud?: TasteStore | null,
+): boolean {
+  const cloudRefIds = new Set(
+    (cloud?.stickers ?? [])
+      .filter((s) => isTasteStorageRef(s.imageDataUrl))
+      .map((s) => s.id),
+  )
+  const stickerNeedsUpload = local.stickers.some(
+    (s) => isTasteDataUrl(s.imageDataUrl) && !cloudRefIds.has(s.id),
+  )
+  if (stickerNeedsUpload) return true
+
+  const cloudBgRefs = new Set(
+    Object.entries(cloud?.monthBackgrounds ?? {})
+      .filter(([, bg]) => isTasteStorageRef(bg))
+      .map(([key]) => key),
+  )
+  return Object.entries(local.monthBackgrounds).some(
+    ([key, bg]) => isTasteDataUrl(bg) && !cloudBgRefs.has(key),
+  )
+}
+
 export async function upsertTasteStoreCloud(
   userId: string,
   store: TasteStore,
@@ -145,4 +181,24 @@ export async function upsertTasteStoreCloud(
     onConflict: 'user_id',
   })
   if (error) throw error
+}
+
+/** Push local polaroid photos to storage when cloud only has metadata. */
+export async function backfillTasteImagesToCloud(
+  userId: string,
+  store: TasteStore,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('taste_stores')
+    .select('store')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) throw error
+
+  const cloudStore = (data as { store?: TasteStore } | null)?.store ?? null
+  if (!localHasUnsyncedTasteImages(store, cloudStore)) return false
+
+  const updatedAt = new Date().toISOString()
+  await upsertTasteStoreCloud(userId, store, updatedAt)
+  return true
 }
