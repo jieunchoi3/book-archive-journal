@@ -1,9 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
-  <rect width="32" height="32" rx="8" fill="#F5F5F7"/>
-  <rect x="6" y="8" width="20" height="18" rx="3" stroke="#8E8E93" stroke-width="1.5"/>
-  <line x1="6" y1="13" x2="26" y2="13" stroke="#8E8E93" stroke-width="1.5"/>
-  <circle cx="11" cy="10.5" r="1" fill="#FF9500"/>
-  <circle cx="16" cy="10.5" r="1" fill="#5856D6"/>
-  <rect x="9" y="16" width="14" height="3" rx="1.5" fill="#007AFF" opacity="0.35"/>
-  <rect x="9" y="21" width="10" height="3" rx="1.5" fill="#34C759" opacity="0.35"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" role="img" aria-label="Weekly Planner">
+  <defs>
+    <linearGradient id="bg" x1="6" y1="4" x2="26" y2="28" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#9FD4C8"/>
+      <stop offset="1" stop-color="#6FB5A8"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="7" fill="url(#bg)"/>
+  <rect x="6.5" y="11" width="2.2" height="11" rx="1.1" fill="#FFFFFF" fill-opacity="0.38"/>
+  <rect x="9.8" y="10" width="2.2" height="12.5" rx="1.1" fill="#FFFFFF" fill-opacity="0.38"/>
+  <rect x="13.1" y="10.5" width="2.2" height="12" rx="1.1" fill="#FFFFFF" fill-opacity="0.38"/>
+  <rect x="16.4" y="8.5" width="2.4" height="15" rx="1.2" fill="#FFFFFF"/>
+  <circle cx="17.6" cy="11.2" r="0.65" fill="#6E6E73"/>
+  <rect x="19.9" y="10.5" width="2.2" height="12" rx="1.1" fill="#FFFFFF" fill-opacity="0.38"/>
+  <rect x="23.2" y="10" width="2.2" height="12.5" rx="1.1" fill="#FFFFFF" fill-opacity="0.38"/>
+  <rect x="26.5" y="11" width="2.2" height="11" rx="1.1" fill="#FFFFFF" fill-opacity="0.38"/>
 </svg>
