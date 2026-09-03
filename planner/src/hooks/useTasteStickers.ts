@@ -306,14 +306,36 @@ export function useTasteStickers(): TasteActions {
     }
   }, [])
 
+  useEffect(() => {
+    const resync = () => {
+      if (document.visibilityState !== 'visible') return
+      void syncTasteStoreWithCloud(userId)
+        .then((loaded) => {
+          setStore(normalizeStore(loaded))
+          setCloudEmpty(false)
+          setSyncError(null)
+        })
+        .catch((e) => {
+          console.warn('[taste] focus sync failed', e)
+        })
+    }
+    document.addEventListener('visibilitychange', resync)
+    window.addEventListener('focus', resync)
+    return () => {
+      document.removeEventListener('visibilitychange', resync)
+      window.removeEventListener('focus', resync)
+    }
+  }, [userId])
+
   const persist = useCallback(
     (next: TasteStore) => {
       setStore(next)
       if (saveTimer.current) clearTimeout(saveTimer.current)
       saveTimer.current = setTimeout(() => {
-        void saveTasteStore(userId, next).catch((e) =>
-          console.error('[taste] save failed', e),
-        )
+        void saveTasteStore(userId, next).catch((e) => {
+          console.error('[taste] save failed', e)
+          setSyncError(e instanceof Error ? e.message : 'Could not save taste data to Supabase')
+        })
       }, 300)
     },
     [userId],

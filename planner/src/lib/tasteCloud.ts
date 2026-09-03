@@ -234,7 +234,13 @@ export async function upsertTasteStoreCloud(
   store: TasteStore,
   updatedAt: string,
 ): Promise<void> {
-  const lean = await prepareTasteStoreForCloud(userId, store)
+  let lean: TasteStore
+  try {
+    lean = await prepareTasteStoreForCloud(userId, store)
+  } catch (e) {
+    console.warn('[taste] image prep failed, saving metadata only', e)
+    lean = stripInlineTasteImages(store)
+  }
   const row: TasteStoreRow = {
     user_id: userId,
     store: lean,

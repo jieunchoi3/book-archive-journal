@@ -45,6 +45,16 @@ async function uploadDataUrl(path: string, dataUrl: string): Promise<void> {
   if (error) throw error
 }
 
+async function tryUploadDataUrl(path: string, dataUrl: string): Promise<string | null> {
+  try {
+    await uploadDataUrl(path, dataUrl)
+    return toTasteStorageRef(path)
+  } catch (e) {
+    console.warn('[taste] image upload failed, saving metadata only', path, e)
+    return null
+  }
+}
+
 async function signedUrls(paths: string[]): Promise<Map<string, string>> {
   const unique = [...new Set(paths.filter(Boolean))]
   const out = new Map<string, string>()
@@ -91,8 +101,8 @@ export async function prepareTasteStoreForCloud(
     if (isTasteStorageRef(sticker.imageDataUrl)) return sticker
     if (!isTasteDataUrl(sticker.imageDataUrl)) return sticker
     const path = stickerImagePath(userId, sticker.id)
-    await uploadDataUrl(path, sticker.imageDataUrl)
-    return { ...sticker, imageDataUrl: toTasteStorageRef(path) }
+    const ref = await tryUploadDataUrl(path, sticker.imageDataUrl)
+    return ref ? { ...sticker, imageDataUrl: ref } : { ...sticker, imageDataUrl: '' }
   })
 
   const monthBackgrounds: Record<string, string> = {}
@@ -102,8 +112,8 @@ export async function prepareTasteStoreForCloud(
       continue
     }
     const path = monthBackgroundPath(userId, monthKey)
-    await uploadDataUrl(path, bg)
-    monthBackgrounds[monthKey] = toTasteStorageRef(path)
+    const ref = await tryUploadDataUrl(path, bg)
+    monthBackgrounds[monthKey] = ref ?? ''
   }
 
   return { ...store, stickers, monthBackgrounds }
