@@ -50,8 +50,12 @@ export function stripInlineTasteImages(store: TasteStore): TasteStore {
   }
 }
 
-export function mergeTasteStores(local: TasteStore, cloud: TasteStore): TasteStore {
-  const categories = mergeCategories(local.categories, cloud.categories)
+export function mergeTasteStores(
+  local: TasteStore,
+  cloud: TasteStore,
+  preferLocalCategories = false,
+): TasteStore {
+  const categories = mergeCategories(local.categories, cloud.categories, preferLocalCategories)
   const stickerMap = new Map<string, TasteStore['stickers'][number]>()
 
   for (const sticker of cloud.stickers) stickerMap.set(sticker.id, sticker)
@@ -88,10 +92,16 @@ function mergeTasteSticker(
   return merged
 }
 
-function mergeCategories(local: TasteCategory[], cloud: TasteCategory[]): TasteCategory[] {
+function mergeCategories(
+  local: TasteCategory[],
+  cloud: TasteCategory[],
+  preferLocal = false,
+): TasteCategory[] {
   const map = new Map<string, TasteCategory>()
-  for (const cat of local) map.set(cat.id, cat)
-  for (const cat of cloud) {
+  const [primary, secondary] = preferLocal ? [local, cloud] : [cloud, local]
+
+  for (const cat of secondary) map.set(cat.id, cat)
+  for (const cat of primary) {
     const prev = map.get(cat.id)
     if (!prev) {
       map.set(cat.id, cat)
@@ -99,9 +109,33 @@ function mergeCategories(local: TasteCategory[], cloud: TasteCategory[]): TasteC
     }
     const subMap = new Map(prev.subcategories.map((s) => [s.id, s]))
     for (const sub of cat.subcategories) subMap.set(sub.id, sub)
-    map.set(cat.id, { ...cat, subcategories: [...subMap.values()] })
+    map.set(cat.id, {
+      ...prev,
+      ...cat,
+      name: preferLocal ? cat.name : prev.name || cat.name,
+      accent: preferLocal ? cat.accent : prev.accent || cat.accent,
+      youtube: preferLocal ? cat.youtube : prev.youtube ?? cat.youtube,
+      subcategories: [...subMap.values()],
+    })
   }
   return [...map.values()]
+}
+
+export async function fetchTasteStoreCloudRawWithMeta(
+  userId: string,
+): Promise<{ store: TasteStore; updatedAt: string } | null> {
+  const { data, error } = await supabase
+    .from('taste_stores')
+    .select('store, updated_at')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) return null
+  const row = data as { store?: TasteStore; updated_at: string }
+  return {
+    store: row.store ?? { categories: [], stickers: [], monthBackgrounds: {} },
+    updatedAt: row.updated_at,
+  }
 }
 
 export async function fetchTasteStoreCloudRaw(userId: string): Promise<TasteStore | null> {

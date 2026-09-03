@@ -7,7 +7,7 @@ import {
 import {
   backfillTasteImagesToCloud,
   fetchTasteStoreCloud,
-  fetchTasteStoreCloudRaw,
+  fetchTasteStoreCloudRawWithMeta,
   localHasUnsyncedTasteImages,
   mergeTasteStores,
   upsertTasteStoreCloud,
@@ -80,32 +80,74 @@ async function saveTasteStoreLocal(
   })
 }
 
+function categoryCount(store: TasteStore | null | undefined): number {
+  return store?.categories?.length ?? 0
+}
+
+function parseTs(value: string | undefined): number {
+  if (!value) return 0
+  const ms = Date.parse(value)
+  return Number.isFinite(ms) ? ms : 0
+}
+
 async function mergeLocalAndCloud(userId: string, local: StoredRow | null): Promise<TasteStore> {
   if (!isSupabaseConfigured) {
     return local?.store ?? emptyTasteStore()
   }
 
+  const localStore = local?.store ?? emptyTasteStore()
+  const localUpdatedAt = local?.updatedAt ?? ''
+  const localTs = parseTs(localUpdatedAt)
+
   try {
-    const cloud = await fetchTasteStoreCloud(userId)
-    const cloudStore = cloud?.store ?? null
-    const localStore = local?.store ?? null
-    const localCount = stickerCount(localStore)
-    const cloudCount = stickerCount(cloudStore)
+    const cloudRow = await fetchTasteStoreCloudRawWithMeta(userId)
 
-    if (!cloudStore || cloudCount === 0) {
-      return localStore ?? emptyTasteStore()
+    if (!cloudRow) {
+      if (!isDefaultTasteStore(localStore)) {
+        const updatedAt = new Date().toISOString()
+        await saveTasteStoreLocal(userId, localStore, updatedAt)
+        await upsertTasteStoreCloud(userId, localStore, updatedAt)
+      }
+      return localStore
     }
 
-    if (localCount === 0) {
-      await saveTasteStoreLocal(userId, cloudStore, cloud!.updatedAt)
-      return cloudStore
+    const { store: cloudRaw, updatedAt: cloudUpdatedAt } = cloudRow
+    const cloudTs = parseTs(cloudUpdatedAt)
+    const localNewer = localTs > cloudTs
+    const cloudNewer = cloudTs > localTs
+    const localRicher =
+      categoryCount(localStore) > categoryCount(cloudRaw) ||
+      stickerCount(localStore) > stickerCount(cloudRaw)
+    const cloudRicher =
+      categoryCount(cloudRaw) > categoryCount(localStore) ||
+      stickerCount(cloudRaw) > stickerCount(localStore)
+
+    // Hydrate cloud images only when we will use cloud data on this device.
+    const cloudStore =
+      cloudRicher || (cloudNewer && !localNewer)
+        ? (await fetchTasteStoreCloud(userId))?.store ?? cloudRaw
+        : cloudRaw
+
+    const preferLocalCategories = localNewer || localRicher
+    const merged = mergeTasteStores(localStore, cloudStore, preferLocalCategories)
+
+    if (isDefaultTasteStore(localStore) && !isDefaultTasteStore(cloudStore)) {
+      await saveTasteStoreLocal(userId, merged, cloudUpdatedAt)
+      return merged
     }
 
-    const merged = mergeTasteStores(localStore!, cloudStore)
-    await saveTasteStoreLocal(userId, merged, cloud!.updatedAt)
+    if (localNewer || (localRicher && !cloudRicher)) {
+      const updatedAt = new Date().toISOString()
+      await saveTasteStoreLocal(userId, merged, updatedAt)
+      await upsertTasteStoreCloud(userId, merged, updatedAt)
+      if (localHasUnsyncedTasteImages(merged, cloudStore)) {
+        await backfillTasteImagesToCloud(userId, merged)
+      }
+      return merged
+    }
 
-    // Cloud has more metadata — treat Supabase as source of truth; only push local photos up.
-    if (cloudCount > localCount) {
+    if (cloudNewer || cloudRicher) {
+      await saveTasteStoreLocal(userId, merged, cloudUpdatedAt)
       if (localHasUnsyncedTasteImages(merged, cloudStore)) {
         await backfillTasteImagesToCloud(userId, merged)
       }
@@ -113,18 +155,14 @@ async function mergeLocalAndCloud(userId: string, local: StoredRow | null): Prom
     }
 
     const updatedAt = new Date().toISOString()
-    if (localHasUnsyncedTasteImages(merged, cloudStore)) {
-      await backfillTasteImagesToCloud(userId, merged)
-    } else if (merged.stickers.length >= localCount) {
-      void upsertTasteStoreCloud(userId, merged, updatedAt).catch((e) =>
-        console.warn('[taste] cloud merge upsert failed', e),
-      )
+    await saveTasteStoreLocal(userId, merged, updatedAt)
+    if (!isDefaultTasteStore(merged)) {
+      await upsertTasteStoreCloud(userId, merged, updatedAt)
     }
-
     return merged
   } catch (e) {
     console.warn('[taste] cloud load failed, using local', e)
-    return local?.store ?? emptyTasteStore()
+    return localStore
   }
 }
 
@@ -132,6 +170,11 @@ async function mergeLocalAndCloud(userId: string, local: StoredRow | null): Prom
 export async function loadTasteStoreLocalOnly(userId: string): Promise<TasteStore> {
   const local = await loadTasteStoreLocal(userId)
   return local?.store ?? emptyTasteStore()
+}
+
+/** IndexedDB row with updatedAt (for sync decisions). */
+export async function loadTasteStoreLocalRow(userId: string): Promise<StoredRow | null> {
+  return loadTasteStoreLocal(userId)
 }
 
 /** Background merge with Supabase. */
@@ -149,10 +192,11 @@ export async function saveTasteStore(userId: string, store: TasteStore): Promise
   let nextStore = store
   if (isSupabaseConfigured) {
     try {
-      const cloudStore = await fetchTasteStoreCloudRaw(userId)
+      const cloudMeta = await fetchTasteStoreCloudRawWithMeta(userId)
+      const cloudStore = cloudMeta?.store ?? null
       const cloudCount = stickerCount(cloudStore)
       if (cloudCount > store.stickers.length + 2) {
-        nextStore = mergeTasteStores(store, cloudStore!)
+        nextStore = mergeTasteStores(store, cloudStore!, true)
         console.warn(
           `[taste] merged cloud stickers before save (${store.stickers.length} -> ${nextStore.stickers.length})`,
         )
@@ -184,7 +228,12 @@ export async function reloadTasteStoreFromCloud(userId: string): Promise<TasteSt
   const cloud = await fetchTasteStoreCloud(userId)
   if (!cloud?.store) return localStore
 
-  const merged = mergeTasteStores(localStore, cloud.store)
+  const localTs = parseTs(local?.updatedAt)
+  const merged = mergeTasteStores(
+    localStore,
+    cloud.store,
+    localTs >= parseTs(cloud.updatedAt),
+  )
   await saveTasteStoreLocal(userId, merged, cloud.updatedAt)
 
   if (localHasUnsyncedTasteImages(merged, cloud.store)) {
@@ -196,62 +245,83 @@ export async function reloadTasteStoreFromCloud(userId: string): Promise<TasteSt
 
 /** Upload local taste data to cloud, then merge both sides (safe manual sync). */
 export async function syncTasteManual(userId: string): Promise<TasteStore> {
-  const local = await loadTasteStoreLocalOnly(userId)
-  if (!isDefaultTasteStore(local)) {
-    await publishLocalTasteIfCloudEmpty(userId, local)
-  }
-  const merged = await syncTasteStoreWithCloud(userId)
-  if (!isDefaultTasteStore(merged)) return merged
-  if (!isDefaultTasteStore(local)) return local
-  return merged
+  const localRow = await loadTasteStoreLocal(userId)
+  const local = localRow?.store ?? emptyTasteStore()
+  await publishLocalTasteIfNeeded(userId, local, localRow?.updatedAt)
+  return syncTasteStoreWithCloud(userId)
 }
 
-/** Push Safari/local data up when Supabase row is missing or still default-only. */
-export async function publishLocalTasteIfCloudEmpty(
+/** Upload local taste when cloud is missing, default-only, or older. */
+export async function publishLocalTasteIfNeeded(
   userId: string,
   localStore: TasteStore,
+  localUpdatedAt?: string,
 ): Promise<boolean> {
   if (!isSupabaseConfigured || isDefaultTasteStore(localStore)) return false
 
   try {
-    const cloudRaw = await fetchTasteStoreCloudRaw(userId)
-    if (cloudRaw && !isDefaultTasteStore(cloudRaw)) return false
+    const cloudMeta = await fetchTasteStoreCloudRawWithMeta(userId)
+    if (!cloudMeta) {
+      const updatedAt = new Date().toISOString()
+      await saveTasteStoreLocal(userId, localStore, updatedAt)
+      await upsertTasteStoreCloud(userId, localStore, updatedAt)
+      return true
+    }
 
-    const updatedAt = new Date().toISOString()
-    await saveTasteStoreLocal(userId, localStore, updatedAt)
-    await upsertTasteStoreCloud(userId, localStore, updatedAt)
-    console.info('[taste] published local store to cloud (cloud was empty/default)')
-    return true
+    const localTs = parseTs(localUpdatedAt)
+    const cloudTs = parseTs(cloudMeta.updatedAt)
+    const localRicher =
+      categoryCount(localStore) > categoryCount(cloudMeta.store) ||
+      stickerCount(localStore) > stickerCount(cloudMeta.store)
+
+    if (
+      isDefaultTasteStore(cloudMeta.store) ||
+      localTs > cloudTs ||
+      localRicher
+    ) {
+      const updatedAt = new Date().toISOString()
+      const merged = mergeTasteStores(localStore, cloudMeta.store, true)
+      await saveTasteStoreLocal(userId, merged, updatedAt)
+      await upsertTasteStoreCloud(userId, merged, updatedAt)
+      console.info('[taste] published newer local store to cloud')
+      return true
+    }
+
+    return false
   } catch (e) {
     console.warn('[taste] publish local to cloud failed', e)
     return false
   }
 }
 
-/** Pick cloud reload when Supabase has more data than this device (e.g. Dock PWA). */
+/** @deprecated use publishLocalTasteIfNeeded */
+export async function publishLocalTasteIfCloudEmpty(
+  userId: string,
+  localStore: TasteStore,
+): Promise<boolean> {
+  const local = await loadTasteStoreLocal(userId)
+  return publishLocalTasteIfNeeded(userId, localStore, local?.updatedAt)
+}
+
+/** Pick cloud reload when Supabase is newer or richer (Dock / phone). */
 export async function shouldReloadTasteFromCloud(userId: string): Promise<boolean> {
   if (!isSupabaseConfigured) return false
   try {
-    const [local, cloudRaw] = await Promise.all([
+    const [local, cloudMeta] = await Promise.all([
       loadTasteStoreLocal(userId),
-      fetchTasteStoreCloudRaw(userId),
+      fetchTasteStoreCloudRawWithMeta(userId),
     ])
-    if (!cloudRaw) return false
+    if (!cloudMeta) return false
 
     const localStore = local?.store ?? emptyTasteStore()
-    const cloudCount = cloudRaw.stickers?.length ?? 0
-    const localCount = stickerCount(localStore)
+    const localTs = parseTs(local?.updatedAt)
+    const cloudTs = parseTs(cloudMeta.updatedAt)
 
-    if (cloudCount > localCount) return true
-    if (isDefaultTasteStore(localStore) && hasCustomTasteCategories(cloudRaw)) return true
-    if (isDefaultTasteStore(localStore) && cloudCount > 0) return true
-    if (
-      !hasCustomTasteCategories(localStore) &&
-      hasCustomTasteCategories(cloudRaw) &&
-      localCount === 0
-    ) {
-      return true
-    }
+    if (cloudTs > localTs) return true
+    if (categoryCount(cloudMeta.store) > categoryCount(localStore)) return true
+    if (stickerCount(cloudMeta.store) > stickerCount(localStore)) return true
+    if (isDefaultTasteStore(localStore) && hasCustomTasteCategories(cloudMeta.store)) return true
+    if (isDefaultTasteStore(localStore) && stickerCount(cloudMeta.store) > 0) return true
 
     return false
   } catch {
