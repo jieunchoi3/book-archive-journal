@@ -18,6 +18,9 @@ import {
   tasteSubcategoryMeta,
 } from '../types/taste'
 import {
+  exportTasteBackupJson,
+  importTasteBackupJson,
+  isTasteCloudEmpty,
   loadTasteStoreLocalOnly,
   loadTasteStoreLocalRow,
   publishLocalTasteIfNeeded,
@@ -63,6 +66,7 @@ export interface TasteActions {
   loading: boolean
   syncing: boolean
   syncError: string | null
+  cloudEmpty: boolean
   stickers: TasteSticker[]
   categories: TasteCategory[]
   year: number
@@ -94,6 +98,8 @@ export interface TasteActions {
   setMonthBackground: (monthKey: string, dataUrl: string) => void
   clearMonthBackground: (monthKey: string) => void
   reloadFromCloud: () => Promise<void>
+  exportBackup: () => void
+  importBackup: (file: File) => Promise<boolean>
 }
 
 function randomTilt() {
@@ -208,6 +214,7 @@ export function useTasteStickers(): TasteActions {
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [syncError, setSyncError] = useState<string | null>(null)
+  const [cloudEmpty, setCloudEmpty] = useState(false)
   const [viewMonth, setViewMonthState] = useState(() => ({
     year: today.getFullYear(),
     month: today.getMonth(),
@@ -228,6 +235,7 @@ export function useTasteStickers(): TasteActions {
     try {
       const loaded = await syncTasteManual(userId)
       setStore(normalizeStore(loaded))
+      setCloudEmpty(await isTasteCloudEmpty(userId))
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Could not sync with Supabase'
       console.error('[taste] manual sync failed', e)
@@ -274,6 +282,7 @@ export function useTasteStickers(): TasteActions {
         if (cancelled) return
 
         applyLoaded(loaded, true)
+        setCloudEmpty(await isTasteCloudEmpty(userId))
       } catch (e) {
         console.warn('[taste] background sync failed', e)
         if (!cancelled) {
@@ -631,10 +640,41 @@ export function useTasteStickers(): TasteActions {
     setViewMonthState({ year, month })
   }, [])
 
+  const exportBackup = useCallback(() => {
+    const json = exportTasteBackupJson(userId, store)
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `taste-backup-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [store, userId])
+
+  const importBackup = useCallback(
+    async (file: File): Promise<boolean> => {
+      try {
+        const raw = await file.text()
+        const imported = importTasteBackupJson(raw)
+        if (!imported) return false
+        const next = normalizeStore(imported)
+        await saveTasteStore(userId, next)
+        setStore(next)
+        setCloudEmpty(await isTasteCloudEmpty(userId))
+        return true
+      } catch (e) {
+        console.error('[taste] import backup failed', e)
+        return false
+      }
+    },
+    [userId],
+  )
+
   return {
     loading,
     syncing,
     syncError,
+    cloudEmpty,
     stickers: store.stickers,
     categories: store.categories,
     year: viewMonth.year,
@@ -665,5 +705,7 @@ export function useTasteStickers(): TasteActions {
     setMonthBackground,
     clearMonthBackground,
     reloadFromCloud,
+    exportBackup,
+    importBackup,
   }
 }

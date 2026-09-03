@@ -221,7 +221,7 @@ export function TasteStickerView() {
             onClick={() => void taste.reloadFromCloud()}
             disabled={taste.syncing}
             className="inline-flex items-center gap-1.5 rounded-full bg-[#fffde8]/35 px-3 py-1.5 text-[12px] font-semibold text-[#fffac0] ring-1 ring-[#fffac0]/35 hover:bg-[#fffde8]/50 disabled:opacity-60"
-            title="Reload polaroids from Supabase"
+            title="Upload local taste data to Supabase"
           >
             <CloudDownload size={13} className={taste.syncing ? 'animate-pulse' : ''} />
             {taste.syncing ? 'Syncing…' : 'Upload sync'}
@@ -298,6 +298,20 @@ export function TasteStickerView() {
           )
         })()}
 
+        {taste.cloudEmpty && !taste.loading ? (
+          <p className="mb-3 rounded-xl bg-amber-950/50 px-4 py-2.5 text-center text-[12px] leading-relaxed text-amber-100 ring-1 ring-amber-300/30">
+            Supabase에 Taste 백업이 없습니다. 이 기기에만 저장 중이에요.{' '}
+            <button
+              type="button"
+              className="font-semibold underline"
+              onClick={() => void taste.reloadFromCloud()}
+            >
+              Upload sync
+            </button>
+            를 눌러 클라우드에 올리세요.
+          </p>
+        ) : null}
+
         {taste.syncError ? (
           <p className="mb-3 rounded-xl bg-red-950/40 px-4 py-2 text-center text-[12px] text-red-200 ring-1 ring-red-300/30">
             {taste.syncError}
@@ -346,6 +360,8 @@ export function TasteStickerView() {
             taste.renameSubcategory(categoryId, subId, name)
           }
           onDeleteSub={(categoryId, subId) => taste.deleteSubcategory(categoryId, subId)}
+          onExportBackup={taste.exportBackup}
+          onImportBackup={taste.importBackup}
         />
       )}
 
@@ -676,6 +692,8 @@ function CategoryManager({
   onAddSub,
   onRenameSub,
   onDeleteSub,
+  onExportBackup,
+  onImportBackup,
 }: {
   categories: TasteCategory[]
   onClose: () => void
@@ -685,6 +703,8 @@ function CategoryManager({
   onAddSub: (categoryId: string, name: string) => TasteSubcategory | null
   onRenameSub: (categoryId: string, subcategoryId: string, name: string) => void
   onDeleteSub: (categoryId: string, subcategoryId: string) => void
+  onExportBackup: () => void
+  onImportBackup: (file: File) => Promise<boolean>
 }) {
   const [draft, setDraft] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -693,6 +713,7 @@ function CategoryManager({
   const [editingSubKey, setEditingSubKey] = useState<string | null>(null)
   const [editingSubName, setEditingSubName] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const importRef = useRef<HTMLInputElement>(null)
 
   const add = () => {
     const created = onAdd(draft)
@@ -929,6 +950,39 @@ function CategoryManager({
             </button>
           </div>
           {error && <p className="text-[12px] text-[#FF3B30]">{error}</p>}
+
+          <div className="mt-4 border-t border-black/5 pt-4">
+            <p className="mb-2 text-[11px] font-medium text-[#8A7A6A]">Backup (categories + polaroid text)</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={onExportBackup}
+                className="rounded-xl bg-[#f0e6d4] px-3 py-2 text-[12px] font-semibold text-[#3a2010] hover:bg-[#e8dcc8]"
+              >
+                Export JSON
+              </button>
+              <button
+                type="button"
+                onClick={() => importRef.current?.click()}
+                className="rounded-xl bg-[#f0e6d4] px-3 py-2 text-[12px] font-semibold text-[#3a2010] hover:bg-[#e8dcc8]"
+              >
+                Import JSON
+              </button>
+              <input
+                ref={importRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  e.target.value = ''
+                  if (!file) return
+                  const ok = await onImportBackup(file)
+                  setError(ok ? null : 'Could not read backup file.')
+                }}
+              />
+            </div>
+          </div>
         </div>
       </div>
     </div>

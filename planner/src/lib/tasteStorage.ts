@@ -17,6 +17,70 @@ import { isSupabaseConfigured } from './supabase'
 const DB_NAME = 'planner-taste'
 const DB_VERSION = 1
 const STORE = 'store'
+const BACKUP_KEY = (userId: string) => `planner-taste-backup:v1:${userId}`
+
+function leanStoreForBackup(store: TasteStore): TasteStore {
+  return {
+    ...store,
+    stickers: store.stickers.map((s) => ({
+      ...s,
+      imageDataUrl: s.imageDataUrl?.startsWith('data:') ? '' : (s.imageDataUrl ?? ''),
+    })),
+    monthBackgrounds: Object.fromEntries(
+      Object.entries(store.monthBackgrounds).map(([key, bg]) => [
+        key,
+        bg?.startsWith('data:') ? '' : bg,
+      ]),
+    ),
+  }
+}
+
+function saveTasteBackup(userId: string, store: TasteStore, updatedAt: string): void {
+  try {
+    localStorage.setItem(
+      BACKUP_KEY(userId),
+      JSON.stringify({ store: leanStoreForBackup(store), updatedAt }),
+    )
+  } catch (e) {
+    console.warn('[taste] localStorage backup failed', e)
+  }
+}
+
+function loadTasteBackup(userId: string): StoredRow | null {
+  try {
+    const raw = localStorage.getItem(BACKUP_KEY(userId))
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { store?: TasteStore; updatedAt?: string }
+    if (!parsed.store?.categories?.length) return null
+    return {
+      id: rowId(userId),
+      userId,
+      store: parsed.store,
+      updatedAt: parsed.updatedAt ?? new Date(0).toISOString(),
+    }
+  } catch {
+    return null
+  }
+}
+
+/** Downloadable JSON backup (metadata; strips inline photos). */
+export function exportTasteBackupJson(userId: string, store: TasteStore): string {
+  return JSON.stringify(
+    { version: 1, userId, exportedAt: new Date().toISOString(), store: leanStoreForBackup(store) },
+    null,
+    2,
+  )
+}
+
+export function importTasteBackupJson(raw: string): TasteStore | null {
+  try {
+    const parsed = JSON.parse(raw) as { store?: TasteStore }
+    if (!parsed.store?.categories?.length) return null
+    return parsed.store
+  } catch {
+    return null
+  }
+}
 
 function rowId(userId: string) {
   return userId
@@ -49,7 +113,7 @@ function stickerCount(store: TasteStore | null | undefined): number {
 
 async function loadTasteStoreLocal(userId: string): Promise<StoredRow | null> {
   const db = await openDb()
-  return new Promise((resolve, reject) => {
+  const fromIdb = await new Promise<StoredRow | null>((resolve, reject) => {
     const tx = db.transaction(STORE, 'readonly')
     const req = tx.objectStore(STORE).get(rowId(userId))
     req.onsuccess = () => {
@@ -58,6 +122,15 @@ async function loadTasteStoreLocal(userId: string): Promise<StoredRow | null> {
     }
     req.onerror = () => reject(req.error)
   })
+
+  if (fromIdb?.store?.categories?.length) return fromIdb
+
+  const backup = loadTasteBackup(userId)
+  if (!backup) return fromIdb
+
+  console.info('[taste] restored store from localStorage backup')
+  await saveTasteStoreLocal(userId, backup.store, backup.updatedAt)
+  return backup
 }
 
 async function saveTasteStoreLocal(
@@ -75,7 +148,10 @@ async function saveTasteStoreLocal(
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readwrite')
     tx.objectStore(STORE).put(row)
-    tx.oncomplete = () => resolve()
+    tx.oncomplete = () => {
+      saveTasteBackup(userId, store, updatedAt)
+      resolve()
+    }
     tx.onerror = () => reject(tx.error)
   })
 }
@@ -215,6 +291,17 @@ export async function saveTasteStore(userId: string, store: TasteStore): Promise
     await upsertTasteStoreCloud(userId, nextStore, updatedAt)
   } catch (e) {
     console.warn('[taste] cloud save failed', e)
+  }
+}
+
+/** True when Supabase has no taste row for this user yet. */
+export async function isTasteCloudEmpty(userId: string): Promise<boolean> {
+  if (!isSupabaseConfigured) return true
+  try {
+    const meta = await fetchTasteStoreCloudRawWithMeta(userId)
+    return !meta || (stickerCount(meta.store) === 0 && !hasCustomTasteCategories(meta.store))
+  } catch {
+    return true
   }
 }
 
