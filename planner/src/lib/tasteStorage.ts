@@ -174,23 +174,35 @@ export async function saveTasteStore(userId: string, store: TasteStore): Promise
   }
 }
 
-/** Force reload from Supabase (cloud metadata wins; local photos overlay). */
+/** Merge cloud into local; never wipe local when cloud row is missing. */
 export async function reloadTasteStoreFromCloud(userId: string): Promise<TasteStore> {
   if (!isSupabaseConfigured) return loadTasteStoreLocalOnly(userId)
 
-  const cloud = await fetchTasteStoreCloud(userId)
-  if (!cloud?.store) return emptyTasteStore()
-
   const local = await loadTasteStoreLocal(userId)
-  const merged = local?.store
-    ? mergeTasteStores(local.store, cloud.store)
-    : cloud.store
+  const localStore = local?.store ?? emptyTasteStore()
+
+  const cloud = await fetchTasteStoreCloud(userId)
+  if (!cloud?.store) return localStore
+
+  const merged = mergeTasteStores(localStore, cloud.store)
   await saveTasteStoreLocal(userId, merged, cloud.updatedAt)
 
   if (localHasUnsyncedTasteImages(merged, cloud.store)) {
     await backfillTasteImagesToCloud(userId, merged)
   }
 
+  return merged
+}
+
+/** Upload local taste data to cloud, then merge both sides (safe manual sync). */
+export async function syncTasteManual(userId: string): Promise<TasteStore> {
+  const local = await loadTasteStoreLocalOnly(userId)
+  if (!isDefaultTasteStore(local)) {
+    await publishLocalTasteIfCloudEmpty(userId, local)
+  }
+  const merged = await syncTasteStoreWithCloud(userId)
+  if (!isDefaultTasteStore(merged)) return merged
+  if (!isDefaultTasteStore(local)) return local
   return merged
 }
 

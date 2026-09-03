@@ -224,7 +224,7 @@ export function TasteStickerView() {
             title="Reload polaroids from Supabase"
           >
             <CloudDownload size={13} className={taste.syncing ? 'animate-pulse' : ''} />
-            {taste.syncing ? 'Syncing…' : 'Sync cloud'}
+            {taste.syncing ? 'Syncing…' : 'Upload sync'}
           </button>
           <button
             type="button"

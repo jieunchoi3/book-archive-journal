@@ -23,6 +23,7 @@ import {
   reloadTasteStoreFromCloud,
   saveTasteStore,
   shouldReloadTasteFromCloud,
+  syncTasteManual,
   syncTasteStoreWithCloud,
 } from '../lib/tasteStorage'
 import { generateId, getTodayKey } from '../lib/weekUtils'
@@ -224,11 +225,11 @@ export function useTasteStickers(): TasteActions {
     setSyncing(true)
     setSyncError(null)
     try {
-      const loaded = await reloadTasteStoreFromCloud(userId)
+      const loaded = await syncTasteManual(userId)
       setStore(normalizeStore(loaded))
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Could not reload from Supabase'
-      console.error('[taste] cloud reload failed', e)
+      const message = e instanceof Error ? e.message : 'Could not sync with Supabase'
+      console.error('[taste] manual sync failed', e)
       setSyncError(message)
     } finally {
       setSyncing(false)
@@ -270,27 +271,13 @@ export function useTasteStickers(): TasteActions {
 
         if (cancelled) return
 
-        if (!preferCloud && loaded.stickers.length === 0) {
-          const forced = await reloadTasteStoreFromCloud(userId)
-          if (cancelled) return
-          applyLoaded(forced, true)
-          return
-        }
-
         applyLoaded(loaded, true)
       } catch (e) {
         console.warn('[taste] background sync failed', e)
-        try {
-          const forced = await reloadTasteStoreFromCloud(userId)
-          if (!cancelled) applyLoaded(forced, false)
-        } catch (reloadErr) {
-          if (!cancelled) {
-            setSyncError(
-              reloadErr instanceof Error
-                ? reloadErr.message
-                : 'Could not sync taste data from Supabase',
-            )
-          }
+        if (!cancelled) {
+          setSyncError(
+            e instanceof Error ? e.message : 'Could not sync taste data from Supabase',
+          )
         }
       } finally {
         if (!cancelled) setSyncing(false)
