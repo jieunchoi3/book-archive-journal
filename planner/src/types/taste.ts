@@ -107,6 +107,20 @@ export function isLightPolaroidStrip(color: string): boolean {
   return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.62
 }
 
+export const DEFAULT_TASTE_CATEGORY_IDS = new Set(
+  DEFAULT_TASTE_CATEGORIES.map((c) => c.id),
+)
+
+/** True when the user added categories beyond Music / Movie / Place / Food / Other. */
+export function hasCustomTasteCategories(store: TasteStore): boolean {
+  return store.categories.some((c) => !DEFAULT_TASTE_CATEGORY_IDS.has(c.id))
+}
+
+/** Fresh device or Dock PWA with no saved taste data yet. */
+export function isDefaultTasteStore(store: TasteStore): boolean {
+  return store.stickers.length === 0 && !hasCustomTasteCategories(store)
+}
+
 export function emptyTasteStore(): TasteStore {
   return {
     categories: DEFAULT_TASTE_CATEGORIES.map((c) => ({

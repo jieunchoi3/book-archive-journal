@@ -4,6 +4,7 @@ import {
   CheckSquare,
   ChevronLeft,
   ChevronRight,
+  CloudDownload,
   ImageIcon,
   ImagePlus,
   Palette,
@@ -217,6 +218,16 @@ export function TasteStickerView() {
           </button>
           <button
             type="button"
+            onClick={() => void taste.reloadFromCloud()}
+            disabled={taste.syncing}
+            className="inline-flex items-center gap-1.5 rounded-full bg-[#fffde8]/35 px-3 py-1.5 text-[12px] font-semibold text-[#fffac0] ring-1 ring-[#fffac0]/35 hover:bg-[#fffde8]/50 disabled:opacity-60"
+            title="Reload polaroids from Supabase"
+          >
+            <CloudDownload size={13} className={taste.syncing ? 'animate-pulse' : ''} />
+            {taste.syncing ? 'Syncing…' : 'Sync cloud'}
+          </button>
+          <button
+            type="button"
             onClick={() => setShowCategories(true)}
             className="inline-flex items-center gap-1.5 rounded-full bg-[#fffde8]/35 px-3 py-1.5 text-[12px] font-semibold text-[#fffac0] ring-1 ring-[#fffac0]/35 hover:bg-[#fffde8]/50"
           >
@@ -287,8 +298,16 @@ export function TasteStickerView() {
           )
         })()}
 
-        {taste.loading ? (
-          <p className="py-24 text-center text-sm text-[#fffac0]/80">Loading…</p>
+        {taste.syncError ? (
+          <p className="mb-3 rounded-xl bg-red-950/40 px-4 py-2 text-center text-[12px] text-red-200 ring-1 ring-red-300/30">
+            {taste.syncError}
+          </p>
+        ) : null}
+
+        {taste.loading || taste.syncing ? (
+          <p className="py-24 text-center text-sm text-[#fffac0]/80">
+            {taste.syncing ? 'Syncing from Supabase…' : 'Loading…'}
+          </p>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 md:gap-3">
             {!selectMode && (

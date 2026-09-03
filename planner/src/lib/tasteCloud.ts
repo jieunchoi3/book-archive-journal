@@ -115,6 +115,19 @@ export async function fetchTasteStoreCloudRaw(userId: string): Promise<TasteStor
   return (data as { store?: TasteStore }).store ?? null
 }
 
+export async function fetchTasteStoreCloudStickerCount(userId: string): Promise<number> {
+  const { data, error } = await supabase
+    .from('taste_stores')
+    .select('store')
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (error) throw error
+  if (!data) return 0
+  const store = (data as { store?: TasteStore }).store
+  return store?.stickers?.length ?? 0
+}
+
 export async function fetchTasteStoreCloudMeta(
   userId: string,
 ): Promise<{ updatedAt: string } | null> {

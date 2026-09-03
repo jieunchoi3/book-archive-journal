@@ -19,8 +19,10 @@ import {
 } from '../types/taste'
 import {
   loadTasteStoreLocalOnly,
+  publishLocalTasteIfCloudEmpty,
   reloadTasteStoreFromCloud,
   saveTasteStore,
+  shouldReloadTasteFromCloud,
   syncTasteStoreWithCloud,
 } from '../lib/tasteStorage'
 import { generateId, getTodayKey } from '../lib/weekUtils'
@@ -57,6 +59,8 @@ export type TasteStickerPatch = Partial<
 
 export interface TasteActions {
   loading: boolean
+  syncing: boolean
+  syncError: string | null
   stickers: TasteSticker[]
   categories: TasteCategory[]
   year: number
@@ -87,6 +91,7 @@ export interface TasteActions {
   deleteSubcategory: (categoryId: string, subcategoryId: string) => void
   setMonthBackground: (monthKey: string, dataUrl: string) => void
   clearMonthBackground: (monthKey: string) => void
+  reloadFromCloud: () => Promise<void>
 }
 
 function randomTilt() {
@@ -199,6 +204,8 @@ export function useTasteStickers(): TasteActions {
   const today = new Date()
   const [store, setStore] = useState<TasteStore>(emptyTasteStore)
   const [loading, setLoading] = useState(true)
+  const [syncing, setSyncing] = useState(false)
+  const [syncError, setSyncError] = useState<string | null>(null)
   const [viewMonth, setViewMonthState] = useState(() => ({
     year: today.getFullYear(),
     month: today.getMonth(),
@@ -212,6 +219,21 @@ export function useTasteStickers(): TasteActions {
     setKindFilterState(kind)
     setSubFilter('all')
   }, [])
+
+  const reloadFromCloud = useCallback(async () => {
+    setSyncing(true)
+    setSyncError(null)
+    try {
+      const loaded = await reloadTasteStoreFromCloud(userId)
+      setStore(normalizeStore(loaded))
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Could not reload from Supabase'
+      console.error('[taste] cloud reload failed', e)
+      setSyncError(message)
+    } finally {
+      setSyncing(false)
+    }
+  }, [userId])
 
   useEffect(() => {
     let cancelled = false
@@ -227,32 +249,51 @@ export function useTasteStickers(): TasteActions {
 
     void (async () => {
       setLoading(true)
+      setSyncError(null)
+      let local = emptyTasteStore()
       try {
-        const local = await loadTasteStoreLocalOnly(userId)
+        local = await loadTasteStoreLocalOnly(userId)
         if (cancelled) return
         applyLoaded(local, false)
       } finally {
         if (!cancelled) setLoading(false)
       }
 
+      setSyncing(true)
       try {
-        const synced = await syncTasteStoreWithCloud(userId)
+        await publishLocalTasteIfCloudEmpty(userId, local)
+
+        const preferCloud = await shouldReloadTasteFromCloud(userId)
+        const loaded = preferCloud
+          ? await reloadTasteStoreFromCloud(userId)
+          : await syncTasteStoreWithCloud(userId)
+
         if (cancelled) return
-        if (synced.stickers.length === 0) {
+
+        if (!preferCloud && loaded.stickers.length === 0) {
           const forced = await reloadTasteStoreFromCloud(userId)
           if (cancelled) return
           applyLoaded(forced, true)
           return
         }
-        applyLoaded(synced, true)
+
+        applyLoaded(loaded, true)
       } catch (e) {
         console.warn('[taste] background sync failed', e)
         try {
           const forced = await reloadTasteStoreFromCloud(userId)
           if (!cancelled) applyLoaded(forced, false)
-        } catch {
-          /* keep local */
+        } catch (reloadErr) {
+          if (!cancelled) {
+            setSyncError(
+              reloadErr instanceof Error
+                ? reloadErr.message
+                : 'Could not sync taste data from Supabase',
+            )
+          }
         }
+      } finally {
+        if (!cancelled) setSyncing(false)
       }
     })()
 
@@ -603,6 +644,8 @@ export function useTasteStickers(): TasteActions {
 
   return {
     loading,
+    syncing,
+    syncError,
     stickers: store.stickers,
     categories: store.categories,
     year: viewMonth.year,
@@ -632,5 +675,6 @@ export function useTasteStickers(): TasteActions {
     deleteSubcategory,
     setMonthBackground,
     clearMonthBackground,
+    reloadFromCloud,
   }
 }
