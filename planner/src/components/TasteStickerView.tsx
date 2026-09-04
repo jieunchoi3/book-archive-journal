@@ -4,7 +4,6 @@ import {
   CheckSquare,
   ChevronLeft,
   ChevronRight,
-  CloudDownload,
   ImageIcon,
   ImagePlus,
   Palette,
@@ -218,16 +217,6 @@ export function TasteStickerView() {
           </button>
           <button
             type="button"
-            onClick={() => void taste.reloadFromCloud()}
-            disabled={taste.syncing}
-            className="inline-flex items-center gap-1.5 rounded-full bg-[#fffde8]/35 px-3 py-1.5 text-[12px] font-semibold text-[#fffac0] ring-1 ring-[#fffac0]/35 hover:bg-[#fffde8]/50 disabled:opacity-60"
-            title="Upload local taste data to Supabase"
-          >
-            <CloudDownload size={13} className={taste.syncing ? 'animate-pulse' : ''} />
-            {taste.syncing ? 'Syncing…' : 'Upload sync'}
-          </button>
-          <button
-            type="button"
             onClick={() => setShowCategories(true)}
             className="inline-flex items-center gap-1.5 rounded-full bg-[#fffde8]/35 px-3 py-1.5 text-[12px] font-semibold text-[#fffac0] ring-1 ring-[#fffac0]/35 hover:bg-[#fffde8]/50"
           >
@@ -300,15 +289,8 @@ export function TasteStickerView() {
 
         {taste.cloudEmpty && !taste.loading ? (
           <p className="mb-3 rounded-xl bg-amber-950/50 px-4 py-2.5 text-center text-[12px] leading-relaxed text-amber-100 ring-1 ring-amber-300/30">
-            Supabase에 Taste 백업이 없습니다. 이 기기에만 저장 중이에요.{' '}
-            <button
-              type="button"
-              className="font-semibold underline"
-              onClick={() => void taste.reloadFromCloud()}
-            >
-              Upload sync
-            </button>
-            를 눌러 클라우드에 올리세요.
+            Taste data is syncing to the cloud automatically. Polaroids added on this device will
+            appear on your other devices shortly.
           </p>
         ) : null}
 
