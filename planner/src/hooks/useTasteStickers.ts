@@ -25,6 +25,7 @@ import {
   loadTasteStoreLocalRow,
   publishLocalTasteIfNeeded,
   reloadTasteStoreFromCloud,
+  restoreTasteCategoriesIfNeeded,
   saveTasteStore,
   shouldReloadTasteFromCloud,
   syncTasteManual,
@@ -275,9 +276,12 @@ export function useTasteStickers(): TasteActions {
         await publishLocalTasteIfNeeded(userId, local, localRow?.updatedAt)
 
         const preferCloud = await shouldReloadTasteFromCloud(userId)
-        const loaded = preferCloud
+        let loaded = preferCloud
           ? await reloadTasteStoreFromCloud(userId)
           : await syncTasteStoreWithCloud(userId)
+
+        const restored = await restoreTasteCategoriesIfNeeded(userId)
+        if (restored) loaded = restored
 
         if (cancelled) return
 

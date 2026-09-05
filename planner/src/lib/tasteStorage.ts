@@ -1,5 +1,9 @@
 import type { TasteStore } from '../types/taste'
 import {
+  applyRestoredTasteCategories,
+  needsTasteCategoryRestore,
+} from '../data/tasteCategorySeed'
+import {
   emptyTasteStore,
   hasCustomTasteCategories,
   isDefaultTasteStore,
@@ -387,4 +391,51 @@ export async function shouldReloadTasteFromCloud(userId: string): Promise<boolea
   } catch {
     return false
   }
+}
+
+export function restoreCategoriesInStore(store: TasteStore): TasteStore | null {
+  if (!needsTasteCategoryRestore(store.categories)) return null
+  return {
+    ...store,
+    categories: applyRestoredTasteCategories(store.categories),
+  }
+}
+
+/** Restore Aug 2026 category list when factory defaults replaced custom categories. */
+export async function restoreTasteCategoriesIfNeeded(userId: string): Promise<TasteStore | null> {
+  const localRow = await loadTasteStoreLocal(userId)
+  const localStore = localRow?.store ?? emptyTasteStore()
+
+  let cloudStore = localStore
+  if (isSupabaseConfigured) {
+    try {
+      const cloud = await fetchTasteStoreCloudRawWithMeta(userId)
+      if (cloud?.store) cloudStore = cloud.store
+    } catch (e) {
+      console.warn('[taste] category restore cloud read failed', e)
+    }
+  }
+
+  const stickerMap = new Map<string, TasteStore['stickers'][number]>()
+  for (const s of cloudStore.stickers) stickerMap.set(s.id, s)
+  for (const s of localStore.stickers) stickerMap.set(s.id, s)
+
+  const base: TasteStore = {
+    categories: cloudStore.categories.length ? cloudStore.categories : localStore.categories,
+    stickers: [...stickerMap.values()],
+    monthBackgrounds: { ...cloudStore.monthBackgrounds, ...localStore.monthBackgrounds },
+  }
+
+  const restored = restoreCategoriesInStore(base)
+  if (!restored) return null
+
+  const updatedAt = new Date().toISOString()
+  await saveTasteStoreLocal(userId, restored, updatedAt)
+
+  if (isSupabaseConfigured) {
+    await upsertTasteStoreCloud(userId, restored, updatedAt)
+  }
+
+  console.info('[taste] restored custom category list')
+  return restored
 }
