@@ -114,6 +114,32 @@ export function DiaryFlipBook({
 
   return (
     <div className="relative">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => go('prev')}
+          disabled={spreadIndex === 0}
+          className="inline-flex items-center gap-1 rounded-full bg-white px-3.5 py-2 text-[12px] font-medium text-[#1C1C1E] shadow-sm ring-1 ring-hairline disabled:opacity-35"
+        >
+          <ChevronLeft size={16} />
+          Prev
+        </button>
+        <p className="text-[12px] tabular-nums text-muted">
+          {spreadIndex + 1} / {spreadCount}
+          <span className="mx-1.5 text-[#C7C7CC]">·</span>
+          {pages.length} {pages.length === 1 ? 'page' : 'pages'}
+        </p>
+        <button
+          type="button"
+          onClick={() => go('next')}
+          disabled={spreadIndex >= spreadCount - 1}
+          className="inline-flex items-center gap-1 rounded-full bg-white px-3.5 py-2 text-[12px] font-medium text-[#1C1C1E] shadow-sm ring-1 ring-hairline disabled:opacity-35"
+        >
+          Next
+          <ChevronRight size={16} />
+        </button>
+      </div>
+
       <div
         className="overflow-hidden rounded-2xl border border-hairline bg-[#EDE6DC] shadow-sm"
         onTouchStart={(e) => {
@@ -151,32 +177,6 @@ export function DiaryFlipBook({
             onOpen={right ? () => onOpenDay(right.dateKey) : undefined}
           />
         </div>
-      </div>
-
-      <div className="mt-4 flex items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={() => go('prev')}
-          disabled={spreadIndex === 0}
-          className="inline-flex items-center gap-1 rounded-full bg-white px-3.5 py-2 text-[12px] font-medium text-[#1C1C1E] shadow-sm ring-1 ring-hairline disabled:opacity-35"
-        >
-          <ChevronLeft size={16} />
-          Prev
-        </button>
-        <p className="text-[12px] tabular-nums text-muted">
-          {spreadIndex + 1} / {spreadCount}
-          <span className="mx-1.5 text-[#C7C7CC]">·</span>
-          {pages.length} {pages.length === 1 ? 'page' : 'pages'}
-        </p>
-        <button
-          type="button"
-          onClick={() => go('next')}
-          disabled={spreadIndex >= spreadCount - 1}
-          className="inline-flex items-center gap-1 rounded-full bg-white px-3.5 py-2 text-[12px] font-medium text-[#1C1C1E] shadow-sm ring-1 ring-hairline disabled:opacity-35"
-        >
-          Next
-          <ChevronRight size={16} />
-        </button>
       </div>
     </div>
   )
