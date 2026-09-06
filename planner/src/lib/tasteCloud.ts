@@ -50,29 +50,75 @@ export function stripInlineTasteImages(store: TasteStore): TasteStore {
   }
 }
 
+function parseTs(value: string | undefined): number {
+  if (!value) return 0
+  const ms = Date.parse(value)
+  return Number.isFinite(ms) ? ms : 0
+}
+
+export function mergeDeletedStickerIds(
+  a: Record<string, string> | undefined,
+  b: Record<string, string> | undefined,
+): Record<string, string> {
+  const out: Record<string, string> = { ...(a ?? {}) }
+  for (const [id, ts] of Object.entries(b ?? {})) {
+    const prev = out[id]
+    if (!prev || parseTs(ts) > parseTs(prev)) out[id] = ts
+  }
+  return out
+}
+
+function isStickerTombstoned(
+  id: string,
+  deletedStickerIds: Record<string, string>,
+  sticker?: TasteStore['stickers'][number],
+): boolean {
+  const deletedAt = deletedStickerIds[id]
+  if (!deletedAt) return false
+  if (!sticker) return true
+  return parseTs(deletedAt) >= parseTs(sticker.createdAt)
+}
+
+/** Remove stickers and record tombstones so deletes survive cross-device sync. */
+export function markTasteStickersDeleted(store: TasteStore, ids: string[]): TasteStore {
+  if (!ids.length) return store
+  const now = new Date().toISOString()
+  const deletedStickerIds = mergeDeletedStickerIds(
+    store.deletedStickerIds,
+    Object.fromEntries(ids.map((id) => [id, now])),
+  )
+  const idSet = new Set(ids)
+  return {
+    ...store,
+    stickers: store.stickers.filter((s) => !idSet.has(s.id)),
+    deletedStickerIds,
+  }
+}
+
 export function mergeTasteStores(
   local: TasteStore,
   cloud: TasteStore,
   preferLocalCategories = false,
 ): TasteStore {
   const categories = mergeCategories(local.categories, cloud.categories, preferLocalCategories)
+  const deletedStickerIds = mergeDeletedStickerIds(local.deletedStickerIds, cloud.deletedStickerIds)
   const stickerMap = new Map<string, TasteStore['stickers'][number]>()
 
-  for (const sticker of cloud.stickers) stickerMap.set(sticker.id, sticker)
-  for (const sticker of local.stickers) {
+  const consider = (sticker: TasteStore['stickers'][number]) => {
+    if (isStickerTombstoned(sticker.id, deletedStickerIds, sticker)) return
     const prev = stickerMap.get(sticker.id)
-    if (!prev) {
-      stickerMap.set(sticker.id, sticker)
-      continue
-    }
-    stickerMap.set(sticker.id, mergeTasteSticker(prev, sticker))
+    stickerMap.set(sticker.id, prev ? mergeTasteSticker(prev, sticker) : sticker)
   }
+
+  for (const sticker of cloud.stickers) consider(sticker)
+  for (const sticker of local.stickers) consider(sticker)
 
   const monthBackgrounds = { ...cloud.monthBackgrounds, ...local.monthBackgrounds }
   return {
     categories,
     stickers: [...stickerMap.values()],
     monthBackgrounds,
+    deletedStickerIds,
   }
 }
 

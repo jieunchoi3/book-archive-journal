@@ -17,6 +17,7 @@ import {
   tasteCategoryMeta,
   tasteSubcategoryMeta,
 } from '../types/taste'
+import { markTasteStickersDeleted } from '../lib/tasteCloud'
 import {
   exportTasteBackupJson,
   importTasteBackupJson,
@@ -332,15 +333,23 @@ export function useTasteStickers(): TasteActions {
   }, [userId])
 
   const persist = useCallback(
-    (next: TasteStore) => {
+    (next: TasteStore, options?: { immediate?: boolean }) => {
       setStore(next)
       if (saveTimer.current) clearTimeout(saveTimer.current)
-      saveTimer.current = setTimeout(() => {
+
+      const save = () => {
         void saveTasteStore(userId, next).catch((e) => {
           console.error('[taste] save failed', e)
           setSyncError(e instanceof Error ? e.message : 'Could not save taste data to Supabase')
         })
-      }, 300)
+      }
+
+      if (options?.immediate) {
+        save()
+        return
+      }
+
+      saveTimer.current = setTimeout(save, 300)
     },
     [userId],
   )
@@ -458,7 +467,7 @@ export function useTasteStickers(): TasteActions {
 
   const deleteSticker = useCallback(
     (id: string) => {
-      persist({ ...store, stickers: store.stickers.filter((s) => s.id !== id) })
+      persist(markTasteStickersDeleted(store, [id]), { immediate: true })
     },
     [persist, store],
   )
@@ -466,8 +475,7 @@ export function useTasteStickers(): TasteActions {
   const deleteStickers = useCallback(
     (ids: string[]) => {
       if (!ids.length) return
-      const idSet = new Set(ids)
-      persist({ ...store, stickers: store.stickers.filter((s) => !idSet.has(s.id)) })
+      persist(markTasteStickersDeleted(store, ids), { immediate: true })
     },
     [persist, store],
   )

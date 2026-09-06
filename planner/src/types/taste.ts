@@ -43,6 +43,8 @@ export interface TasteStore {
   stickers: TasteSticker[]
   /** Per-month full-bleed backgrounds keyed by YYYY-MM (compressed data URLs). */
   monthBackgrounds: Record<string, string>
+  /** Sticker ids deleted on this device; id -> ISO timestamp (synced to cloud). */
+  deletedStickerIds?: Record<string, string>
 }
 
 /** Built-in scrapbook stripe used when a month has no custom background. */

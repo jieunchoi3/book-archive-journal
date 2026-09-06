@@ -382,10 +382,16 @@ export async function shouldReloadTasteFromCloud(userId: string): Promise<boolea
     const cloudTs = parseTs(cloudMeta.updatedAt)
 
     if (cloudTs > localTs) return true
-    if (categoryCount(cloudMeta.store) > categoryCount(localStore)) return true
-    if (stickerCount(cloudMeta.store) > stickerCount(localStore)) return true
+
     if (isDefaultTasteStore(localStore) && hasCustomTasteCategories(cloudMeta.store)) return true
     if (isDefaultTasteStore(localStore) && stickerCount(cloudMeta.store) > 0) return true
+
+    // Local is newer or equal — do not reload just because cloud has more stickers
+    // (that pattern is usually a delete that has not finished syncing yet).
+    if (localTs >= cloudTs) return false
+
+    if (categoryCount(cloudMeta.store) > categoryCount(localStore)) return true
+    if (stickerCount(cloudMeta.store) > stickerCount(localStore)) return true
 
     return false
   } catch {
@@ -416,14 +422,9 @@ export async function restoreTasteCategoriesIfNeeded(userId: string): Promise<Ta
     }
   }
 
-  const stickerMap = new Map<string, TasteStore['stickers'][number]>()
-  for (const s of cloudStore.stickers) stickerMap.set(s.id, s)
-  for (const s of localStore.stickers) stickerMap.set(s.id, s)
-
-  const base: TasteStore = {
-    categories: cloudStore.categories.length ? cloudStore.categories : localStore.categories,
-    stickers: [...stickerMap.values()],
-    monthBackgrounds: { ...cloudStore.monthBackgrounds, ...localStore.monthBackgrounds },
+  const base = mergeTasteStores(localStore, cloudStore, true)
+  if (cloudStore.categories.length && !localStore.categories.length) {
+    base.categories = cloudStore.categories
   }
 
   const restored = restoreCategoriesInStore(base)
