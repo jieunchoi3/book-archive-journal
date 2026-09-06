@@ -57,6 +57,7 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
   const [filter, setFilter] = useState<WishlistFilter>({ type: 'all' })
   const [editingItem, setEditingItem] = useState<WishlistItem | null>(null)
   const [purchaseItem, setPurchaseItem] = useState<WishlistItem | null>(null)
+  const [addFormKey, setAddFormKey] = useState(0)
 
   const purchasedCount = useMemo(
     () => wishlistItems.filter((i) => i.status === 'purchased').length,
@@ -128,6 +129,7 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
       note: values.note,
       imageDataUrl: values.imageDataUrl,
     })
+    setAddFormKey((k) => k + 1)
   }
 
   const handleUpdate = (values: {
@@ -187,6 +189,7 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
         <div className="grid gap-4 lg:grid-cols-[minmax(0,320px)_1fr]">
           {filter.type !== 'purchased' && (
             <WishlistItemForm
+              key={editingItem ? `edit-${editingItem.id}` : `add-${addFormKey}`}
               categories={wishlistCategories}
               initial={formInitial}
               submitLabel={editingItem ? 'Save changes' : 'Add item'}
