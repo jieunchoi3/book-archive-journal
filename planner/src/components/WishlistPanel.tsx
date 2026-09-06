@@ -13,6 +13,7 @@ import { formatMoney } from '../types/expense'
 import {
   categoryPathLabel,
   itemMatchesFilter,
+  wishlistItemSubtitle,
   type WishlistFilter,
   wishlistPriorityLabel,
 } from '../lib/wishlistCategories'
@@ -79,6 +80,7 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
   const handleAdd = (values: {
     name: string
     brand: string
+    store: string
     categoryId: string
     estimatedPrice: string
     priority: WishlistItem['priority']
@@ -91,6 +93,7 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
     addWishlistItem({
       name: values.name,
       brand: values.brand,
+      shop: values.store,
       categoryId: values.categoryId,
       estimatedPrice: price != null && price > 0 ? price : null,
       priority: values.priority,
@@ -102,6 +105,7 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
   const handleUpdate = (values: {
     name: string
     brand: string
+    store: string
     categoryId: string
     estimatedPrice: string
     priority: WishlistItem['priority']
@@ -115,6 +119,7 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
     updateWishlistItem(editingItem.id, {
       name: values.name,
       brand: values.brand,
+      store: values.store,
       categoryId: values.categoryId,
       estimatedPrice: price != null && price > 0 ? price : null,
       priority: values.priority,
@@ -203,8 +208,10 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
                           </span>
                         )}
                       </div>
-                      {item.brand && (
-                        <p className="mt-0.5 text-[13px] text-muted">{item.brand}</p>
+                      {wishlistItemSubtitle(item) && (
+                        <p className="mt-0.5 text-[13px] text-muted">
+                          {wishlistItemSubtitle(item)}
+                        </p>
                       )}
                       <p className="mt-1 text-[11px] text-[#8B5A2B]">
                         {categoryPathLabel(wishlistCategories, item.categoryId)}

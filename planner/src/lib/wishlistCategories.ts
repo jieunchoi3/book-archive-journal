@@ -281,9 +281,32 @@ export function wishlistStatusLabel(status: WishlistStatus): string {
   }
 }
 
-export function buildWishlistNote(item: Pick<WishlistItem, 'brand' | 'name' | 'note'>): string {
-  const title = [item.brand.trim(), item.name.trim()].filter(Boolean).join(' ')
+export function buildWishlistNote(
+  item: Pick<WishlistItem, 'store' | 'brand' | 'name' | 'note'>,
+): string {
+  const title = wishlistItemTitle(item)
   if (!item.note.trim()) return title
   if (!title) return item.note.trim()
   return `${title} — ${item.note.trim()}`
+}
+
+export function wishlistItemTitle(
+  item: Pick<WishlistItem, 'store' | 'brand' | 'name'>,
+): string {
+  const product = [item.brand.trim(), item.name.trim()].filter(Boolean).join(' ')
+  const store = item.store.trim()
+  if (store && product) return `${store} · ${product}`
+  return store || product
+}
+
+export function wishlistItemSubtitle(
+  item: Pick<WishlistItem, 'store' | 'brand' | 'name'>,
+): string | null {
+  const store = item.store.trim()
+  const brand = item.brand.trim()
+  const parts: string[] = []
+  if (store) parts.push(store)
+  if (brand) parts.push(brand)
+  if (parts.length === 0) return null
+  return parts.join(' · ')
 }

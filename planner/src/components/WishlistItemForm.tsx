@@ -11,6 +11,7 @@ import {
 export type WishlistItemFormValues = {
   name: string
   brand: string
+  store: string
   categoryId: string
   estimatedPrice: string
   priority: WishlistPriority
@@ -36,6 +37,7 @@ export function WishlistItemForm({
   const defaultCategoryId = initial?.categoryId ?? defaultWishlistCategoryId(categories)
   const [name, setName] = useState(initial?.name ?? '')
   const [brand, setBrand] = useState(initial?.brand ?? '')
+  const [store, setStore] = useState(initial?.store ?? '')
   const [categoryId, setCategoryId] = useState(defaultCategoryId)
   const [estimatedPrice, setEstimatedPrice] = useState(
     initial?.estimatedPrice != null ? String(initial.estimatedPrice) : '',
@@ -47,6 +49,7 @@ export function WishlistItemForm({
   useEffect(() => {
     setName(initial?.name ?? '')
     setBrand(initial?.brand ?? '')
+    setStore(initial?.store ?? '')
     setCategoryId(initial?.categoryId ?? defaultWishlistCategoryId(categories))
     setEstimatedPrice(initial?.estimatedPrice != null ? String(initial.estimatedPrice) : '')
     setPriority(initial?.priority ?? 'medium')
@@ -84,6 +87,7 @@ export function WishlistItemForm({
     onSubmit({
       name,
       brand,
+      store,
       categoryId,
       estimatedPrice,
       priority,
@@ -119,6 +123,18 @@ export function WishlistItemForm({
             value={brand}
             onChange={(e) => setBrand(e.target.value)}
             placeholder="e.g. Nike"
+            className="w-full rounded-xl border border-hairline bg-[#FAFAFA] px-3 py-2 text-[14px]"
+          />
+        </label>
+
+        <label className="block">
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">
+            Store / shop
+          </span>
+          <input
+            value={store}
+            onChange={(e) => setStore(e.target.value)}
+            placeholder="e.g. TK Maxx, Olive Young"
             className="w-full rounded-xl border border-hairline bg-[#FAFAFA] px-3 py-2 text-[14px]"
           />
         </label>
