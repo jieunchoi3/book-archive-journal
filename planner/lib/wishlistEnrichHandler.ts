@@ -94,6 +94,21 @@ function parseJsonFromModel(raw: string): EnrichResult {
   return JSON.parse(cleaned) as EnrichResult
 }
 
+type LlmAuth =
+  | { kind: 'gemini'; key: string }
+  | { kind: 'gateway'; token: string }
+
+function resolveLlmAuth(): LlmAuth | null {
+  const geminiKey = process.env.GEMINI_API_KEY?.trim()
+  if (geminiKey) return { kind: 'gemini', key: geminiKey }
+
+  const gatewayToken =
+    process.env.AI_GATEWAY_API_KEY?.trim() || process.env.VERCEL_OIDC_TOKEN?.trim()
+  if (gatewayToken) return { kind: 'gateway', token: gatewayToken }
+
+  return null
+}
+
 async function callGemini(model: string, userText: string, apiKey: string): Promise<string> {
   const url =
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
@@ -118,6 +133,41 @@ async function callGemini(model: string, userText: string, apiKey: string): Prom
     json?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? '').join('') ??
     ''
   )
+}
+
+async function callViaAiGateway(model: string, userText: string, token: string): Promise<string> {
+  const gatewayModel = model.includes('/') ? model : `google/${model}`
+  const res = await fetch('https://ai-gateway.vercel.sh/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: gatewayModel,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: userText },
+      ],
+      temperature: 0.2,
+      response_format: { type: 'json_object' },
+    }),
+  })
+  if (!res.ok) {
+    const errText = await res.text()
+    throw new Error(`AI Gateway ${gatewayModel} ${res.status}: ${errText}`)
+  }
+  const json = (await res.json()) as {
+    choices?: Array<{ message?: { content?: string } }>
+  }
+  return json.choices?.[0]?.message?.content ?? ''
+}
+
+async function callLlm(model: string, userText: string, auth: LlmAuth): Promise<string> {
+  if (auth.kind === 'gemini') {
+    return callGemini(model, userText, auth.key)
+  }
+  return callViaAiGateway(model, userText, auth.token)
 }
 
 function storeFromUrl(url: string): string {
@@ -274,7 +324,7 @@ export async function handleWishlistEnrichRequest(req: Request): Promise<Respons
 
     const supabaseUrl = process.env.VITE_SUPABASE_URL ?? process.env.SUPABASE_URL
     const supabaseAnon = process.env.VITE_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY
-    const geminiKey = process.env.GEMINI_API_KEY
+    const llmAuth = resolveLlmAuth()
 
     if (!supabaseUrl || !supabaseAnon) {
       return jsonResponse({ error: 'Supabase env missing on server' }, 500)
@@ -282,10 +332,16 @@ export async function handleWishlistEnrichRequest(req: Request): Promise<Respons
 
     const body = (await req.json()) as EnrichBody
 
-    if (!geminiKey) {
+    if (!llmAuth) {
       const proxied = await proxyToSupabaseEdge(supabaseUrl, supabaseAnon, authHeader, body)
       if (proxied) return proxied
-      return jsonResponse({ error: 'GEMINI_API_KEY missing on server' }, 500)
+      return jsonResponse(
+        {
+          error:
+            'AI auto-fill is not configured on the server yet. Add GEMINI_API_KEY to Vercel, enable AI Gateway, or deploy Supabase functions.',
+        },
+        500,
+      )
     }
 
     const userClient = createClient(supabaseUrl, supabaseAnon, {
@@ -322,10 +378,10 @@ export async function handleWishlistEnrichRequest(req: Request): Promise<Respons
     let model = 'gemini-2.5-flash'
     let raw = ''
     try {
-      raw = await callGemini(model, userText, geminiKey)
+      raw = await callLlm(model, userText, llmAuth)
     } catch {
       model = 'gemini-2.5-pro'
-      raw = await callGemini(model, userText, geminiKey)
+      raw = await callLlm(model, userText, llmAuth)
     }
 
     let parsed: EnrichResult
