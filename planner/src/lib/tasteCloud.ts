@@ -244,7 +244,7 @@ export async function fetchTasteStoreCloud(
   const row = data as Pick<TasteStoreRow, 'store' | 'updated_at'>
   const raw = row.store ?? { categories: [], stickers: [], monthBackgrounds: {} }
   const lean = stripInlineTasteImages(raw)
-  const store = await hydrateTasteStoreFromCloud(lean)
+  const store = await hydrateTasteStoreFromCloud(lean, userId)
   return {
     store,
     updatedAt: row.updated_at,

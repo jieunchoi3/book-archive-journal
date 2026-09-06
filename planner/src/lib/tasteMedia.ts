@@ -30,6 +30,71 @@ function monthBackgroundPath(userId: string, monthKey: string) {
   return `${userId}/backgrounds/${monthKey}.jpg`
 }
 
+function isSupabaseSignedUrl(value: string): boolean {
+  return (
+    value.includes('/storage/v1/object/sign/') ||
+    value.includes('/storage/v1/object/authenticated/')
+  )
+}
+
+/** True when polaroid images need fresh signed URLs before rendering. */
+export function tasteStoreNeedsHydration(store: TasteStore): boolean {
+  for (const sticker of store.stickers) {
+    const url = sticker.imageDataUrl
+    if (isTasteStorageRef(url) || isSupabaseSignedUrl(url)) return true
+  }
+  for (const bg of Object.values(store.monthBackgrounds)) {
+    if (isTasteStorageRef(bg) || isSupabaseSignedUrl(bg)) return true
+  }
+  return false
+}
+
+/** Persist storage refs in IndexedDB — not short-lived signed URLs. */
+export function dehydrateTasteStoreForPersistence(
+  userId: string,
+  store: TasteStore,
+): TasteStore {
+  return {
+    ...store,
+    stickers: store.stickers.map((sticker) => ({
+      ...sticker,
+      imageDataUrl: persistableTasteImageRef(
+        userId,
+        sticker.id,
+        sticker.imageDataUrl,
+        stickerImagePath(userId, sticker.id),
+      ),
+    })),
+    monthBackgrounds: Object.fromEntries(
+      Object.entries(store.monthBackgrounds).map(([monthKey, bg]) => [
+        monthKey,
+        persistableTasteImageRef(
+          userId,
+          monthKey,
+          bg,
+          monthBackgroundPath(userId, monthKey),
+        ),
+      ]),
+    ),
+  }
+}
+
+function persistableTasteImageRef(
+  userId: string,
+  _id: string,
+  url: string,
+  defaultPath: string,
+): string {
+  if (!url) return ''
+  if (isTasteDataUrl(url)) return ''
+  if (isTasteStorageRef(url)) return url
+  if (isSupabaseSignedUrl(url)) return toTasteStorageRef(defaultPath)
+  // Non-storage URLs (e.g. remote thumbnails) can stay as-is.
+  if (url.startsWith('http://') || url.startsWith('https://')) return url
+  if (url.startsWith(`${userId}/`)) return toTasteStorageRef(url)
+  return url
+}
+
 async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
   const res = await fetch(dataUrl)
   return res.blob()
@@ -119,22 +184,41 @@ export async function prepareTasteStoreForCloud(
   return { ...store, stickers, monthBackgrounds }
 }
 
-/** Resolve storage refs to signed URLs for rendering. */
-export async function hydrateTasteStoreFromCloud(store: TasteStore): Promise<TasteStore> {
+/** Resolve storage refs (and refresh signed URLs) for rendering. */
+export async function hydrateTasteStoreFromCloud(
+  store: TasteStore,
+  userId?: string,
+): Promise<TasteStore> {
   const paths: string[] = []
+  const stickerPathById = new Map<string, string>()
+  const bgPathByMonth = new Map<string, string>()
+
   for (const sticker of store.stickers) {
-    const path = tasteStoragePathFromRef(sticker.imageDataUrl)
-    if (path) paths.push(path)
+    let path = tasteStoragePathFromRef(sticker.imageDataUrl)
+    if (!path && userId && isSupabaseSignedUrl(sticker.imageDataUrl)) {
+      path = stickerImagePath(userId, sticker.id)
+    }
+    if (path) {
+      paths.push(path)
+      stickerPathById.set(sticker.id, path)
+    }
   }
-  for (const bg of Object.values(store.monthBackgrounds)) {
-    const path = tasteStoragePathFromRef(bg)
-    if (path) paths.push(path)
+
+  for (const [monthKey, bg] of Object.entries(store.monthBackgrounds)) {
+    let path = tasteStoragePathFromRef(bg)
+    if (!path && userId && isSupabaseSignedUrl(bg)) {
+      path = monthBackgroundPath(userId, monthKey)
+    }
+    if (path) {
+      paths.push(path)
+      bgPathByMonth.set(monthKey, path)
+    }
   }
 
   const urls = await signedUrls(paths)
 
   const stickers = store.stickers.map((sticker) => {
-    const path = tasteStoragePathFromRef(sticker.imageDataUrl)
+    const path = stickerPathById.get(sticker.id)
     if (!path) return sticker
     const signed = urls.get(path)
     return signed ? { ...sticker, imageDataUrl: signed } : { ...sticker, imageDataUrl: '' }
@@ -142,7 +226,7 @@ export async function hydrateTasteStoreFromCloud(store: TasteStore): Promise<Tas
 
   const monthBackgrounds: Record<string, string> = {}
   for (const [monthKey, bg] of Object.entries(store.monthBackgrounds)) {
-    const path = tasteStoragePathFromRef(bg)
+    const path = bgPathByMonth.get(monthKey)
     if (!path) {
       monthBackgrounds[monthKey] = bg
       continue
@@ -151,4 +235,12 @@ export async function hydrateTasteStoreFromCloud(store: TasteStore): Promise<Tas
   }
 
   return { ...store, stickers, monthBackgrounds }
+}
+
+export async function ensureTasteStoreHydrated(
+  userId: string,
+  store: TasteStore,
+): Promise<TasteStore> {
+  if (!tasteStoreNeedsHydration(store)) return store
+  return hydrateTasteStoreFromCloud(store, userId)
 }
