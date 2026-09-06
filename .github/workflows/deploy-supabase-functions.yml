@@ -20,7 +20,7 @@ jobs:
         with:
           version: latest
 
-      - name: Deploy wishlist-enrich
+      - name: Deploy wishlist and compass functions
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
@@ -30,3 +30,4 @@ jobs:
             exit 0
           fi
           supabase functions deploy wishlist-enrich --project-ref "$SUPABASE_PROJECT_REF"
+          supabase functions deploy compass-analyze --project-ref "$SUPABASE_PROJECT_REF"

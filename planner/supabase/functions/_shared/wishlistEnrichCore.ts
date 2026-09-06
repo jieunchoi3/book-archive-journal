@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1'
 
 const PROMPT_VERSION = 'v1'
 const SYSTEM_PROMPT = `You extract shopping wishlist fields from product pages or product descriptions.
@@ -36,59 +36,6 @@ export type EnrichResult = {
   note?: string
 }
 
-function corsHeaders() {
-  return {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  }
-}
-
-function jsonResponse(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders(), 'Content-Type': 'application/json' },
-  })
-}
-
-async function proxyToSupabaseEdge(
-  supabaseUrl: string,
-  supabaseAnon: string,
-  authHeader: string,
-  body: EnrichBody,
-): Promise<Response | null> {
-  for (const fn of ['wishlist-enrich', 'compass-analyze'] as const) {
-    const payload =
-      fn === 'compass-analyze' ? { action: 'wishlist-enrich' as const, ...body } : body
-    try {
-      const res = await fetch(`${supabaseUrl}/functions/v1/${fn}`, {
-        method: 'POST',
-        headers: {
-          Authorization: authHeader,
-          apikey: supabaseAnon,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      })
-      const text = await res.text()
-      if (res.status === 404) continue
-      let parsed: unknown
-      try {
-        parsed = JSON.parse(text)
-      } catch {
-        continue
-      }
-      if (res.ok) {
-        return jsonResponse(parsed, res.status)
-      }
-      if (res.status >= 500) continue
-      return jsonResponse(parsed, res.status)
-    } catch {
-      continue
-    }
-  }
-  return null
-}
-
 function parseJsonFromModel(raw: string): EnrichResult {
   const cleaned = raw.replace(/^```json\s*/i, '').replace(/```$/i, '').trim()
   return JSON.parse(cleaned) as EnrichResult
@@ -120,9 +67,16 @@ async function callGemini(model: string, userText: string, apiKey: string): Prom
   )
 }
 
-function storeFromUrl(url: string): string {
+export function storeFromUrl(url: string): string {
   try {
     const host = new URL(url).hostname.replace(/^www\./, '')
+    const known: Record<string, string> = {
+      'spacenk.com': 'Space NK',
+      'refybeauty.com': 'Refy',
+      'tkmaxx.com': 'TK Maxx',
+      'oliveyoung.co.kr': 'Olive Young',
+    }
+    if (known[host]) return known[host]
     const base = host.split('.')[0] ?? host
     if (!base) return ''
     return base.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
@@ -257,98 +211,75 @@ function normalizeResult(raw: EnrichResult, body: EnrichBody): EnrichResult {
   }
 }
 
-export async function handleWishlistEnrichRequest(req: Request): Promise<Response> {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders() })
+export async function runWishlistEnrich(
+  body: EnrichBody,
+  geminiKey: string,
+): Promise<{ result: EnrichResult; model: string }> {
+  const link = body.link?.trim()
+  const name = body.name?.trim() ?? ''
+  const brand = body.brand?.trim() ?? ''
+
+  if (!link && !(name && brand)) {
+    throw new Error('Provide a product link, or both name and brand')
   }
 
-  if (req.method !== 'POST') {
-    return jsonResponse({ error: 'method not allowed' }, 405)
+  let extracted: EnrichResult | null = null
+  let htmlSnippet: string | undefined
+  if (link) {
+    try {
+      htmlSnippet = await fetchHtml(link)
+      extracted = extractFromHtml(htmlSnippet, link)
+    } catch (e) {
+      extracted = { store: storeFromUrl(link), note: String(e) }
+    }
   }
 
+  const userText = buildUserPrompt(body, extracted, htmlSnippet)
+  let model = 'gemini-2.5-flash'
+  let raw = ''
   try {
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-      return jsonResponse({ error: 'unauthorized' }, 401)
-    }
+    raw = await callGemini(model, userText, geminiKey)
+  } catch {
+    model = 'gemini-2.0-flash'
+    raw = await callGemini(model, userText, geminiKey)
+  }
 
-    const supabaseUrl = process.env.VITE_SUPABASE_URL ?? process.env.SUPABASE_URL
-    const supabaseAnon = process.env.VITE_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY
-    const geminiKey = process.env.GEMINI_API_KEY
+  const parsed = parseJsonFromModel(raw)
+  const result = normalizeResult(
+    {
+      ...extracted,
+      ...parsed,
+      name: parsed.name || extracted?.name,
+      brand: parsed.brand || extracted?.brand,
+      store: parsed.store || extracted?.store,
+      estimatedPrice: parsed.estimatedPrice ?? extracted?.estimatedPrice ?? null,
+    },
+    body,
+  )
 
-    if (!supabaseUrl || !supabaseAnon) {
-      return jsonResponse({ error: 'Supabase env missing on server' }, 500)
-    }
+  return { result, model }
+}
 
-    const body = (await req.json()) as EnrichBody
+export async function verifySupabaseUser(
+  authHeader: string,
+  supabaseUrl: string,
+  supabaseAnon: string,
+) {
+  const userClient = createClient(supabaseUrl, supabaseAnon, {
+    global: { headers: { Authorization: authHeader } },
+    db: { schema: 'planner' },
+  })
+  const {
+    data: { user },
+    error: userErr,
+  } = await userClient.auth.getUser()
+  if (userErr || !user) throw new Error('unauthorized')
+  return user
+}
 
-    if (!geminiKey) {
-      const proxied = await proxyToSupabaseEdge(supabaseUrl, supabaseAnon, authHeader, body)
-      if (proxied) return proxied
-      return jsonResponse({ error: 'GEMINI_API_KEY missing on server' }, 500)
-    }
-
-    const userClient = createClient(supabaseUrl, supabaseAnon, {
-      global: { headers: { Authorization: authHeader } },
-      db: { schema: 'planner' },
-    })
-    const {
-      data: { user },
-      error: userErr,
-    } = await userClient.auth.getUser()
-    if (userErr || !user) {
-      return jsonResponse({ error: 'unauthorized' }, 401)
-    }
-    const link = body.link?.trim()
-    const name = body.name?.trim() ?? ''
-    const brand = body.brand?.trim() ?? ''
-
-    if (!link && !(name && brand)) {
-      return jsonResponse({ error: 'Provide a product link, or both name and brand' }, 400)
-    }
-
-    let extracted: EnrichResult | null = null
-    let htmlSnippet: string | undefined
-    if (link) {
-      try {
-        htmlSnippet = await fetchHtml(link)
-        extracted = extractFromHtml(htmlSnippet, link)
-      } catch (e) {
-        extracted = { store: storeFromUrl(link), note: String(e) }
-      }
-    }
-
-    const userText = buildUserPrompt(body, extracted, htmlSnippet)
-    let model = 'gemini-2.5-flash'
-    let raw = ''
-    try {
-      raw = await callGemini(model, userText, geminiKey)
-    } catch {
-      model = 'gemini-2.0-flash'
-      raw = await callGemini(model, userText, geminiKey)
-    }
-
-    let parsed: EnrichResult
-    try {
-      parsed = parseJsonFromModel(raw)
-    } catch {
-      return jsonResponse({ error: 'invalid model json', raw }, 502)
-    }
-
-    const result = normalizeResult(
-      {
-        ...extracted,
-        ...parsed,
-        name: parsed.name || extracted?.name,
-        brand: parsed.brand || extracted?.brand,
-        store: parsed.store || extracted?.store,
-        estimatedPrice: parsed.estimatedPrice ?? extracted?.estimatedPrice ?? null,
-      },
-      body,
-    )
-
-    return jsonResponse({ result, model })
-  } catch (e) {
-    return jsonResponse({ error: String(e) }, 500)
+export function corsHeaders() {
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   }
 }
