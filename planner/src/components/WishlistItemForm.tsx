@@ -216,7 +216,6 @@ export function WishlistItemForm({
 
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
-      if (!photoFocusRef.current) return
       handleClipboardImagePaste(e, (source) => void applyPhoto(source))
     }
     document.addEventListener('paste', onPaste, true)
@@ -303,12 +302,6 @@ export function WishlistItemForm({
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            onFocus={() => {
-              photoFocusRef.current = true
-            }}
-            onBlur={() => {
-              photoFocusRef.current = false
-            }}
             onPaste={(e) => {
               handleClipboardImagePaste(e.nativeEvent, (source) => void applyPhoto(source))
             }}
