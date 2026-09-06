@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -24,9 +24,11 @@ import {
   formatWeekRange,
   getDayKeyFromDate,
   getWeekStartDate,
+  isToday,
   parseDateKey,
   shiftWeekStart,
 } from '../lib/weekUtils'
+import { useMobileLayout } from '../hooks/useMobileLayout'
 import { PlannerSidebar } from './PlannerSidebar'
 import { DayColumn } from './DayColumn'
 import { DayFocusView } from './DayFocusView'
@@ -57,8 +59,22 @@ export function WeekView({
   compass,
   onOpenCompassAsk,
 }: WeekViewProps) {
+  const isMobileLayout = useMobileLayout()
   const [activeTaskDrag, setActiveTaskDrag] = useState<TaskDragData | null>(null)
-  const [focusedDayKey, setFocusedDayKey] = useState<DayKey | null>(null)
+  const [focusedDayKey, setFocusedDayKey] = useState<DayKey | null>(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches
+      ? getDayKeyFromDate(new Date())
+      : null,
+  )
+
+  useEffect(() => {
+    if (!isMobileLayout) return
+    setFocusedDayKey((current) => {
+      if (current) return current
+      const todayKey = getDayKeyFromDate(new Date())
+      return isToday(todayKey, weekStart) ? todayKey : (template.days[0]?.key ?? null)
+    })
+  }, [isMobileLayout, weekStart, template.days])
 
   const focusedDay = focusedDayKey
     ? template.days.find((d) => d.key === focusedDayKey)
@@ -142,17 +158,21 @@ export function WeekView({
   )
 
   const goPrev = () => {
-    setFocusedDayKey(null)
+    if (!isMobileLayout) setFocusedDayKey(null)
     void planner.goToWeek(shiftWeekStart(weekStart, -1))
   }
 
   const goNext = () => {
-    setFocusedDayKey(null)
+    if (!isMobileLayout) setFocusedDayKey(null)
     void planner.goToWeek(shiftWeekStart(weekStart, 1))
   }
 
   const goToday = () => {
-    setFocusedDayKey(null)
+    if (isMobileLayout) {
+      setFocusedDayKey(getDayKeyFromDate(new Date()))
+    } else {
+      setFocusedDayKey(null)
+    }
     void planner.goToWeek(getWeekStartDate())
   }
 
@@ -213,13 +233,15 @@ export function WeekView({
   }, [template.days, planner, items])
 
   return (
-    <div className="flex min-h-screen gap-6 p-6 pb-24">
-      <PlannerSidebar linkedApps={linkedApps} />
+    <div className="flex min-h-screen gap-4 p-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:gap-6 sm:p-6 sm:pb-24">
+      <aside className="hidden w-52 shrink-0 lg:block">
+        <PlannerSidebar linkedApps={linkedApps} />
+      </aside>
 
       <div className="min-w-0 flex-1">
-        <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <header className="mb-4 flex flex-wrap items-center justify-between gap-3 sm:mb-6">
           <div>
-            <h1 className="text-[22px] font-semibold tracking-tight text-[#1C1C1E]">
+            <h1 className="text-[20px] font-semibold tracking-tight text-[#1C1C1E] sm:text-[22px]">
               Weekly Planner
             </h1>
             <MonthCalendarTrigger
@@ -299,6 +321,7 @@ export function WeekView({
               weekCompletionPercent={planner.weekCompletionPercent}
               weekStart={weekStart}
               days={template.days.map((d) => ({ key: d.key, dayName: d.dayName }))}
+              compact={isMobileLayout}
               onDayClick={(dayKey) => setFocusedDayKey(dayKey)}
             />
 
@@ -315,11 +338,12 @@ export function WeekView({
                   allDays={template.days}
                   planner={planner}
                   items={items}
+                  showWeekOverviewBack={!isMobileLayout}
                   onClose={() => setFocusedDayKey(null)}
                   onNavigateDay={setFocusedDayKey}
                 />
               ) : (
-                <div className="flex gap-2 overflow-x-auto pb-4">
+                <div className="hidden gap-2 overflow-x-auto pb-4 lg:flex">
                   {template.days.map((day) => (
                     <DayColumn
                       key={`${weekStart}-${day.key}`}

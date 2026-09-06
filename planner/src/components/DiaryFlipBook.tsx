@@ -209,6 +209,8 @@ function FlipPage({
   const imageUrl = pageImageUrl(entry)
   const title = entry.title.trim() || 'Untitled'
   const body = entry.body.trim()
+  const bodyImages = entry.bodyImages ?? []
+  const hasBodyImages = bodyImages.some((image) => image.src)
 
   return (
     <button
@@ -254,9 +256,25 @@ function FlipPage({
           <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-[#3A3A3C] sm:text-[14px]">
             {body}
           </p>
-        ) : (
+        ) : null}
+        {hasBodyImages ? (
+          <div className={`space-y-2 ${body ? 'mt-3' : ''}`}>
+            {bodyImages.map((image) =>
+              image.src ? (
+                <img
+                  key={image.id}
+                  src={image.src}
+                  alt="Handwritten note"
+                  className="w-full rounded-lg object-contain ring-1 ring-black/5"
+                  draggable={false}
+                />
+              ) : null,
+            )}
+          </div>
+        ) : null}
+        {!body && !hasBodyImages ? (
           <p className="text-[13px] italic text-[#C7C7CC]">No diary text</p>
-        )}
+        ) : null}
       </div>
     </button>
   )

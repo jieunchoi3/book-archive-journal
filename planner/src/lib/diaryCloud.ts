@@ -1,4 +1,4 @@
-import type { DiaryEntry, DiaryPhotoLayer, DiaryStroke } from '../types/diary'
+import type { DiaryBodyImage, DiaryEntry, DiaryPhotoLayer, DiaryStroke } from '../types/diary'
 import { isDiaryEntryEmpty } from '../types/diary'
 import { supabase } from './supabase'
 
@@ -14,11 +14,19 @@ type CloudLayer = {
   path: string
 }
 
+type CloudBodyImage = {
+  id: string
+  path: string
+}
+
 type DiaryRow = {
   user_id: string
   date_key: string | Date
   title: string
   body: string
+  body_images: CloudBodyImage[]
+  main_tag: string | null
+  sub_tag: string | null
   frame_color: string
   canvas_strokes: DiaryStroke[]
   layers: CloudLayer[]
@@ -28,6 +36,10 @@ type DiaryRow = {
 
 function layerPath(userId: string, dateKey: string, layerId: string) {
   return `${userId}/${dateKey}/layer-${layerId}.jpg`
+}
+
+function bodyImagePath(userId: string, dateKey: string, imageId: string) {
+  return `${userId}/${dateKey}/body-${imageId}.jpg`
 }
 
 function coverPath(userId: string, dateKey: string) {
@@ -150,6 +162,25 @@ async function hydrateLayers(layers: CloudLayer[]): Promise<DiaryPhotoLayer[]> {
   )
 }
 
+async function hydrateBodyImages(images: CloudBodyImage[]): Promise<DiaryBodyImage[]> {
+  return Promise.all(
+    images.map(async (image) => ({
+      id: image.id,
+      src: await downloadDataUrl(image.path),
+    })),
+  )
+}
+
+function bodyImagesFromRow(
+  images: CloudBodyImage[],
+  opts?: { signedUrlMap?: Map<string, string> },
+): DiaryBodyImage[] {
+  return images.map((image) => ({
+    id: image.id,
+    src: opts?.signedUrlMap?.get(image.path) ?? '',
+  }))
+}
+
 async function rowToEntry(
   row: DiaryRow,
   opts?: {
@@ -160,6 +191,7 @@ async function rowToEntry(
 ): Promise<DiaryEntry> {
   const dateKey = normalizeDateKey(row.date_key)
   const cloudLayers = Array.isArray(row.layers) ? row.layers : []
+  const cloudBodyImages = Array.isArray(row.body_images) ? row.body_images : []
   const coverMode = opts?.coverMode ?? 'signed'
 
   const layers =
@@ -173,6 +205,11 @@ async function rowToEntry(
           src: '',
         }))
       : await hydrateLayers(cloudLayers)
+
+  const bodyImages =
+    opts?.hydrateLayers === false
+      ? bodyImagesFromRow(cloudBodyImages, { signedUrlMap: opts?.signedUrlMap })
+      : await hydrateBodyImages(cloudBodyImages)
 
   let coverDataUrl: string | null = null
   let thumbDataUrl: string | null = null
@@ -205,6 +242,9 @@ async function rowToEntry(
     dateKey,
     title: row.title ?? '',
     body: row.body ?? '',
+    mainTag: row.main_tag?.trim() || null,
+    subTag: row.sub_tag?.trim() || null,
+    bodyImages,
     layers,
     canvasStrokes: row.canvas_strokes ?? [],
     frameColor: row.frame_color,
@@ -235,9 +275,13 @@ export async function fetchDiaryEntriesForMonthCloud(
   const rows = (data ?? []) as DiaryRow[]
   const paths: string[] = []
   for (const row of rows) {
-    if (!row.cover_path) continue
-    paths.push(thumbPathFromCover(row.cover_path))
-    paths.push(row.cover_path)
+    if (row.cover_path) {
+      paths.push(thumbPathFromCover(row.cover_path))
+      paths.push(row.cover_path)
+    }
+    for (const image of row.body_images ?? []) {
+      if (image.path) paths.push(image.path)
+    }
   }
   const urlMap = await signedUrls(paths)
 
@@ -250,13 +294,16 @@ export async function fetchDiaryEntriesForMonthCloud(
         signedUrlMap: urlMap,
       })
       const hasLayers = (row.layers ?? []).length > 0
+      const hasBodyImages = (row.body_images ?? []).length > 0
       if (
         entry.thumbDataUrl ||
         entry.coverDataUrl ||
         entry.title ||
         entry.body ||
+        (entry.bodyImages?.length ?? 0) > 0 ||
         (entry.canvasStrokes?.length ?? 0) > 0 ||
-        hasLayers
+        hasLayers ||
+        hasBodyImages
       ) {
         out[entry.dateKey] = entry
       }
@@ -314,6 +361,27 @@ export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): 
     })
   }
 
+  const cloudBodyImages: CloudBodyImage[] = []
+  for (const image of entry.bodyImages ?? []) {
+    const path = bodyImagePath(userId, entry.dateKey, image.id)
+    if (image.src.startsWith('data:')) {
+      await uploadDataUrl(path, image.src)
+    } else if (image.src.startsWith('http')) {
+      try {
+        const blob = await (await fetch(image.src)).blob()
+        const dataUrl = await blobToDataUrl(blob)
+        await uploadDataUrl(path, dataUrl)
+      } catch {
+        // Keep existing storage object if re-fetch fails.
+      }
+    } else if (!image.src) {
+      // Keep existing storage object for placeholder images from month list.
+    } else {
+      await uploadDataUrl(path, image.src)
+    }
+    cloudBodyImages.push({ id: image.id, path })
+  }
+
   let cover: string | null = null
   const thumb = thumbPath(userId, entry.dateKey)
 
@@ -342,13 +410,19 @@ export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): 
 
   const { data: existing } = await supabase
     .from('diary_entries')
-    .select('layers')
+    .select('layers, body_images')
     .eq('user_id', userId)
     .eq('date_key', entry.dateKey)
     .maybeSingle()
-  const prevLayers = ((existing as { layers?: CloudLayer[] } | null)?.layers ?? []) as CloudLayer[]
-  const nextIds = new Set(cloudLayers.map((l) => l.id))
-  const orphanPaths = prevLayers.filter((l) => !nextIds.has(l.id)).map((l) => l.path)
+  const prevRow = existing as { layers?: CloudLayer[]; body_images?: CloudBodyImage[] } | null
+  const prevLayers = prevRow?.layers ?? []
+  const prevBodyImages = prevRow?.body_images ?? []
+  const nextLayerIds = new Set(cloudLayers.map((l) => l.id))
+  const nextBodyImageIds = new Set(cloudBodyImages.map((i) => i.id))
+  const orphanPaths = [
+    ...prevLayers.filter((l) => !nextLayerIds.has(l.id)).map((l) => l.path),
+    ...prevBodyImages.filter((i) => !nextBodyImageIds.has(i.id)).map((i) => i.path),
+  ]
   await removePaths(orphanPaths)
 
   const { error } = await supabase.from('diary_entries').upsert(
@@ -357,6 +431,9 @@ export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): 
       date_key: entry.dateKey,
       title: entry.title,
       body: entry.body,
+      main_tag: entry.mainTag?.trim() || null,
+      sub_tag: entry.subTag?.trim() || null,
+      body_images: cloudBodyImages,
       frame_color: entry.frameColor,
       canvas_strokes: entry.canvasStrokes ?? [],
       layers: cloudLayers,
@@ -371,14 +448,19 @@ export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): 
 export async function deleteDiaryEntryCloud(userId: string, dateKey: string): Promise<void> {
   const { data: existing } = await supabase
     .from('diary_entries')
-    .select('layers, cover_path')
+    .select('layers, cover_path, body_images')
     .eq('user_id', userId)
     .eq('date_key', dateKey)
     .maybeSingle()
 
-  const row = existing as { layers?: CloudLayer[]; cover_path?: string | null } | null
+  const row = existing as {
+    layers?: CloudLayer[]
+    cover_path?: string | null
+    body_images?: CloudBodyImage[]
+  } | null
   const paths = [
     ...(row?.layers ?? []).map((l) => l.path),
+    ...(row?.body_images ?? []).map((i) => i.path),
     ...(row?.cover_path ? [row.cover_path, thumbPathFromCover(row.cover_path)] : []),
     thumbPath(userId, dateKey),
   ]

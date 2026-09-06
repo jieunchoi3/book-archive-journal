@@ -12,6 +12,13 @@ export interface DiaryStroke {
   erase?: boolean
 }
 
+/** Handwritten note photo in the "What happened" section. */
+export interface DiaryBodyImage {
+  id: string
+  /** JPEG data URL locally, or signed/downloaded URL from Storage. */
+  src: string
+}
+
 /** One photo layer on the day's canvas (bottom → top). */
 export interface DiaryPhotoLayer {
   id: string
@@ -29,6 +36,12 @@ export interface DiaryEntry {
   dateKey: string
   title: string
   body: string
+  /** Main hashtag folder, e.g. "여행". */
+  mainTag: string | null
+  /** Sub-hashtag nested under mainTag, e.g. "포르투갈". */
+  subTag: string | null
+  /** Photos of handwritten notes alongside typed body text. */
+  bodyImages: DiaryBodyImage[]
   layers: DiaryPhotoLayer[]
   /** Freehand strokes on the frame (works with or without photos). */
   canvasStrokes: DiaryStroke[]
@@ -58,11 +71,30 @@ export const DIARY_FRAME_COLORS = [
   '#8E8E93',
 ] as const
 
+export interface DiaryTagFolder {
+  mainTag: string
+  subTag: string
+}
+
+export type DiaryTagFilter =
+  | { type: 'all' }
+  | { type: 'main'; mainTag: string }
+  | { type: 'sub'; mainTag: string; subTag: string }
+
+export interface DiaryTagTreeNode {
+  mainTag: string
+  entryCount: number
+  subTags: { name: string; count: number }[]
+}
+
 export function emptyDiaryEntry(dateKey: string): DiaryEntry {
   return {
     dateKey,
     title: '',
     body: '',
+    mainTag: null,
+    subTag: null,
+    bodyImages: [],
     layers: [],
     canvasStrokes: [],
     frameColor: DEFAULT_DIARY_FRAME_COLOR,
@@ -76,6 +108,7 @@ export function isDiaryEntryEmpty(entry: DiaryEntry): boolean {
   return (
     !entry.title.trim() &&
     !entry.body.trim() &&
+    (entry.bodyImages?.length ?? 0) === 0 &&
     entry.layers.length === 0 &&
     (entry.canvasStrokes?.length ?? 0) === 0 &&
     !entry.coverDataUrl

@@ -126,7 +126,8 @@ function hasRealImageBytes(entry: DiaryEntry): boolean {
   return (
     Boolean(entry.thumbDataUrl?.startsWith('data:')) ||
     Boolean(entry.coverDataUrl?.startsWith('data:')) ||
-    entry.layers.some((l) => l.src.startsWith('data:'))
+    entry.layers.some((l) => l.src.startsWith('data:')) ||
+    (entry.bodyImages ?? []).some((i) => i.src.startsWith('data:'))
   )
 }
 
@@ -134,15 +135,27 @@ function needsLayerHydration(entry: DiaryEntry): boolean {
   return entry.layers.some((l) => !l.src)
 }
 
+function needsBodyImageHydration(entry: DiaryEntry): boolean {
+  return (entry.bodyImages ?? []).some((i) => !i.src)
+}
+
+function needsDiaryHydration(entry: DiaryEntry): boolean {
+  return needsLayerHydration(entry) || needsBodyImageHydration(entry)
+}
+
 function preferLocalImages(cloud: DiaryEntry, local?: DiaryEntry): DiaryEntry {
   if (!local) return cloud
   const keepLocalCover = Boolean(local.coverDataUrl?.startsWith('data:'))
   const keepLocalThumb = Boolean(local.thumbDataUrl?.startsWith('data:'))
   const keepLocalLayers = hasRealImageBytes(local) && needsLayerHydration(cloud)
+  const keepLocalBodyImages =
+    (local.bodyImages ?? []).some((i) => i.src.startsWith('data:')) &&
+    needsBodyImageHydration(cloud)
 
   return {
     ...cloud,
     layers: keepLocalLayers ? local.layers : cloud.layers,
+    bodyImages: keepLocalBodyImages ? (local.bodyImages ?? []) : (cloud.bodyImages ?? []),
     coverDataUrl: keepLocalCover
       ? local.coverDataUrl
       : (cloud.coverDataUrl ?? local.coverDataUrl ?? null),
@@ -162,6 +175,9 @@ async function migrateLocalMonthToCloud(
     if (cloud[dateKey]) continue
     if (!hasRealImageBytes(entry) && isDiaryEntryEmpty(entry)) continue
     if (needsLayerHydration(entry) && entry.layers.length > 0) continue
+    if ((entry.bodyImages ?? []).some((i) => i.src.startsWith('data:')) && needsBodyImageHydration(entry)) {
+      continue
+    }
     if (!hasRealImageBytes(entry) && !entry.title && !entry.body) continue
     try {
       await upsertDiaryEntryCloud(userId, entry)
@@ -219,7 +235,7 @@ export async function loadDiaryEntriesForMonth(
     const merged: Record<string, DiaryEntry> = { ...cloud }
     for (const [dateKey, entry] of Object.entries(local)) {
       if (merged[dateKey]) continue
-      if (hasRealImageBytes(entry) || entry.title || entry.body) {
+      if (hasRealImageBytes(entry) || entry.title || entry.body || (entry.bodyImages?.length ?? 0) > 0) {
         merged[dateKey] = entry
       }
     }
@@ -291,12 +307,15 @@ export async function backfillDiaryThumbs(
 
 export async function saveDiaryEntry(userId: string, entry: DiaryEntry): Promise<void> {
   // Avoid overwriting good local photos with empty-src placeholders.
-  if (needsLayerHydration(entry) && entry.layers.length > 0) {
+  if (needsDiaryHydration(entry) && (entry.layers.length > 0 || (entry.bodyImages?.length ?? 0) > 0)) {
     const existing = await loadDiaryEntryLocal(userId, entry.dateKey)
     if (existing && hasRealImageBytes(existing)) {
       entry = {
         ...entry,
-        layers: existing.layers,
+        layers: needsLayerHydration(entry) ? existing.layers : entry.layers,
+        bodyImages: needsBodyImageHydration(entry)
+          ? (existing.bodyImages ?? [])
+          : (entry.bodyImages ?? []),
         coverDataUrl: entry.coverDataUrl?.startsWith('data:')
           ? entry.coverDataUrl
           : existing.coverDataUrl,
@@ -329,7 +348,7 @@ export async function hydrateDiaryEntry(
   entry: DiaryEntry,
 ): Promise<DiaryEntry> {
   if (
-    !needsLayerHydration(entry) &&
+    !needsDiaryHydration(entry) &&
     entry.coverDataUrl?.startsWith('data:')
   ) {
     return entry

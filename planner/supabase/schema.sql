@@ -143,6 +143,9 @@ create table if not exists planner.diary_entries (
   date_key date not null,
   title text not null default '',
   body text not null default '',
+  body_images jsonb not null default '[]'::jsonb,
+  main_tag text,
+  sub_tag text,
   frame_color text not null default '#F2F2F7',
   canvas_strokes jsonb not null default '[]'::jsonb,
   layers jsonb not null default '[]'::jsonb,
@@ -153,6 +156,17 @@ create table if not exists planner.diary_entries (
 
 create index if not exists diary_entries_user_month_idx
   on planner.diary_entries (user_id, date_key);
+
+create index if not exists diary_entries_user_tags_idx
+  on planner.diary_entries (user_id, main_tag, sub_tag);
+
+create table if not exists planner.diary_tag_folders (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  main_tag text not null,
+  sub_tag text not null default '',
+  created_at timestamptz not null default now(),
+  primary key (user_id, main_tag, sub_tag)
+);
 
 -- Expense tracker document per user
 create table if not exists planner.expense_stores (
@@ -226,6 +240,8 @@ create policy "item_tags_own" on planner.item_tags for all using (auth.uid() = u
 create policy "linked_apps_own" on planner.linked_apps for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "sidebar_notes_own" on planner.sidebar_notes for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "diary_entries_own" on planner.diary_entries for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+alter table planner.diary_tag_folders enable row level security;
+create policy "diary_tag_folders_own" on planner.diary_tag_folders for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "expense_stores_own" on planner.expense_stores for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "snap_bookings_own" on planner.snap_bookings for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 

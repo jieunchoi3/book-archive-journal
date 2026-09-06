@@ -7,6 +7,7 @@ interface WeekSummaryProps {
   weekCompletionPercent: number
   weekStart: string
   days: { key: DayKey; dayName: string }[]
+  compact?: boolean
   onDayClick?: (dayKey: DayKey) => void
 }
 
@@ -15,28 +16,31 @@ export function WeekSummary({
   weekCompletionPercent,
   weekStart,
   days,
+  compact = false,
   onDayClick,
 }: WeekSummaryProps) {
   return (
-    <div className="mb-6 rounded-xl border border-hairline bg-white px-5 py-4 shadow-sm">
+    <div className="mb-4 rounded-xl border border-hairline bg-white px-3 py-3 shadow-sm sm:mb-6 sm:px-5 sm:py-4">
       <div className="mb-3 flex items-baseline justify-between">
         <h2 className="text-[13px] font-semibold text-[#1C1C1E]">This Week</h2>
-        <span className="text-[13px] text-muted">
+        <span className="text-[12px] text-muted sm:text-[13px]">
           {weekCompletionPercent}% complete
         </span>
       </div>
-      <div className="flex gap-2">
+      <div className={`flex gap-1.5 sm:gap-2 ${compact ? 'overflow-x-auto pb-1' : ''}`}>
         {days.map((day) => {
           const stats = dayCompletion[day.key]
           const pct =
             stats.total === 0 ? 0 : Math.round((stats.done / stats.total) * 100)
           const today = isToday(day.key, weekStart)
+          const shortName = day.dayName.slice(0, 3)
           const inner = (
             <>
               <div
-                className={`mb-1 text-[11px] font-medium ${today ? 'font-semibold text-[#007AFF]' : 'text-muted'}`}
+                className={`mb-1 text-[10px] font-medium sm:text-[11px] ${today ? 'font-semibold text-[#007AFF]' : 'text-muted'}`}
               >
-                {day.dayName}{' '}
+                <span className={compact ? 'inline sm:hidden' : 'hidden'}>{shortName}</span>
+                <span className={compact ? 'hidden sm:inline' : 'inline'}>{day.dayName}</span>{' '}
                 <span className={today ? 'text-[#007AFF]/75' : ''}>
                   {formatShortDateForDay(weekStart, day.key)}
                 </span>
@@ -55,7 +59,7 @@ export function WeekSummary({
             </>
           )
 
-          const className = `flex-1 rounded-lg px-1 py-1 text-center ${
+          const className = `${compact ? 'min-w-[52px] shrink-0' : 'flex-1'} rounded-lg px-1 py-1 text-center ${
             today ? 'bg-[#007AFF]/10 ring-1 ring-[#007AFF]/30' : ''
           } ${onDayClick ? 'cursor-pointer transition-colors hover:bg-[#007AFF]/5' : ''}`
 

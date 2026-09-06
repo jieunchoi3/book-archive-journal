@@ -1,9 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BookHeart, BookOpen, ChevronLeft, ChevronRight, LayoutGrid, Wallet } from 'lucide-react'
+import { BookHeart, BookOpen, ChevronLeft, ChevronRight, Hash, LayoutGrid, Wallet, X } from 'lucide-react'
 import { useDiary } from '../hooks/useDiary'
 import type { ExpenseActions } from '../hooks/useExpenses'
 import { useAuth } from '../hooks/useAuth'
 import { loadAllDiaryEntriesLocal } from '../lib/diaryStorage'
+import { loadDiaryTagFolders, saveDiaryTagFolder } from '../lib/diaryTagStorage'
+import {
+  buildDiaryTagTree,
+  entryHasDiaryContent,
+  entryMatchesTagFilter,
+  filterLabel,
+  formatDiaryTagLabel,
+} from '../lib/diaryTags'
 import {
   formatMonthYear,
   getMonthGrid,
@@ -15,10 +23,14 @@ import {
   diaryGridImageUrl,
   isDiaryEntryEmpty,
   type DiaryEntry,
+  type DiaryTagFilter,
+  type DiaryTagFolder,
 } from '../types/diary'
 import { formatMoney, spendHeatColor } from '../types/expense'
 import { DiaryDayEditor } from './DiaryDayEditor'
 import { DiaryFlipBook } from './DiaryFlipBook'
+import { DiaryTagSidebar } from './DiaryTagSidebar'
+import { DiaryTaggedEntriesList } from './DiaryTaggedEntriesList'
 import { PageSearch, type SearchSuggestion } from './PageSearch'
 
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -48,6 +60,8 @@ export function DiaryView({ expenses }: DiaryViewProps) {
   const { user } = useAuth()
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null)
   const [searchIndex, setSearchIndex] = useState<Record<string, DiaryEntry>>({})
+  const [tagFolders, setTagFolders] = useState<DiaryTagFolder[]>([])
+  const [tagFilter, setTagFilter] = useState<DiaryTagFilter>({ type: 'all' })
   const [viewMode, setViewMode] = useState<DiaryViewMode>(() => {
     try {
       return localStorage.getItem(VIEW_MODE_KEY) === 'flip' ? 'flip' : 'grid'
@@ -72,14 +86,51 @@ export function DiaryView({ expenses }: DiaryViewProps) {
     void loadAllDiaryEntriesLocal(user.id).then((all) => {
       if (!cancelled) setSearchIndex(all)
     })
+    void loadDiaryTagFolders(user.id).then((folders) => {
+      if (!cancelled) setTagFolders(folders)
+    })
     return () => {
       cancelled = true
     }
   }, [user.id, entriesByDate])
 
+  const allEntries = useMemo(
+    () => ({ ...searchIndex, ...entriesByDate }),
+    [searchIndex, entriesByDate],
+  )
+
+  const tagTree = useMemo(
+    () => buildDiaryTagTree(allEntries, tagFolders),
+    [allEntries, tagFolders],
+  )
+
+  const filteredEntries = useMemo(() => {
+    if (tagFilter.type === 'all') return []
+    return Object.values(allEntries).filter(
+      (entry) => entryHasDiaryContent(entry) && entryMatchesTagFilter(entry, tagFilter),
+    )
+  }, [allEntries, tagFilter])
+
+  const handleCreateFolder = (folder: DiaryTagFolder) => {
+    void saveDiaryTagFolder(user.id, folder).then(setTagFolders)
+  }
+
+  const handleTagsChange = (patch: { mainTag: string | null; subTag: string | null }) => {
+    if (!patch.mainTag) return
+    void saveDiaryTagFolder(user.id, { mainTag: patch.mainTag, subTag: '' }).then((folders) => {
+      if (patch.subTag) {
+        void saveDiaryTagFolder(user.id, {
+          mainTag: patch.mainTag!,
+          subTag: patch.subTag,
+        }).then(setTagFolders)
+      } else {
+        setTagFolders(folders)
+      }
+    })
+  }
+
   const searchSuggestions = useMemo((): SearchSuggestion[] => {
-    const merged = { ...searchIndex, ...entriesByDate }
-    return Object.values(merged)
+    return Object.values(allEntries)
       .filter((e) => !isDiaryEntryEmpty(e) || diaryEntryHasPhoto(e))
       .map((e) => {
         const label = parseDateKey(e.dateKey).toLocaleDateString(undefined, {
@@ -94,10 +145,12 @@ export function DiaryView({ expenses }: DiaryViewProps) {
           title: e.title.trim() || (diaryEntryHasPhoto(e) ? 'Photo diary' : 'Diary entry'),
           subtitle: snippet || label,
           meta: label,
-          haystack: [e.body, e.dateKey],
+          haystack: [e.body, e.dateKey, e.mainTag, e.subTag].filter(
+            (v): v is string => Boolean(v),
+          ),
         }
       })
-  }, [searchIndex, entriesByDate])
+  }, [allEntries])
 
   useEffect(() => {
     try {
@@ -149,8 +202,16 @@ export function DiaryView({ expenses }: DiaryViewProps) {
   const selectedEntry = selectedDateKey ? getEntry(selectedDateKey) : null
 
   return (
-    <div className="min-h-screen p-6 pb-24">
-      <div className="mx-auto max-w-5xl">
+    <div className="min-h-screen p-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:p-6 sm:pb-24">
+      <div className="mx-auto flex max-w-6xl gap-4 sm:gap-6">
+        <DiaryTagSidebar
+          tree={tagTree}
+          filter={tagFilter}
+          onFilterChange={setTagFilter}
+          onCreateFolder={handleCreateFolder}
+        />
+
+        <div className="min-w-0 flex-1">
         <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-start gap-3">
             <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl bg-[#FF2D55]/12 text-[#FF2D55]">
@@ -229,17 +290,77 @@ export function DiaryView({ expenses }: DiaryViewProps) {
 
         <div className="mb-4">
           <PageSearch
-            placeholder="Search diary titles & notes…"
+            placeholder="Search diary titles, notes & hashtags…"
             suggestions={searchSuggestions}
             accentClassName="text-[#FF2D55]"
             onSelect={(s) => {
               const d = parseDateKey(s.id)
               setViewMonth(d.getFullYear(), d.getMonth())
               setSelectedDateKey(s.id)
+              setTagFilter({ type: 'all' })
             }}
           />
         </div>
 
+        {tagFilter.type !== 'all' && (
+          <div className="mb-4 flex items-center gap-2 rounded-xl bg-[#FF2D55]/8 px-3 py-2 lg:hidden">
+            <Hash size={14} className="shrink-0 text-[#FF2D55]" />
+            <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#FF2D55]">
+              {filterLabel(tagFilter)}
+            </span>
+            <button
+              type="button"
+              onClick={() => setTagFilter({ type: 'all' })}
+              className="rounded-lg p-1 text-[#FF2D55] hover:bg-[#FF2D55]/10"
+              aria-label="Clear tag filter"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
+        <div className="mb-4 flex gap-2 overflow-x-auto pb-1 lg:hidden">
+          <button
+            type="button"
+            onClick={() => setTagFilter({ type: 'all' })}
+            className={`shrink-0 rounded-full px-3 py-1.5 text-[12px] font-medium ${
+              tagFilter.type === 'all'
+                ? 'bg-[#FF2D55] text-white'
+                : 'bg-white text-[#636366] ring-1 ring-hairline'
+            }`}
+          >
+            All
+          </button>
+          {tagTree.map((node) => (
+            <button
+              key={node.mainTag}
+              type="button"
+              onClick={() => setTagFilter({ type: 'main', mainTag: node.mainTag })}
+              className={`shrink-0 rounded-full px-3 py-1.5 text-[12px] font-medium ${
+                tagFilter.type !== 'all' &&
+                ((tagFilter.type === 'main' && tagFilter.mainTag === node.mainTag) ||
+                  (tagFilter.type === 'sub' && tagFilter.mainTag === node.mainTag))
+                  ? 'bg-[#FF2D55] text-white'
+                  : 'bg-white text-[#636366] ring-1 ring-hairline'
+              }`}
+            >
+              {formatDiaryTagLabel(node.mainTag)}
+            </button>
+          ))}
+        </div>
+
+        {tagFilter.type !== 'all' ? (
+          <DiaryTaggedEntriesList
+            label={filterLabel(tagFilter)}
+            entries={filteredEntries}
+            onOpenDay={(dateKey) => {
+              const d = parseDateKey(dateKey)
+              setViewMonth(d.getFullYear(), d.getMonth())
+              setSelectedDateKey(dateKey)
+            }}
+          />
+        ) : (
+          <>
         {viewMode === 'grid' && showSpending && (
           <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px] text-muted">
             <span>Spend heat</span>
@@ -410,16 +531,21 @@ export function DiaryView({ expenses }: DiaryViewProps) {
             </button>
           </div>
         )}
+        </>
+        )}
+        </div>
       </div>
 
       {selectedDateKey && selectedEntry && (
         <DiaryDayEditor
           dateKey={selectedDateKey}
           entry={selectedEntry}
+          tagTree={tagTree}
           getEntry={getEntry}
           onChange={(patch) => {
             void upsertEntry(selectedDateKey, patch)
           }}
+          onTagsChange={handleTagsChange}
           onNavigateDate={(nextKey) => {
             const d = parseDateKey(nextKey)
             setViewMonth(d.getFullYear(), d.getMonth())

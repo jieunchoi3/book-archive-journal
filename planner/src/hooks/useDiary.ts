@@ -13,12 +13,18 @@ import {
 import { useAuth } from './useAuth'
 
 type DiaryEntryPatch = Partial<
-  Pick<DiaryEntry, 'title' | 'body' | 'layers' | 'frameColor' | 'canvasStrokes'>
+  Pick<
+    DiaryEntry,
+    'title' | 'body' | 'mainTag' | 'subTag' | 'bodyImages' | 'layers' | 'frameColor' | 'canvasStrokes'
+  >
 >
 
 function normalizeEntry(entry: DiaryEntry): DiaryEntry {
   return {
     ...entry,
+    mainTag: entry.mainTag ?? null,
+    subTag: entry.subTag ?? null,
+    bodyImages: entry.bodyImages ?? [],
     frameColor: entry.frameColor || DEFAULT_DIARY_FRAME_COLOR,
     canvasStrokes: entry.canvasStrokes ?? [],
   }
@@ -152,7 +158,9 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
       const current = normalizeEntry(
         entriesByDate[dateKey] ?? emptyDiaryEntry(dateKey),
       )
-      if (!current.layers.some((l) => !l.src)) return current
+      if (!current.layers.some((l) => !l.src) && !(current.bodyImages ?? []).some((i) => !i.src)) {
+        return current
+      }
       try {
         const hydrated = normalizeEntry(await hydrateDiaryEntry(userId, current))
         setEntriesByDate((prev) => ({ ...prev, [dateKey]: hydrated }))
@@ -184,11 +192,12 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
           (await loadDiaryEntry(userId, dateKey)) ??
           emptyDiaryEntry(dateKey),
       )
-      if (existing.layers.some((l) => !l.src)) {
+      if (existing.layers.some((l) => !l.src) || (existing.bodyImages ?? []).some((i) => !i.src)) {
         existing = normalizeEntry(await hydrateDiaryEntry(userId, existing))
       }
 
       const nextLayers: DiaryPhotoLayer[] = patch.layers ?? existing.layers
+      const nextBodyImages = patch.bodyImages ?? existing.bodyImages ?? []
       const nextFrameColor = patch.frameColor ?? existing.frameColor
       const nextCanvasStrokes = patch.canvasStrokes ?? existing.canvasStrokes
       let coverDataUrl = existing.coverDataUrl
@@ -213,6 +222,7 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
         ...existing,
         ...patch,
         layers: nextLayers,
+        bodyImages: nextBodyImages,
         frameColor: nextFrameColor,
         canvasStrokes: nextCanvasStrokes,
         coverDataUrl,
@@ -225,6 +235,7 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
 
       const touchesMedia =
         patch.layers !== undefined ||
+        patch.bodyImages !== undefined ||
         patch.frameColor !== undefined ||
         patch.canvasStrokes !== undefined
       if (touchesMedia) {

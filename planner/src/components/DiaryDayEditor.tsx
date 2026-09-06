@@ -1,16 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronDown, ChevronUp, ImagePlus, Pencil, X } from 'lucide-react'
-import type { DiaryEntry, DiaryPhotoLayer, DiaryStroke } from '../types/diary'
-import { formatDateKey, parseDateKey } from '../lib/weekUtils'
+import { ChevronDown, ChevronUp, ImagePlus, Pencil, Trash2, X } from 'lucide-react'
+import type { DiaryBodyImage, DiaryEntry, DiaryPhotoLayer, DiaryStroke, DiaryTagTreeNode } from '../types/diary'
+import { formatDateKey, generateId, parseDateKey } from '../lib/weekUtils'
+import { compressImageSource } from '../lib/diaryImage'
+import { handleClipboardImagePaste } from '../lib/clipboardImage'
 import { DiaryPhotoEditor } from './DiaryPhotoEditor'
+import { DiaryTagFields } from './DiaryTagFields'
 
 interface DiaryDayEditorProps {
   dateKey: string
   entry: DiaryEntry
+  tagTree: DiaryTagTreeNode[]
   getEntry: (dateKey: string) => DiaryEntry
   onChange: (
-    patch: Partial<Pick<DiaryEntry, 'title' | 'body' | 'layers' | 'frameColor' | 'canvasStrokes'>>,
+    patch: Partial<
+      Pick<
+        DiaryEntry,
+        'title' | 'body' | 'mainTag' | 'subTag' | 'bodyImages' | 'layers' | 'frameColor' | 'canvasStrokes'
+      >
+    >,
   ) => void
+  onTagsChange?: (patch: { mainTag: string | null; subTag: string | null }) => void
   onNavigateDate: (dateKey: string) => void
   onClose: () => void
 }
@@ -70,16 +80,21 @@ function DayPreviewCard({
 export function DiaryDayEditor({
   dateKey,
   entry,
+  tagTree,
   getEntry,
   onChange,
+  onTagsChange,
   onNavigateDate,
   onClose,
 }: DiaryDayEditorProps) {
   const [title, setTitle] = useState(entry.title)
   const [body, setBody] = useState(entry.body)
+  const [bodyImages, setBodyImages] = useState<DiaryBodyImage[]>(entry.bodyImages ?? [])
   const [editingPhotos, setEditingPhotos] = useState(false)
+  const [addingBodyImage, setAddingBodyImage] = useState(false)
   const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const bodyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const bodyFileInputRef = useRef<HTMLInputElement>(null)
   const scrollerRef = useRef<HTMLDivElement>(null)
   const navigatingRef = useRef(false)
   const pendingTitle = useRef(entry.title)
@@ -108,9 +123,10 @@ export function DiaryDayEditor({
   useEffect(() => {
     setTitle(entry.title)
     setBody(entry.body)
+    setBodyImages(entry.bodyImages ?? [])
     pendingTitle.current = entry.title
     pendingBody.current = entry.body
-  }, [entry.dateKey, entry.title, entry.body])
+  }, [entry.dateKey, entry.title, entry.body, entry.bodyImages])
 
   useEffect(() => {
     const el = scrollerRef.current
@@ -186,6 +202,42 @@ export function DiaryDayEditor({
     pendingBody.current = value
     if (bodyTimer.current) clearTimeout(bodyTimer.current)
     bodyTimer.current = setTimeout(() => onChange({ body: value }), 300)
+  }
+
+  const addBodyImage = useCallback(
+    async (source: File | string) => {
+      setAddingBodyImage(true)
+      try {
+        const src = await compressImageSource(source, 2400, 0.9)
+        setBodyImages((prev) => {
+          const next: DiaryBodyImage[] = [...prev, { id: generateId(), src }]
+          onChange({ bodyImages: next })
+          return next
+        })
+      } catch (e) {
+        console.warn('[diary] body image add failed', e)
+      } finally {
+        setAddingBodyImage(false)
+      }
+    },
+    [onChange],
+  )
+
+  const removeBodyImage = useCallback(
+    (id: string) => {
+      const next = bodyImages.filter((image) => image.id !== id)
+      setBodyImages(next)
+      onChange({ bodyImages: next })
+    },
+    [bodyImages, onChange],
+  )
+
+  const handleBodyImageFiles = (files: FileList | null) => {
+    if (!files?.length) return
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      if (file?.type.startsWith('image/')) void addBodyImage(file)
+    }
   }
 
   const saveLayers = (result: {
@@ -327,17 +379,89 @@ export function DiaryDayEditor({
                     />
                   </section>
 
+                  <DiaryTagFields
+                    mainTag={entry.mainTag}
+                    subTag={entry.subTag}
+                    tagTree={tagTree}
+                    onChange={(patch) => {
+                      onChange(patch)
+                      onTagsChange?.(patch)
+                    }}
+                  />
+
                   <section className="flex min-h-0 flex-1 flex-col">
-                    <label className="mb-1.5 block text-[12px] font-semibold uppercase tracking-wide text-muted">
-                      What happened
-                    </label>
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                      <label className="block text-[12px] font-semibold uppercase tracking-wide text-muted">
+                        What happened
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => bodyFileInputRef.current?.click()}
+                        disabled={addingBodyImage}
+                        className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-medium text-[#007AFF] hover:bg-[#007AFF]/8 disabled:opacity-50"
+                      >
+                        <ImagePlus size={13} />
+                        {addingBodyImage ? 'Adding…' : 'Add photo'}
+                      </button>
+                      <input
+                        ref={bodyFileInputRef}
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => {
+                          handleBodyImageFiles(e.target.files)
+                          e.target.value = ''
+                        }}
+                      />
+                    </div>
                     <textarea
                       value={body}
                       onChange={(e) => queueBody(e.target.value)}
-                      placeholder="Write about your day…"
-                      rows={10}
-                      className="min-h-[200px] w-full flex-1 resize-none rounded-xl border border-hairline bg-[#FAFAFA] px-3.5 py-3 text-[14px] leading-relaxed text-[#1C1C1E] outline-none placeholder:text-[#C7C7CC] focus:border-[#007AFF]/50 focus:bg-white focus:ring-2 focus:ring-[#007AFF]/15 sm:min-h-[280px]"
+                      onPaste={(e) => {
+                        handleClipboardImagePaste(e.nativeEvent, (source) => {
+                          void addBodyImage(source)
+                        })
+                      }}
+                      placeholder="Write about your day, or paste / add a photo of handwritten notes…"
+                      rows={8}
+                      className="min-h-[140px] w-full resize-none rounded-xl border border-hairline bg-[#FAFAFA] px-3.5 py-3 text-[14px] leading-relaxed text-[#1C1C1E] outline-none placeholder:text-[#C7C7CC] focus:border-[#007AFF]/50 focus:bg-white focus:ring-2 focus:ring-[#007AFF]/15 sm:min-h-[180px]"
                     />
+                    {bodyImages.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        <p className="text-[11px] font-medium text-muted">
+                          Handwritten notes ({bodyImages.length})
+                        </p>
+                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-1">
+                          {bodyImages.map((image) => (
+                            <div
+                              key={image.id}
+                              className="group relative overflow-hidden rounded-xl ring-1 ring-hairline"
+                            >
+                              {image.src ? (
+                                <img
+                                  src={image.src}
+                                  alt="Handwritten note"
+                                  className="max-h-48 w-full object-contain bg-[#FAFAFA]"
+                                />
+                              ) : (
+                                <div className="flex h-32 items-center justify-center bg-[#F2F2F7] text-[12px] text-muted">
+                                  Loading…
+                                </div>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => removeBodyImage(image.id)}
+                                className="absolute right-2 top-2 rounded-lg bg-black/55 p-1.5 text-white opacity-0 transition group-hover:opacity-100"
+                                aria-label="Remove note photo"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </section>
                 </div>
               </div>

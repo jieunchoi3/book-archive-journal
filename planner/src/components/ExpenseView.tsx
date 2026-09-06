@@ -336,7 +336,7 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
   const categoryTabLabel = isHierarchyMonth ? 'By purpose' : 'By category'
 
   return (
-    <div className="min-h-screen p-6 pb-24">
+    <div className="min-h-screen p-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:p-6 sm:pb-24">
       <div className="mx-auto max-w-6xl">
         <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-start gap-3">

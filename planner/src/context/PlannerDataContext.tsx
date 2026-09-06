@@ -58,6 +58,13 @@ import {
   markLocalImportDone,
 } from '../lib/localStorageLegacy'
 import { emptyWeeklyLog } from '../lib/storageUtils'
+import {
+  loadTemplateLocal,
+  loadWeeklyLogLocal,
+  saveTemplateLocal,
+  saveWeeklyLogLocal,
+  weeklyLogHasContent,
+} from '../lib/plannerLocalCache'
 import { logError } from '../lib/formatError'
 import {
   getHiddenBlockTasks,
@@ -234,11 +241,13 @@ export function PlannerDataProvider({
   const weekStartRef = useRef(weekStart)
   const weekLoadGeneration = useRef(0)
   const weekCacheRef = useRef(new Map<string, WeeklyLog>())
-  const pendingBlockLogWrite = useRef<{
-    dayKey: DayKey
-    blockId: string
-    blockLog: BlockDayLog
-  } | null>(null)
+  const itemsStoreRef = useRef(itemsStore)
+  const linkedAppsRef = useRef(linkedApps)
+  const sidebarNoteRef = useRef(sidebarNote)
+  const pendingBlockLogWrites = useRef(
+    new Map<string, { dayKey: DayKey; blockId: string; blockLog: BlockDayLog }>(),
+  )
+  const localCacheTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     templateRef.current = template
@@ -251,6 +260,27 @@ export function PlannerDataProvider({
   useEffect(() => {
     weekStartRef.current = weekStart
   }, [weekStart])
+
+  useEffect(() => {
+    itemsStoreRef.current = itemsStore
+  }, [itemsStore])
+
+  useEffect(() => {
+    linkedAppsRef.current = linkedApps
+  }, [linkedApps])
+
+  useEffect(() => {
+    sidebarNoteRef.current = sidebarNote
+  }, [sidebarNote])
+
+  const persistLocalCacheDebounced = useCallback(() => {
+    if (localCacheTimer.current) clearTimeout(localCacheTimer.current)
+    localCacheTimer.current = setTimeout(() => {
+      localCacheTimer.current = null
+      saveWeeklyLogLocal(userId, weeklyLogRef.current)
+      saveTemplateLocal(userId, templateRef.current)
+    }, 500)
+  }, [userId])
 
   /** Serialize template writes (recurring task adds, block edits). */
   const enqueueTemplateSync = useCallback(
@@ -268,35 +298,82 @@ export function PlannerDataProvider({
     [userId],
   )
 
-  const awaitTemplateSync = useCallback(async (): Promise<void> => {
-    if (templateTimer.current) {
-      clearTimeout(templateTimer.current)
-      templateTimer.current = null
-      enqueueTemplateSync(templateRef.current)
-    }
-    await templateSyncQueue.current
-  }, [enqueueTemplateSync])
-
   const flushBlockLogWrite = useCallback((): void => {
     if (blockLogTimer.current) {
       clearTimeout(blockLogTimer.current)
       blockLogTimer.current = null
     }
-    const pending = pendingBlockLogWrite.current
-    pendingBlockLogWrite.current = null
-    if (!pending) return
-    void upsertBlockWeekLog(
-      userId,
-      weekStartRef.current,
-      pending.dayKey,
-      pending.blockId,
-      pending.blockLog,
-    ).catch((e) => logError('upsertBlockWeekLog', e))
+    const pending = pendingBlockLogWrites.current
+    pendingBlockLogWrites.current = new Map()
+    for (const { dayKey, blockId, blockLog } of pending.values()) {
+      void upsertBlockWeekLog(userId, weekStartRef.current, dayKey, blockId, blockLog).catch(
+        (e) => logError('upsertBlockWeekLog', e),
+      )
+    }
   }, [userId])
+
+  const flushAllPending = useCallback(async (): Promise<void> => {
+    flushBlockLogWrite()
+
+    if (templateTimer.current) {
+      clearTimeout(templateTimer.current)
+      templateTimer.current = null
+      enqueueTemplateSync(templateRef.current)
+    }
+
+    if (itemsTimer.current) {
+      clearTimeout(itemsTimer.current)
+      itemsTimer.current = null
+      void syncItemsStore(userId, itemsStoreRef.current).catch((e) =>
+        logError('syncItemsStore', e),
+      )
+    }
+
+    if (appsTimer.current) {
+      clearTimeout(appsTimer.current)
+      appsTimer.current = null
+      void syncLinkedApps(userId, linkedAppsRef.current).catch((e) =>
+        logError('syncLinkedApps', e),
+      )
+    }
+
+    if (sidebarNoteTimer.current) {
+      clearTimeout(sidebarNoteTimer.current)
+      sidebarNoteTimer.current = null
+      void upsertSidebarNote(userId, sidebarNoteRef.current).catch((e) =>
+        logError('upsertSidebarNote', e),
+      )
+    }
+
+    if (localCacheTimer.current) {
+      clearTimeout(localCacheTimer.current)
+      localCacheTimer.current = null
+    }
+    saveWeeklyLogLocal(userId, weeklyLogRef.current)
+    saveTemplateLocal(userId, templateRef.current)
+
+    await templateSyncQueue.current
+  }, [userId, flushBlockLogWrite, enqueueTemplateSync])
+
+  useEffect(() => {
+    const onPageHide = () => {
+      void flushAllPending()
+    }
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') void flushAllPending()
+    }
+    window.addEventListener('pagehide', onPageHide)
+    document.addEventListener('visibilitychange', onHide)
+    return () => {
+      window.removeEventListener('pagehide', onPageHide)
+      document.removeEventListener('visibilitychange', onHide)
+      void flushAllPending()
+    }
+  }, [flushAllPending])
 
   const persistBlockWeekLogDebounced = useCallback(
     (dayKey: DayKey, blockId: string, blockLog: BlockDayLog) => {
-      pendingBlockLogWrite.current = { dayKey, blockId, blockLog }
+      pendingBlockLogWrites.current.set(`${dayKey}:${blockId}`, { dayKey, blockId, blockLog })
       if (blockLogTimer.current) clearTimeout(blockLogTimer.current)
       blockLogTimer.current = setTimeout(() => {
         blockLogTimer.current = null
@@ -308,25 +385,40 @@ export function PlannerDataProvider({
 
   const loadWeeklyLog = useCallback(
     async (targetWeekStart: string): Promise<WeeklyLog> => {
-      return fetchWeeklyLog(userId, targetWeekStart)
+      try {
+        const cloud = await fetchWeeklyLog(userId, targetWeekStart)
+        const local = loadWeeklyLogLocal(userId, targetWeekStart)
+        if (local && weeklyLogHasContent(local) && !weeklyLogHasContent(cloud)) {
+          return local
+        }
+        return cloud
+      } catch (e) {
+        logError('fetchWeeklyLog', e)
+        return loadWeeklyLogLocal(userId, targetWeekStart) ?? emptyWeeklyLog(targetWeekStart)
+      }
     },
     [userId],
   )
 
-  const putWeekCache = useCallback((log: WeeklyLog) => {
-    weekCacheRef.current.set(log.weekStart, log)
-  }, [])
+  const putWeekCache = useCallback(
+    (log: WeeklyLog) => {
+      weekCacheRef.current.set(log.weekStart, log)
+      persistLocalCacheDebounced()
+    },
+    [persistLocalCacheDebounced],
+  )
 
   const persistTemplate = useCallback(
     (t: WeekTemplate) => {
       templateRef.current = t
+      persistLocalCacheDebounced()
       if (templateTimer.current) clearTimeout(templateTimer.current)
       templateTimer.current = setTimeout(() => {
         templateTimer.current = null
         void enqueueTemplateSync(templateRef.current)
       }, 400)
     },
-    [enqueueTemplateSync],
+    [enqueueTemplateSync, persistLocalCacheDebounced],
   )
 
   const persistItems = useCallback(
@@ -381,10 +473,11 @@ export function PlannerDataProvider({
           fetchSidebarNote(userId).catch(() => null),
         ])
         if (cancelled) return
-        let finalTemplate = tmpl
+        let finalTemplate = tmpl ?? loadTemplateLocal(userId)
         if (!finalTemplate) {
           finalTemplate = await seedDefaultTemplate(userId)
         }
+        if (finalTemplate) saveTemplateLocal(userId, finalTemplate)
         setTemplate(finalTemplate)
         putWeekCache(log)
         setWeeklyLog(log)
@@ -456,12 +549,10 @@ export function PlannerDataProvider({
 
       const loadId = ++weekLoadGeneration.current
 
-      flushBlockLogWrite()
+      await flushAllPending()
 
       const leavingWeek = weekStartRef.current
       putWeekCache({ ...weeklyLogRef.current, weekStart: leavingWeek })
-
-      void awaitTemplateSync()
 
       weekStartRef.current = newWeekStart
       setWeekStart(newWeekStart)
@@ -512,7 +603,7 @@ export function PlannerDataProvider({
         }
       }
     },
-    [flushBlockLogWrite, awaitTemplateSync, loadWeeklyLog, putWeekCache],
+    [flushAllPending, loadWeeklyLog, putWeekCache],
   )
 
   const getBlockLog = useCallback(

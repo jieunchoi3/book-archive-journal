@@ -316,7 +316,7 @@ export function MonthCalendarView({
   }, [items.items, items.categories, items.tags, items.getCategory])
 
   return (
-    <div className="flex min-h-screen gap-6 p-6 pb-24">
+    <div className="flex min-h-screen gap-4 p-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:gap-6 sm:p-6 sm:pb-24">
       <aside className="hidden w-52 shrink-0 lg:block">
         <PlannerSidebar linkedApps={linkedApps} />
       </aside>

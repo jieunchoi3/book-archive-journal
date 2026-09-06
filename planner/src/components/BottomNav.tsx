@@ -30,13 +30,13 @@ export function BottomNav({ active, onChange, badges }: BottomNavProps) {
 
   return (
     <nav
-      className={`fixed inset-x-0 bottom-0 z-40 ${
+      className={`fixed inset-x-0 bottom-0 z-40 pb-[env(safe-area-inset-bottom,0px)] ${
         transparent
           ? 'border-t border-transparent bg-transparent'
           : 'border-t border-hairline bg-white/95 backdrop-blur-md'
       }`}
     >
-      <div className="mx-auto flex max-w-xl justify-around px-1 py-2 sm:px-3">
+      <div className="mx-auto flex max-w-xl justify-between gap-0.5 px-0.5 py-1.5 sm:justify-around sm:gap-0 sm:px-3 sm:py-2">
         <NavButton
           label="Diary"
           icon={<BookHeart size={20} />}
@@ -126,17 +126,17 @@ function NavButton({
     <button
       type="button"
       onClick={onClick}
-      className={`relative flex flex-col items-center gap-0.5 rounded-lg px-2 py-1.5 transition-colors sm:px-3 ${colorClass}`}
+      className={`relative flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 transition-colors sm:flex-none sm:px-3 ${colorClass}`}
     >
       <span className="relative">
         {icon}
         {showBadge && (
-          <span className="absolute -right-2.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#FF3B30] px-1 text-[9px] font-bold leading-none text-white">
+          <span className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#FF3B30] px-1 text-[9px] font-bold leading-none text-white">
             {badge > 9 ? '9+' : badge}
           </span>
         )}
       </span>
-      <span className="text-[10px] font-medium">{label}</span>
+      <span className="max-w-full truncate text-[9px] font-medium sm:text-[10px]">{label}</span>
     </button>
   )
 }

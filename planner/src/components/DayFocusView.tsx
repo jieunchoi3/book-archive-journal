@@ -26,6 +26,7 @@ interface DayFocusViewProps {
   allDays: DayTemplate[]
   planner: PlannerActions
   items: ItemsActions
+  showWeekOverviewBack?: boolean
   onClose: () => void
   onNavigateDay: (dayKey: DayKey) => void
 }
@@ -74,6 +75,7 @@ export function DayFocusView({
   allDays,
   planner,
   items,
+  showWeekOverviewBack = true,
   onClose,
   onNavigateDay,
 }: DayFocusViewProps) {
@@ -174,14 +176,16 @@ export function DayFocusView({
         className={`border-b px-4 py-4 ${today ? 'border-[#007AFF]/25 bg-gradient-to-r from-[#007AFF]/10 to-white' : 'border-hairline'}`}
       >
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex items-center gap-1 rounded-lg px-2 py-1 text-[13px] font-medium text-[#007AFF] hover:bg-[#007AFF]/10"
-          >
-            <ArrowLeft size={16} />
-            Week
-          </button>
+          {showWeekOverviewBack ? (
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex items-center gap-1 rounded-lg px-2 py-1 text-[13px] font-medium text-[#007AFF] hover:bg-[#007AFF]/10"
+            >
+              <ArrowLeft size={16} />
+              Week
+            </button>
+          ) : null}
           <div className="flex items-center gap-1">
             <button
               type="button"
