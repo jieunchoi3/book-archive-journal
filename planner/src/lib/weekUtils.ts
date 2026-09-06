@@ -27,6 +27,12 @@ export function parseDateKey(key: string): Date {
   return new Date(y, m - 1, d)
 }
 
+export function shiftDateKey(dateKey: string, days: number): string {
+  const d = parseDateKey(dateKey)
+  d.setDate(d.getDate() + days)
+  return formatDateKey(d)
+}
+
 export function formatWeekRange(weekStart: string): string {
   const start = parseDateKey(weekStart)
   const end = new Date(start)

@@ -67,6 +67,7 @@ export function OverdueEventsSection({ items, onSelectDate }: OverdueEventsSecti
                   onClick={
                     onSelectDate ? () => onSelectDate(occ.dateKey) : undefined
                   }
+                  onDelete={() => items.deleteItem(occ.item.id)}
                 />
               </div>
             </li>
