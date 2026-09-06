@@ -51,6 +51,31 @@ export interface MoneyTransaction {
 /** Explicit day status when there is no transaction to log. */
 export type ExpenseDayMarkKind = 'no_spend'
 
+export type WishlistStatus = 'want' | 'purchased' | 'dropped'
+export type WishlistPriority = 'low' | 'medium' | 'high'
+
+export interface WishlistCategory {
+  id: string
+  name: string
+  parentId: string | null
+  sortOrder: number
+}
+
+export interface WishlistItem {
+  id: string
+  name: string
+  brand: string
+  categoryId: string
+  estimatedPrice: number | null
+  priority: WishlistPriority
+  status: WishlistStatus
+  link: string
+  note: string
+  createdAt: string
+  purchasedAt?: string
+  linkedTransactionId?: string
+}
+
 export interface ExpenseStore {
   categories: ExpenseCategory[]
   transactions: MoneyTransaction[]
@@ -62,6 +87,10 @@ export interface ExpenseStore {
   spendKinds?: ExpenseSpendKind[]
   /** Picker links: purpose ↔ spend kinds. */
   purposeKindLinks?: ExpensePurposeKindLink[]
+  /** Wishlist category tree (up to 3 levels). */
+  wishlistCategories?: WishlistCategory[]
+  /** Items the user wants to buy. */
+  wishlistItems?: WishlistItem[]
 }
 
 /** Dual-axis logging / filters start on this date (inclusive). */
@@ -179,6 +208,8 @@ export function emptyExpenseStore(): ExpenseStore {
     purposes: [],
     spendKinds: [],
     purposeKindLinks: [],
+    wishlistCategories: [],
+    wishlistItems: [],
   }
 }
 

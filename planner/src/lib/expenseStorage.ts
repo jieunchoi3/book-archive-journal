@@ -4,6 +4,7 @@ import {
   ensureDualAxisCatalogs,
   normalizeExpenseTransactions,
 } from '../types/expense'
+import { ensureWishlistSeed } from './wishlistCategories'
 import { fetchExpenseStoreCloud, upsertExpenseStoreCloud } from './expenseCloud'
 import { isSupabaseConfigured } from './supabase'
 
@@ -125,12 +126,20 @@ export async function saveExpenseStore(userId: string, store: ExpenseStore): Pro
   }
 }
 
+function ensureWishlistInStore(store: ExpenseStore): ExpenseStore {
+  return {
+    ...store,
+    wishlistCategories: ensureWishlistSeed(store.wishlistCategories),
+    wishlistItems: store.wishlistItems ?? [],
+  }
+}
+
 export function ensureExpenseStore(store: ExpenseStore | null): ExpenseStore {
-  if (!store) return emptyExpenseStore()
+  if (!store) return ensureWishlistInStore(emptyExpenseStore())
   const withMarks = {
     ...store,
     dayMarks: store.dayMarks ?? {},
     transactions: normalizeExpenseTransactions(store.transactions ?? []),
   }
-  return ensureDualAxisCatalogs(withMarks)
+  return ensureDualAxisCatalogs(ensureWishlistInStore(withMarks))
 }

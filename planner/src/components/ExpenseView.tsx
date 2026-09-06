@@ -21,10 +21,13 @@ import { ExpenseReport } from './ExpenseReport'
 import { ExpenseEditModal } from './ExpenseEditModal'
 import { MissingExpenseDaysSection } from './MissingExpenseDaysSection'
 import { PageSearch, type SearchSuggestion } from './PageSearch'
+import { WishlistPanel } from './WishlistPanel'
 
 interface ExpenseViewProps {
   expenses: ExpenseActions
 }
+
+type ExpensePageMode = 'spending' | 'wishlist'
 
 export function ExpenseView({ expenses }: ExpenseViewProps) {
   const {
@@ -81,6 +84,7 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
   const [logKindFilter, setLogKindFilter] = useState<string | 'all'>('all')
   const [exportOpen, setExportOpen] = useState(false)
   const [editingTxnId, setEditingTxnId] = useState<string | null>(null)
+  const [pageMode, setPageMode] = useState<ExpensePageMode>('spending')
 
   const editingTxn = useMemo(
     () =>
@@ -93,6 +97,7 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
   const openEditTxn = (id: string) => {
     const txn = transactions.find((t) => t.id === id)
     if (!txn) return
+    setPageMode('spending')
     const d = parseDateKey(txn.dateKey)
     setMonthKey(d.getFullYear(), d.getMonth())
     setSelectedDateKey(txn.dateKey)
@@ -348,10 +353,35 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
                 Expenses
               </h1>
               <p className="text-[13px] text-muted">
-                Log in & out · budgets · see where money goes
+                {pageMode === 'spending'
+                  ? 'Log in & out · budgets · see where money goes'
+                  : 'Save things you want to buy · organized by category'}
               </p>
             </div>
           </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-full bg-[#F2F2F7] p-0.5">
+              {(
+                [
+                  ['spending', 'Spending'],
+                  ['wishlist', 'Wishlist'],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setPageMode(id)}
+                  className={`rounded-full px-3.5 py-1.5 text-[12px] font-medium transition-colors ${
+                    pageMode === id
+                      ? 'bg-white text-[#8B5A2B] shadow-sm'
+                      : 'text-muted hover:text-[#48484A]'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {pageMode === 'spending' && (
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -380,8 +410,21 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
               Today
             </button>
           </div>
+            )}
+          </div>
         </header>
 
+        {pageMode === 'wishlist' ? (
+          <WishlistPanel
+            expenses={expenses}
+            onPurchased={(txnId) => {
+              setPageMode('spending')
+              setOverviewPanel('log')
+              openEditTxn(txnId)
+            }}
+          />
+        ) : (
+          <>
         <div className="mb-4">
           <PageSearch
             placeholder="Search notes, categories, amounts…"
@@ -777,6 +820,8 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
             </div>
           </div>
         </div>
+          </>
+        )}
       </div>
 
       {editingTxn && (
