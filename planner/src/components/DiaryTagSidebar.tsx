@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ChevronDown, ChevronRight, Folder, Hash, PanelLeftClose, PanelLeftOpen, Plus } from 'lucide-react'
+import { ChevronDown, ChevronRight, Folder, Hash, PanelLeftClose, PanelLeftOpen, Plus, Trash2 } from 'lucide-react'
 import type { DiaryTagFilter, DiaryTagFolder, DiaryTagTreeNode } from '../types/diary'
 import { formatDiaryTagLabel } from '../lib/diaryTags'
 
@@ -10,6 +10,7 @@ interface DiaryTagSidebarProps {
   filter: DiaryTagFilter
   onFilterChange: (filter: DiaryTagFilter) => void
   onCreateFolder: (folder: DiaryTagFolder) => void
+  onDeleteFolder: (mainTag: string, subTag?: string, entryCount?: number) => void
 }
 
 export function DiaryTagSidebar({
@@ -17,6 +18,7 @@ export function DiaryTagSidebar({
   filter,
   onFilterChange,
   onCreateFolder,
+  onDeleteFolder,
 }: DiaryTagSidebarProps) {
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem(STORAGE_KEY) === 'true',
@@ -65,8 +67,8 @@ export function DiaryTagSidebar({
   }
 
   return (
-    <aside className="hidden w-52 shrink-0 lg:block">
-      <div className="mb-3 flex items-center justify-between px-1">
+    <aside className="hidden w-40 shrink-0 lg:block xl:w-44">
+      <div className="mb-2 flex items-center justify-between">
         <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted">
           Hashtag folders
         </h2>
@@ -86,7 +88,7 @@ export function DiaryTagSidebar({
       <button
         type="button"
         onClick={() => onFilterChange({ type: 'all' })}
-        className={`mb-2 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors ${
+        className={`mb-1.5 flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[13px] transition-colors ${
           filter.type === 'all'
             ? 'bg-[#FF2D55]/10 font-semibold text-[#FF2D55]'
             : 'text-[#3C3C43] hover:bg-[#FAFAFA]'
@@ -106,7 +108,7 @@ export function DiaryTagSidebar({
 
           return (
             <li key={node.mainTag}>
-              <div className="flex items-center gap-0.5">
+              <div className="group flex items-center gap-0.5">
                 {hasSubs ? (
                   <button
                     type="button"
@@ -117,12 +119,12 @@ export function DiaryTagSidebar({
                     {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                   </button>
                 ) : (
-                  <span className="w-6" />
+                  <span className="w-5 shrink-0" />
                 )}
                 <button
                   type="button"
                   onClick={() => onFilterChange({ type: 'main', mainTag: node.mainTag })}
-                  className={`flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] transition-colors ${
+                  className={`flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left text-[13px] transition-colors ${
                     isMainActive
                       ? 'bg-[#FF2D55]/10 font-semibold text-[#FF2D55]'
                       : 'text-[#3C3C43] hover:bg-[#FAFAFA]'
@@ -131,10 +133,21 @@ export function DiaryTagSidebar({
                   <span className="min-w-0 flex-1 truncate">{formatDiaryTagLabel(node.mainTag)}</span>
                   <span className="text-[11px] text-muted">{node.entryCount}</span>
                 </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onDeleteFolder(node.mainTag, undefined, node.entryCount)
+                  }}
+                  className="rounded p-1 text-muted opacity-0 transition hover:bg-[#FF2D55]/10 hover:text-[#FF2D55] group-hover:opacity-100"
+                  aria-label={`Delete ${formatDiaryTagLabel(node.mainTag)}`}
+                >
+                  <Trash2 size={13} />
+                </button>
               </div>
 
               {hasSubs && isExpanded && (
-                <ul className="ml-5 mt-0.5 space-y-0.5 border-l border-hairline pl-2">
+                <ul className="ml-4 mt-0.5 space-y-0.5 border-l border-hairline pl-1.5">
                   {node.subTags.map((sub) => {
                     const isSubActive =
                       filter.type === 'sub' &&
@@ -142,26 +155,39 @@ export function DiaryTagSidebar({
                       filter.subTag === sub.name
                     return (
                       <li key={`${node.mainTag}:${sub.name}`}>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onFilterChange({
-                              type: 'sub',
-                              mainTag: node.mainTag,
-                              subTag: sub.name,
-                            })
-                          }
-                          className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[12px] transition-colors ${
-                            isSubActive
-                              ? 'bg-[#FF2D55]/10 font-semibold text-[#FF2D55]'
-                              : 'text-[#636366] hover:bg-[#FAFAFA]'
-                          }`}
-                        >
-                          <span className="min-w-0 flex-1 truncate">
-                            {formatDiaryTagLabel(sub.name)}
-                          </span>
-                          <span className="text-[10px] text-muted">{sub.count}</span>
-                        </button>
+                        <div className="group flex items-center gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onFilterChange({
+                                type: 'sub',
+                                mainTag: node.mainTag,
+                                subTag: sub.name,
+                              })
+                            }
+                            className={`flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left text-[12px] transition-colors ${
+                              isSubActive
+                                ? 'bg-[#FF2D55]/10 font-semibold text-[#FF2D55]'
+                                : 'text-[#636366] hover:bg-[#FAFAFA]'
+                            }`}
+                          >
+                            <span className="min-w-0 flex-1 truncate">
+                              {formatDiaryTagLabel(sub.name)}
+                            </span>
+                            <span className="text-[10px] text-muted">{sub.count}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onDeleteFolder(node.mainTag, sub.name, sub.count)
+                            }}
+                            className="rounded p-1 text-muted opacity-0 transition hover:bg-[#FF2D55]/10 hover:text-[#FF2D55] group-hover:opacity-100"
+                            aria-label={`Delete ${formatDiaryTagLabel(sub.name)}`}
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
                       </li>
                     )
                   })}
@@ -209,7 +235,7 @@ export function DiaryTagSidebar({
         <button
           type="button"
           onClick={() => setAdding(true)}
-          className="mt-3 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-[12px] font-medium text-[#FF2D55] hover:bg-[#FF2D55]/8"
+          className="mt-2 flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-[12px] font-medium text-[#FF2D55] hover:bg-[#FF2D55]/8"
         >
           <Plus size={14} />
           New folder

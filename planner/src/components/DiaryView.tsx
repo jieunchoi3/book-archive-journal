@@ -3,8 +3,8 @@ import { BookHeart, BookOpen, ChevronLeft, ChevronRight, Hash, LayoutGrid, Walle
 import { useDiary } from '../hooks/useDiary'
 import type { ExpenseActions } from '../hooks/useExpenses'
 import { useAuth } from '../hooks/useAuth'
-import { loadAllDiaryEntriesLocal } from '../lib/diaryStorage'
-import { loadDiaryTagFolders, saveDiaryTagFolder } from '../lib/diaryTagStorage'
+import { loadAllDiaryEntriesLocal, clearDiaryTagsForFolder } from '../lib/diaryStorage'
+import { deleteDiaryTagFolder, loadDiaryTagFolders, saveDiaryTagFolder } from '../lib/diaryTagStorage'
 import {
   buildDiaryTagTree,
   entryHasDiaryContent,
@@ -115,6 +115,43 @@ export function DiaryView({ expenses }: DiaryViewProps) {
     void saveDiaryTagFolder(user.id, folder).then(setTagFolders)
   }
 
+  const handleDeleteFolder = (mainTag: string, subTag?: string, entryCount = 0) => {
+    const label =
+      subTag !== undefined
+        ? `${formatDiaryTagLabel(mainTag)} / ${formatDiaryTagLabel(subTag)}`
+        : formatDiaryTagLabel(mainTag)
+    const message =
+      subTag !== undefined
+        ? entryCount > 0
+          ? `Delete ${label}? ${entryCount} note(s) will keep their main tag but lose this sub-tag.`
+          : `Delete empty sub-folder ${label}?`
+        : entryCount > 0
+          ? `Delete ${label} and all sub-folders? Tags will be removed from ${entryCount} note(s).`
+          : `Delete ${label} and all sub-folders?`
+
+    if (!window.confirm(message)) return
+
+    void (async () => {
+      await clearDiaryTagsForFolder(user.id, mainTag, subTag)
+      const folders = await deleteDiaryTagFolder(user.id, mainTag, subTag)
+      setTagFolders(folders)
+      const all = await loadAllDiaryEntriesLocal(user.id)
+      setSearchIndex(all)
+      await refreshMonth()
+      setTagFilter((current) => {
+        if (current.type === 'all') return current
+        if (subTag !== undefined) {
+          return current.type === 'sub' &&
+            current.mainTag === mainTag &&
+            current.subTag === subTag
+            ? { type: 'all' }
+            : current
+        }
+        return current.mainTag === mainTag ? { type: 'all' } : current
+      })
+    })()
+  }
+
   const handleTagsChange = (patch: { mainTag: string | null; subTag: string | null }) => {
     if (!patch.mainTag) return
     void saveDiaryTagFolder(user.id, { mainTag: patch.mainTag, subTag: '' }).then((folders) => {
@@ -202,13 +239,14 @@ export function DiaryView({ expenses }: DiaryViewProps) {
   const selectedEntry = selectedDateKey ? getEntry(selectedDateKey) : null
 
   return (
-    <div className="min-h-screen p-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:p-6 sm:pb-24">
-      <div className="mx-auto flex max-w-6xl gap-4 sm:gap-6">
+    <div className="min-h-screen px-3 py-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:px-4 sm:py-6 sm:pb-24 lg:px-5">
+      <div className="flex w-full gap-3 sm:gap-4 lg:gap-5">
         <DiaryTagSidebar
           tree={tagTree}
           filter={tagFilter}
           onFilterChange={setTagFilter}
           onCreateFolder={handleCreateFolder}
+          onDeleteFolder={handleDeleteFolder}
         />
 
         <div className="min-w-0 flex-1">

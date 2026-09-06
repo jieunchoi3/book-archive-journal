@@ -61,6 +61,24 @@ export async function upsertDiaryTagFolderCloud(
   if (error) throw error
 }
 
+export async function deleteDiaryTagFolderCloud(
+  userId: string,
+  mainTag: string,
+  subTag?: string,
+): Promise<void> {
+  const main = normalizeDiaryTag(mainTag)
+  let query = supabase
+    .from('diary_tag_folders')
+    .delete()
+    .eq('user_id', userId)
+    .eq('main_tag', main)
+  if (subTag !== undefined) {
+    query = query.eq('sub_tag', normalizeDiaryTag(subTag))
+  }
+  const { error } = await query
+  if (error) throw error
+}
+
 export async function loadDiaryTagFolders(userId: string): Promise<DiaryTagFolder[]> {
   const local = loadDiaryTagFoldersLocal(userId)
   if (!isSupabaseConfigured) return local
@@ -101,6 +119,32 @@ export async function saveDiaryTagFolder(
   if (isSupabaseConfigured) {
     try {
       await upsertDiaryTagFolderCloud(userId, normalized)
+    } catch {
+      // local copy remains
+    }
+  }
+  return next
+}
+
+export async function deleteDiaryTagFolder(
+  userId: string,
+  mainTag: string,
+  subTag?: string,
+): Promise<DiaryTagFolder[]> {
+  const main = normalizeDiaryTag(mainTag)
+  const sub = subTag !== undefined ? normalizeDiaryTag(subTag) : undefined
+
+  const existing = loadDiaryTagFoldersLocal(userId)
+  const next = existing.filter((folder) => {
+    if (normalizeDiaryTag(folder.mainTag) !== main) return true
+    if (sub === undefined) return false
+    return normalizeDiaryTag(folder.subTag) !== sub
+  })
+  saveDiaryTagFoldersLocal(userId, next)
+
+  if (isSupabaseConfigured) {
+    try {
+      await deleteDiaryTagFolderCloud(userId, mainTag, subTag)
     } catch {
       // local copy remains
     }
