@@ -240,7 +240,7 @@ export async function runWishlistEnrich(
   try {
     raw = await callGemini(model, userText, geminiKey)
   } catch {
-    model = 'gemini-2.0-flash'
+    model = 'gemini-2.5-pro'
     raw = await callGemini(model, userText, geminiKey)
   }
 
