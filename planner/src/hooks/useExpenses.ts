@@ -110,6 +110,7 @@ export interface ExpenseActions {
   addWishlistItem: (input: {
     name: string
     brand?: string
+    shop?: string
     categoryId: string
     estimatedPrice?: number | null
     priority?: WishlistPriority
@@ -123,6 +124,7 @@ export interface ExpenseActions {
         WishlistItem,
         | 'name'
         | 'brand'
+        | 'store'
         | 'categoryId'
         | 'estimatedPrice'
         | 'priority'
@@ -596,7 +598,7 @@ export function useExpenses(): ExpenseActions {
   }, [])
 
   const addWishlistItem: ExpenseActions['addWishlistItem'] = useCallback(
-    ({ name, brand, categoryId, estimatedPrice, priority, link, note }) => {
+    ({ name, brand, shop, categoryId, estimatedPrice, priority, link, note }) => {
       const trimmed = name.trim()
       if (!trimmed || !categoryId) return null
       if (!wishlistCategories.some((c) => c.id === categoryId)) return null
@@ -604,6 +606,7 @@ export function useExpenses(): ExpenseActions {
         id: generateId(),
         name: trimmed,
         brand: brand?.trim() ?? '',
+        store: shop?.trim() ?? '',
         categoryId,
         estimatedPrice: estimatedPrice ?? null,
         priority: priority ?? 'medium',
@@ -632,6 +635,7 @@ export function useExpenses(): ExpenseActions {
             ...patch,
             name: patch.name !== undefined ? patch.name.trim() : item.name,
             brand: patch.brand !== undefined ? patch.brand.trim() : item.brand,
+            store: patch.store !== undefined ? patch.store.trim() : (item.store ?? ''),
             link: patch.link !== undefined ? patch.link.trim() : item.link,
             note: patch.note !== undefined ? patch.note.trim() : item.note,
           }
