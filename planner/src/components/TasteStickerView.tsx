@@ -1001,8 +1001,13 @@ function PolaroidCard({
   const swatchHex = normalizeHexColor(sticker.colorHex)
   const coverSrc =
     !swatchHex && (sticker.imageDataUrl || (youtubeId ? youtubeThumbUrl(youtubeId) : ''))
+  const [imgFailed, setImgFailed] = useState(false)
   const [hovering, setHovering] = useState(false)
   const playOnHover = Boolean(youtubeId && hovering)
+
+  useEffect(() => {
+    setImgFailed(false)
+  }, [coverSrc])
 
   const handleActivate = () => {
     if (selectMode) onToggleSelect?.()
@@ -1052,7 +1057,7 @@ function PolaroidCard({
           <div className="relative min-h-0 flex-[1.15] overflow-hidden bg-white">
             {swatchHex ? (
               <div className="h-full w-full" style={{ backgroundColor: swatchHex }} />
-            ) : coverSrc ? (
+            ) : coverSrc && !imgFailed ? (
               <img
                 src={coverSrc}
                 alt=""
@@ -1060,6 +1065,7 @@ function PolaroidCard({
                   playOnHover ? 'opacity-0' : 'opacity-100'
                 }`}
                 draggable={false}
+                onError={() => setImgFailed(true)}
               />
             ) : (
               <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-[#C7C7CC]">

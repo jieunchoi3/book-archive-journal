@@ -32,6 +32,7 @@ import {
   syncTasteManual,
   syncTasteStoreWithCloud,
 } from '../lib/tasteStorage'
+import { ensureTasteStoreHydrated } from '../lib/tasteMedia'
 import { generateId, getTodayKey } from '../lib/weekUtils'
 import { useAuth } from './useAuth'
 
@@ -315,8 +316,9 @@ export function useTasteStickers(): TasteActions {
     const resync = () => {
       if (document.visibilityState !== 'visible') return
       void syncTasteStoreWithCloud(userId)
-        .then((loaded) => {
-          setStore(normalizeStore(loaded))
+        .then(async (loaded) => {
+          const hydrated = await ensureTasteStoreHydrated(userId, loaded)
+          setStore(normalizeStore(hydrated))
           setCloudEmpty(false)
           setSyncError(null)
         })

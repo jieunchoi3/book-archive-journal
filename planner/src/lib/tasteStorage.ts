@@ -16,6 +16,7 @@ import {
   mergeTasteStores,
   upsertTasteStoreCloud,
 } from './tasteCloud'
+import { ensureTasteStoreHydrated, dehydrateTasteStoreForPersistence } from './tasteMedia'
 import { isSupabaseConfigured } from './supabase'
 
 const DB_NAME = 'planner-taste'
@@ -23,8 +24,8 @@ const DB_VERSION = 1
 const STORE = 'store'
 const BACKUP_KEY = (userId: string) => `planner-taste-backup:v1:${userId}`
 
-function leanStoreForBackup(store: TasteStore): TasteStore {
-  return {
+function leanStoreForBackup(userId: string, store: TasteStore): TasteStore {
+  return dehydrateTasteStoreForPersistence(userId, {
     ...store,
     stickers: store.stickers.map((s) => ({
       ...s,
@@ -36,14 +37,14 @@ function leanStoreForBackup(store: TasteStore): TasteStore {
         bg?.startsWith('data:') ? '' : bg,
       ]),
     ),
-  }
+  })
 }
 
 function saveTasteBackup(userId: string, store: TasteStore, updatedAt: string): void {
   try {
     localStorage.setItem(
       BACKUP_KEY(userId),
-      JSON.stringify({ store: leanStoreForBackup(store), updatedAt }),
+      JSON.stringify({ store: leanStoreForBackup(userId, store), updatedAt }),
     )
   } catch (e) {
     console.warn('[taste] localStorage backup failed', e)
@@ -70,7 +71,12 @@ function loadTasteBackup(userId: string): StoredRow | null {
 /** Downloadable JSON backup (metadata; strips inline photos). */
 export function exportTasteBackupJson(userId: string, store: TasteStore): string {
   return JSON.stringify(
-    { version: 1, userId, exportedAt: new Date().toISOString(), store: leanStoreForBackup(store) },
+    {
+      version: 1,
+      userId,
+      exportedAt: new Date().toISOString(),
+      store: leanStoreForBackup(userId, store),
+    },
     null,
     2,
   )
@@ -143,17 +149,18 @@ async function saveTasteStoreLocal(
   updatedAt: string,
 ): Promise<void> {
   const db = await openDb()
+  const persisted = dehydrateTasteStoreForPersistence(userId, store)
   const row: StoredRow = {
     id: rowId(userId),
     userId,
-    store,
+    store: persisted,
     updatedAt,
   }
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readwrite')
     tx.objectStore(STORE).put(row)
     tx.oncomplete = () => {
-      saveTasteBackup(userId, store, updatedAt)
+      saveTasteBackup(userId, persisted, updatedAt)
       resolve()
     }
     tx.onerror = () => reject(tx.error)
@@ -171,11 +178,11 @@ function parseTs(value: string | undefined): number {
 }
 
 async function mergeLocalAndCloud(userId: string, local: StoredRow | null): Promise<TasteStore> {
+  const localStore = local?.store ?? emptyTasteStore()
   if (!isSupabaseConfigured) {
-    return local?.store ?? emptyTasteStore()
+    return ensureTasteStoreHydrated(userId, localStore)
   }
 
-  const localStore = local?.store ?? emptyTasteStore()
   const localUpdatedAt = local?.updatedAt ?? ''
   const localTs = parseTs(localUpdatedAt)
 
@@ -188,7 +195,7 @@ async function mergeLocalAndCloud(userId: string, local: StoredRow | null): Prom
         await saveTasteStoreLocal(userId, localStore, updatedAt)
         await upsertTasteStoreCloud(userId, localStore, updatedAt)
       }
-      return localStore
+      return ensureTasteStoreHydrated(userId, localStore)
     }
 
     const { store: cloudRaw, updatedAt: cloudUpdatedAt } = cloudRow
@@ -216,17 +223,18 @@ async function mergeLocalAndCloud(userId: string, local: StoredRow | null): Prom
       await upsertTasteStoreCloud(userId, merged, updatedAt)
     }
 
-    return merged
+    return ensureTasteStoreHydrated(userId, merged)
   } catch (e) {
     console.warn('[taste] cloud load failed, using local', e)
-    return localStore
+    return ensureTasteStoreHydrated(userId, localStore)
   }
 }
 
 /** Fast path: IndexedDB only (for instant UI). */
 export async function loadTasteStoreLocalOnly(userId: string): Promise<TasteStore> {
   const local = await loadTasteStoreLocal(userId)
-  return local?.store ?? emptyTasteStore()
+  const store = local?.store ?? emptyTasteStore()
+  return ensureTasteStoreHydrated(userId, store)
 }
 
 /** IndexedDB row with updatedAt (for sync decisions). */
@@ -304,7 +312,7 @@ export async function reloadTasteStoreFromCloud(userId: string): Promise<TasteSt
     await backfillTasteImagesToCloud(userId, merged)
   }
 
-  return merged
+  return ensureTasteStoreHydrated(userId, merged)
 }
 
 /** Upload local taste data to cloud, then merge both sides (safe manual sync). */
