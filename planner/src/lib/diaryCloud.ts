@@ -3,7 +3,7 @@ import { isDiaryEntryEmpty } from '../types/diary'
 import { supabase } from './supabase'
 
 const BUCKET = 'diary-media'
-const SIGNED_URL_TTL_SEC = 60 * 60 * 6
+const SIGNED_URL_TTL_SEC = 60 * 60 * 24
 
 type CloudLayer = {
   id: string

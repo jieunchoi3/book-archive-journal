@@ -40,6 +40,27 @@ interface StoredRow {
   entry: DiaryEntry
 }
 
+function isDataImageUrl(url: string | null | undefined): url is string {
+  return Boolean(url?.startsWith('data:'))
+}
+
+/** Signed HTTP URLs expire — only persist stable data URLs in IndexedDB. */
+function entryForLocalCache(entry: DiaryEntry): DiaryEntry {
+  return {
+    ...entry,
+    coverDataUrl: isDataImageUrl(entry.coverDataUrl) ? entry.coverDataUrl : null,
+    thumbDataUrl: isDataImageUrl(entry.thumbDataUrl) ? entry.thumbDataUrl : null,
+    layers: entry.layers.map((layer) => ({
+      ...layer,
+      src: isDataImageUrl(layer.src) ? layer.src : layer.src ? '' : layer.src,
+    })),
+    bodyImages: (entry.bodyImages ?? []).map((image) => ({
+      ...image,
+      src: isDataImageUrl(image.src) ? image.src : image.src ? '' : image.src,
+    })),
+  }
+}
+
 async function loadDiaryEntryLocal(
   userId: string,
   dateKey: string,
@@ -50,7 +71,7 @@ async function loadDiaryEntryLocal(
     const req = tx.objectStore(STORE).get(dbKey(userId, dateKey))
     req.onsuccess = () => {
       const row = req.result as StoredRow | undefined
-      resolve(row?.entry ?? null)
+      resolve(row?.entry ? entryForLocalCache(row.entry) : null)
     }
     req.onerror = () => reject(req.error)
   })
@@ -87,7 +108,7 @@ export async function loadAllDiaryEntriesLocal(
       }
       const row = cursor.value as StoredRow
       if (row.userId === userId) {
-        out[row.dateKey] = row.entry
+        out[row.dateKey] = entryForLocalCache(row.entry)
       }
       cursor.continue()
     }
@@ -112,7 +133,10 @@ async function saveDiaryEntryLocal(userId: string, entry: DiaryEntry): Promise<v
     id,
     userId,
     dateKey: entry.dateKey,
-    entry: { ...entry, updatedAt: entry.updatedAt || new Date().toISOString() },
+    entry: entryForLocalCache({
+      ...entry,
+      updatedAt: entry.updatedAt || new Date().toISOString(),
+    }),
   }
 
   return new Promise((resolve, reject) => {
@@ -157,12 +181,10 @@ function preferLocalImages(cloud: DiaryEntry, local?: DiaryEntry): DiaryEntry {
     ...cloud,
     layers: keepLocalLayers ? local.layers : cloud.layers,
     bodyImages: keepLocalBodyImages ? (local.bodyImages ?? []) : (cloud.bodyImages ?? []),
-    coverDataUrl: keepLocalCover
-      ? local.coverDataUrl
-      : (cloud.coverDataUrl ?? local.coverDataUrl ?? null),
+    coverDataUrl: keepLocalCover ? local.coverDataUrl : cloud.coverDataUrl ?? null,
     thumbDataUrl: keepLocalThumb
       ? local.thumbDataUrl
-      : (cloud.thumbDataUrl ?? local.thumbDataUrl ?? null),
+      : cloud.thumbDataUrl ?? cloud.coverDataUrl ?? null,
   }
 }
 
@@ -241,11 +263,11 @@ export async function loadDiaryEntriesForMonth(
       }
     }
 
-    // Cache metadata locally; keep prior local image bytes when cloud only has signed URLs.
+    // Cache metadata locally; keep data URLs, never persist expiring signed HTTP links.
     for (const [dateKey, entry] of Object.entries(merged)) {
-      const toStore = preferLocalImages(entry, local[dateKey])
-      await saveDiaryEntryLocal(userId, toStore)
-      merged[dateKey] = toStore
+      const displayEntry = preferLocalImages(entry, local[dateKey])
+      await saveDiaryEntryLocal(userId, displayEntry)
+      merged[dateKey] = displayEntry
     }
 
     return merged
@@ -317,12 +339,16 @@ export async function saveDiaryEntry(userId: string, entry: DiaryEntry): Promise
         bodyImages: needsBodyImageHydration(entry)
           ? (existing.bodyImages ?? [])
           : (entry.bodyImages ?? []),
-        coverDataUrl: entry.coverDataUrl?.startsWith('data:')
+        coverDataUrl: isDataImageUrl(entry.coverDataUrl)
           ? entry.coverDataUrl
-          : existing.coverDataUrl,
-        thumbDataUrl: entry.thumbDataUrl?.startsWith('data:')
+          : isDataImageUrl(existing.coverDataUrl)
+            ? existing.coverDataUrl
+            : null,
+        thumbDataUrl: isDataImageUrl(entry.thumbDataUrl)
           ? entry.thumbDataUrl
-          : (existing.thumbDataUrl ?? entry.thumbDataUrl),
+          : isDataImageUrl(existing.thumbDataUrl)
+            ? existing.thumbDataUrl
+            : null,
       }
     }
   }

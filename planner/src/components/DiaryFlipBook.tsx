@@ -258,14 +258,14 @@ function FlipPage({
           </p>
         ) : null}
         {hasBodyImages ? (
-          <div className={`space-y-2 ${body ? 'mt-3' : ''}`}>
+          <div className={`flex flex-col items-center gap-2 ${body ? 'mt-3' : ''}`}>
             {bodyImages.map((image) =>
               image.src ? (
                 <img
                   key={image.id}
                   src={image.src}
                   alt="Handwritten note"
-                  className="w-full rounded-lg object-contain ring-1 ring-black/5"
+                  className="block max-h-36 w-auto max-w-full rounded-lg object-contain ring-1 ring-black/5"
                   draggable={false}
                 />
               ) : null,

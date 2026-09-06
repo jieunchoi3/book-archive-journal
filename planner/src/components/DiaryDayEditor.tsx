@@ -415,53 +415,55 @@ export function DiaryDayEditor({
                         }}
                       />
                     </div>
-                    <textarea
-                      value={body}
-                      onChange={(e) => queueBody(e.target.value)}
-                      onPaste={(e) => {
-                        handleClipboardImagePaste(e.nativeEvent, (source) => {
-                          void addBodyImage(source)
-                        })
-                      }}
-                      placeholder="Write about your day, or paste / add a photo of handwritten notes…"
-                      rows={8}
-                      className="min-h-[140px] w-full resize-none rounded-xl border border-hairline bg-[#FAFAFA] px-3.5 py-3 text-[14px] leading-relaxed text-[#1C1C1E] outline-none placeholder:text-[#C7C7CC] focus:border-[#007AFF]/50 focus:bg-white focus:ring-2 focus:ring-[#007AFF]/15 sm:min-h-[180px]"
-                    />
-                    {bodyImages.length > 0 && (
-                      <div className="mt-3 space-y-2">
-                        <p className="text-[11px] font-medium text-muted">
-                          Handwritten notes ({bodyImages.length})
-                        </p>
-                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-1">
-                          {bodyImages.map((image) => (
-                            <div
-                              key={image.id}
-                              className="group relative overflow-hidden rounded-xl ring-1 ring-hairline"
-                            >
-                              {image.src ? (
-                                <img
-                                  src={image.src}
-                                  alt="Handwritten note"
-                                  className="max-h-48 w-full object-contain bg-[#FAFAFA]"
-                                />
-                              ) : (
-                                <div className="flex h-32 items-center justify-center bg-[#F2F2F7] text-[12px] text-muted">
-                                  Loading…
-                                </div>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => removeBodyImage(image.id)}
-                                className="absolute right-2 top-2 rounded-lg bg-black/55 p-1.5 text-white opacity-0 transition group-hover:opacity-100"
-                                aria-label="Remove note photo"
+                    <div className="flex min-h-[200px] flex-1 flex-col overflow-hidden rounded-xl border border-hairline bg-[#FAFAFA] focus-within:border-[#007AFF]/50 focus-within:bg-white focus-within:ring-2 focus-within:ring-[#007AFF]/15 sm:min-h-[240px]">
+                      <textarea
+                        value={body}
+                        onChange={(e) => queueBody(e.target.value)}
+                        onPaste={(e) => {
+                          handleClipboardImagePaste(e.nativeEvent, (source) => {
+                            void addBodyImage(source)
+                          })
+                        }}
+                        placeholder="Write about your day, or paste / add a photo of handwritten notes…"
+                        rows={6}
+                        className="min-h-[120px] w-full flex-1 resize-none border-0 bg-transparent px-3.5 py-3 text-[14px] leading-relaxed text-[#1C1C1E] outline-none placeholder:text-[#C7C7CC] sm:min-h-[140px]"
+                      />
+                      {bodyImages.length > 0 && (
+                        <div className="shrink-0 border-t border-hairline px-3 py-3">
+                          <p className="mb-2 text-[11px] font-medium text-muted">
+                            Handwritten notes ({bodyImages.length})
+                          </p>
+                          <div className="flex flex-col items-center gap-3">
+                            {bodyImages.map((image) => (
+                              <div
+                                key={image.id}
+                                className="group relative w-fit max-w-full"
                               >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          ))}
+                                {image.src ? (
+                                  <img
+                                    src={image.src}
+                                    alt="Handwritten note"
+                                    className="block max-h-[min(420px,45vh)] w-auto max-w-full rounded-lg object-contain shadow-sm ring-1 ring-black/5"
+                                  />
+                                ) : (
+                                  <div className="flex h-32 w-48 items-center justify-center rounded-lg bg-[#F2F2F7] text-[12px] text-muted">
+                                    Loading…
+                                  </div>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => removeBodyImage(image.id)}
+                                  className="absolute right-2 top-2 rounded-lg bg-black/55 p-1.5 text-white opacity-0 transition group-hover:opacity-100"
+                                  aria-label="Remove note photo"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </section>
                 </div>
               </div>
