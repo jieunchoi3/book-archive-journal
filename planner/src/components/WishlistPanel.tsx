@@ -11,8 +11,11 @@ import type { ExpenseActions } from '../hooks/useExpenses'
 import type { WishlistItem } from '../types/expense'
 import { formatMoney } from '../types/expense'
 import {
+  buildWishlistBrandOptions,
+  buildWishlistStoreOptions,
   categoryPathLabel,
   itemMatchesFilter,
+  wishlistFilterLabel,
   wishlistItemSubtitle,
   type WishlistFilter,
   wishlistPriorityLabel,
@@ -60,6 +63,16 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
     [wishlistItems],
   )
 
+  const storeOptions = useMemo(
+    () => buildWishlistStoreOptions(wishlistItems),
+    [wishlistItems],
+  )
+
+  const brandOptions = useMemo(
+    () => buildWishlistBrandOptions(wishlistItems),
+    [wishlistItems],
+  )
+
   const visibleItems = useMemo(() => {
     return wishlistItems
       .filter((item) => itemMatchesFilter(item, filter, wishlistCategories))
@@ -71,11 +84,24 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
       })
   }, [wishlistItems, filter, wishlistCategories])
 
-  const filterLabel = useMemo(() => {
-    if (filter.type === 'all') return 'All items'
-    if (filter.type === 'purchased') return 'Purchased'
-    return categoryPathLabel(wishlistCategories, filter.categoryId)
-  }, [filter, wishlistCategories])
+  const filterLabel = useMemo(
+    () => wishlistFilterLabel(filter, wishlistCategories, storeOptions, brandOptions),
+    [filter, wishlistCategories, storeOptions, brandOptions],
+  )
+
+  const formInitial = useMemo(() => {
+    if (editingItem) return editingItem
+    if (filter.type === 'category') return { categoryId: filter.categoryId }
+    if (filter.type === 'store') {
+      const label = storeOptions.find((o) => o.key === filter.storeKey)?.label
+      return label ? { store: label } : undefined
+    }
+    if (filter.type === 'brand') {
+      const label = brandOptions.find((o) => o.key === filter.brandKey)?.label
+      return label ? { brand: label } : undefined
+    }
+    return undefined
+  }, [editingItem, filter, storeOptions, brandOptions])
 
   const handleAdd = (values: {
     name: string
@@ -138,6 +164,8 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
       <WishlistSidebar
         tree={wishlistTree}
         categories={wishlistCategories}
+        storeOptions={storeOptions}
+        brandOptions={brandOptions}
         filter={filter}
         purchasedCount={purchasedCount}
         onFilterChange={setFilter}
@@ -160,13 +188,7 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
           {filter.type !== 'purchased' && (
             <WishlistItemForm
               categories={wishlistCategories}
-              initial={
-                editingItem
-                  ? editingItem
-                  : filter.type === 'category'
-                    ? { categoryId: filter.categoryId }
-                    : undefined
-              }
+              initial={formInitial}
               submitLabel={editingItem ? 'Save changes' : 'Add item'}
               onSubmit={editingItem ? handleUpdate : handleAdd}
               onCancel={editingItem ? () => setEditingItem(null) : undefined}
