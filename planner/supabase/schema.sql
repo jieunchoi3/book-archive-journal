@@ -171,6 +171,7 @@ create table if not exists planner.diary_tag_folders (
 -- Expense tracker document per user
 create table if not exists planner.expense_stores (
   user_id uuid primary key references auth.users(id) on delete cascade,
+  -- categories, transactions, dayMarks, purposes/spendKinds, wishlistCategories, wishlistItems
   store jsonb not null default '{"categories":[],"transactions":[]}'::jsonb,
   updated_at timestamptz not null default now()
 );

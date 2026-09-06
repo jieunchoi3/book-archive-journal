@@ -6,6 +6,10 @@ import type {
   ExpenseStore,
   MoneyFlow,
   MoneyTransaction,
+  WishlistItem,
+  WishlistPriority,
+  WishlistStatus,
+  WishlistCategory,
 } from '../types/expense'
 import {
   DEFAULT_EXPENSE_CATEGORIES,
@@ -19,6 +23,13 @@ import {
 } from '../types/expense'
 import { getMissingExpenseLogDays } from '../lib/expenseMissingDays'
 import { ensureExpenseStore, loadExpenseStore, saveExpenseStore } from '../lib/expenseStorage'
+import {
+  buildWishlistTree,
+  collectDescendantCategoryIds,
+  createWishlistCategory,
+  defaultWishlistCategoryId,
+  type WishlistTreeNode,
+} from '../lib/wishlistCategories'
 import { generateId, getTodayKey } from '../lib/weekUtils'
 import { useAuth } from './useAuth'
 
@@ -93,6 +104,52 @@ export interface ExpenseActions {
   spentByDate: Record<string, number>
   monthOutTotal: number
   monthInTotal: number
+  wishlistCategories: WishlistCategory[]
+  wishlistItems: WishlistItem[]
+  wishlistTree: WishlistTreeNode[]
+  addWishlistItem: (input: {
+    name: string
+    brand?: string
+    categoryId: string
+    estimatedPrice?: number | null
+    priority?: WishlistPriority
+    link?: string
+    note?: string
+  }) => string | null
+  updateWishlistItem: (
+    id: string,
+    patch: Partial<
+      Pick<
+        WishlistItem,
+        | 'name'
+        | 'brand'
+        | 'categoryId'
+        | 'estimatedPrice'
+        | 'priority'
+        | 'status'
+        | 'link'
+        | 'note'
+        | 'purchasedAt'
+        | 'linkedTransactionId'
+      >
+    >,
+  ) => void
+  deleteWishlistItem: (id: string) => void
+  addWishlistCategory: (input: { name: string; parentId: string | null }) => string | null
+  renameWishlistCategory: (categoryId: string, name: string) => void
+  deleteWishlistCategory: (categoryId: string, mode: 'move' | 'delete') => void
+  markWishlistPurchased: (
+    id: string,
+    input: {
+      amount: number
+      flow: MoneyFlow
+      categoryId?: string
+      purposeId?: string
+      spendKindId?: string
+      dateKey: string
+      note?: string
+    },
+  ) => string | null
 }
 
 export function useExpenses(): ExpenseActions {
@@ -139,6 +196,7 @@ export function useExpenses(): ExpenseActions {
             JSON.stringify((normalized.purposes ?? []).map((p) => p.budget))
           const needsSave =
             !loaded.purposes?.length ||
+            !(loaded.wishlistCategories?.length) ||
             linksChanged ||
             kindsChanged ||
             purposeBudgetsChanged ||
@@ -256,6 +314,13 @@ export function useExpenses(): ExpenseActions {
   )
 
   const missingLogDays = useMemo(() => getMissingExpenseLogDays(store), [store])
+
+  const wishlistCategories = store.wishlistCategories ?? []
+  const wishlistItems = store.wishlistItems ?? []
+  const wishlistTree = useMemo(
+    () => buildWishlistTree(wishlistCategories, wishlistItems),
+    [wishlistCategories, wishlistItems],
+  )
 
   const kindsForActivePurpose = useCallback(
     (purposeId: string) => kindsForPurpose(purposeId, spendKinds, purposeKindLinks),
@@ -530,6 +595,165 @@ export function useExpenses(): ExpenseActions {
     setViewMonth({ year, month })
   }, [])
 
+  const addWishlistItem: ExpenseActions['addWishlistItem'] = useCallback(
+    ({ name, brand, categoryId, estimatedPrice, priority, link, note }) => {
+      const trimmed = name.trim()
+      if (!trimmed || !categoryId) return null
+      if (!wishlistCategories.some((c) => c.id === categoryId)) return null
+      const item: WishlistItem = {
+        id: generateId(),
+        name: trimmed,
+        brand: brand?.trim() ?? '',
+        categoryId,
+        estimatedPrice: estimatedPrice ?? null,
+        priority: priority ?? 'medium',
+        status: 'want',
+        link: link?.trim() ?? '',
+        note: note?.trim() ?? '',
+        createdAt: new Date().toISOString(),
+      }
+      persist({
+        ...store,
+        wishlistItems: [item, ...wishlistItems],
+      })
+      return item.id
+    },
+    [persist, store, wishlistCategories, wishlistItems],
+  )
+
+  const updateWishlistItem: ExpenseActions['updateWishlistItem'] = useCallback(
+    (id, patch) => {
+      persist({
+        ...store,
+        wishlistItems: wishlistItems.map((item) => {
+          if (item.id !== id) return item
+          return {
+            ...item,
+            ...patch,
+            name: patch.name !== undefined ? patch.name.trim() : item.name,
+            brand: patch.brand !== undefined ? patch.brand.trim() : item.brand,
+            link: patch.link !== undefined ? patch.link.trim() : item.link,
+            note: patch.note !== undefined ? patch.note.trim() : item.note,
+          }
+        }),
+      })
+    },
+    [persist, store, wishlistItems],
+  )
+
+  const deleteWishlistItem = useCallback(
+    (id: string) => {
+      persist({
+        ...store,
+        wishlistItems: wishlistItems.filter((item) => item.id !== id),
+      })
+    },
+    [persist, store, wishlistItems],
+  )
+
+  const addWishlistCategory: ExpenseActions['addWishlistCategory'] = useCallback(
+    ({ name, parentId }) => {
+      const created = createWishlistCategory(wishlistCategories, { name, parentId })
+      if (!created) return null
+      persist({
+        ...store,
+        wishlistCategories: [...wishlistCategories, created],
+      })
+      return created.id
+    },
+    [persist, store, wishlistCategories],
+  )
+
+  const renameWishlistCategory = useCallback(
+    (categoryId: string, name: string) => {
+      const trimmed = name.trim()
+      if (!trimmed) return
+      persist({
+        ...store,
+        wishlistCategories: wishlistCategories.map((c) =>
+          c.id === categoryId ? { ...c, name: trimmed } : c,
+        ),
+      })
+    },
+    [persist, store, wishlistCategories],
+  )
+
+  const deleteWishlistCategory: ExpenseActions['deleteWishlistCategory'] = useCallback(
+    (categoryId, mode) => {
+      const target = wishlistCategories.find((c) => c.id === categoryId)
+      if (!target) return
+      const removeIds = new Set(collectDescendantCategoryIds(wishlistCategories, categoryId))
+      const fallbackId =
+        target.parentId && wishlistCategories.some((c) => c.id === target.parentId)
+          ? target.parentId
+          : defaultWishlistCategoryId(
+              wishlistCategories.filter((c) => !removeIds.has(c.id)),
+            )
+
+      const nextCategories = wishlistCategories.filter((c) => !removeIds.has(c.id))
+      let nextItems = wishlistItems
+      if (mode === 'delete') {
+        nextItems = wishlistItems.filter((item) => !removeIds.has(item.categoryId))
+      } else {
+        nextItems = wishlistItems.map((item) =>
+          removeIds.has(item.categoryId) ? { ...item, categoryId: fallbackId } : item,
+        )
+      }
+
+      persist({
+        ...store,
+        wishlistCategories: nextCategories,
+        wishlistItems: nextItems,
+      })
+    },
+    [persist, store, wishlistCategories, wishlistItems],
+  )
+
+  const markWishlistPurchased: ExpenseActions['markWishlistPurchased'] = useCallback(
+    (id, input) => {
+      const item = wishlistItems.find((w) => w.id === id)
+      if (!item || !(input.amount > 0)) return null
+
+      const dual =
+        input.flow === 'out' &&
+        Boolean(input.purposeId?.trim()) &&
+        Boolean(input.spendKindId?.trim())
+      const tx: MoneyTransaction = {
+        id: generateId(),
+        amount: input.amount,
+        flow: input.flow,
+        categoryId: dual ? '' : input.categoryId?.trim() || '',
+        purposeId: dual ? input.purposeId!.trim() : '',
+        spendKindId: dual ? input.spendKindId!.trim() : '',
+        dateKey: input.dateKey || getTodayKey(),
+        note: input.note?.trim() ?? '',
+        createdAt: new Date().toISOString(),
+      }
+      if (!dual && !tx.categoryId) return null
+
+      const dayMarks = { ...(store.dayMarks ?? {}) }
+      delete dayMarks[tx.dateKey]
+
+      persist({
+        ...store,
+        transactions: [tx, ...store.transactions],
+        dayMarks,
+        wishlistItems: wishlistItems.map((w) =>
+          w.id === id
+            ? {
+                ...w,
+                status: 'purchased' as WishlistStatus,
+                purchasedAt: new Date().toISOString(),
+                linkedTransactionId: tx.id,
+              }
+            : w,
+        ),
+      })
+      return tx.id
+    },
+    [persist, store, wishlistItems],
+  )
+
   return {
     loading,
     categories: store.categories,
@@ -568,5 +792,15 @@ export function useExpenses(): ExpenseActions {
     spentByDate,
     monthOutTotal,
     monthInTotal,
+    wishlistCategories,
+    wishlistItems,
+    wishlistTree,
+    addWishlistItem,
+    updateWishlistItem,
+    deleteWishlistItem,
+    addWishlistCategory,
+    renameWishlistCategory,
+    deleteWishlistCategory,
+    markWishlistPurchased,
   }
 }
