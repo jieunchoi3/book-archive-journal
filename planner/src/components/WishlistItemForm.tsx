@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Check, Loader2, Sparkles, X } from 'lucide-react'
+import { Check, ImagePlus, Loader2, Sparkles, X } from 'lucide-react'
 import type { WishlistCategory, WishlistItem, WishlistPriority } from '../types/expense'
+import { handleClipboardImagePaste } from '../lib/clipboardImage'
+import { compressImageSource } from '../lib/diaryImage'
 import {
   categoryPath,
   categoryPathLabel,
@@ -23,6 +25,7 @@ export type WishlistItemFormValues = {
   priority: WishlistPriority
   link: string
   note: string
+  imageDataUrl: string
 }
 
 interface WishlistItemFormProps {
@@ -51,9 +54,13 @@ export function WishlistItemForm({
   const [priority, setPriority] = useState<WishlistPriority>(initial?.priority ?? 'medium')
   const [link, setLink] = useState(initial?.link ?? '')
   const [note, setNote] = useState(initial?.note ?? '')
+  const [imageDataUrl, setImageDataUrl] = useState(initial?.imageDataUrl ?? '')
+  const [photoBusy, setPhotoBusy] = useState(false)
+  const [photoError, setPhotoError] = useState<string | null>(null)
   const [enriching, setEnriching] = useState(false)
   const [enrichError, setEnrichError] = useState<string | null>(null)
   const lastAutoKey = useRef('')
+  const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setName(initial?.name ?? '')
@@ -64,6 +71,8 @@ export function WishlistItemForm({
     setPriority(initial?.priority ?? 'medium')
     setLink(initial?.link ?? '')
     setNote(initial?.note ?? '')
+    setImageDataUrl(initial?.imageDataUrl ?? '')
+    setPhotoError(null)
     setEnrichError(null)
     lastAutoKey.current = ''
   }, [initial, categories])
@@ -180,6 +189,40 @@ export function WishlistItemForm({
     return () => window.clearTimeout(timer)
   }, [brand, name, link, estimatedPrice, runEnrich])
 
+  const applyPhoto = useCallback(async (source: File | string) => {
+    setPhotoBusy(true)
+    setPhotoError(null)
+    try {
+      const compressed = await compressImageSource(source, 1200, 0.86)
+      setImageDataUrl(compressed)
+    } catch {
+      setPhotoError('Couldn’t read that photo. Try another file or paste again.')
+    } finally {
+      setPhotoBusy(false)
+    }
+  }, [])
+
+  const onPickFile = useCallback(
+    async (file: File | null) => {
+      if (!file) return
+      if (!file.type.startsWith('image/') && !/\.(png|jpe?g|gif|webp|heic|heif)$/i.test(file.name)) {
+        setPhotoError('Please choose an image file.')
+        return
+      }
+      await applyPhoto(file)
+    },
+    [applyPhoto],
+  )
+
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (!photoFocusRef.current) return
+      handleClipboardImagePaste(e, (source) => void applyPhoto(source))
+    }
+    document.addEventListener('paste', onPaste, true)
+    return () => document.removeEventListener('paste', onPaste, true)
+  }, [applyPhoto])
+
   const canSubmit = name.trim().length > 0 && Boolean(categoryId)
   const canAutoFillLink = canEnrichWishlistFromLink(link)
   const canAutoFillPrice = !link.trim() && canEnrichWishlistFromNameBrand(name, brand)
@@ -195,6 +238,7 @@ export function WishlistItemForm({
       priority,
       link,
       note,
+      imageDataUrl,
     })
   }
 
@@ -244,6 +288,71 @@ export function WishlistItemForm({
             Paste a link only, or add name + brand to estimate price.
           </p>
         </label>
+
+        <div>
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">
+            Photo
+          </span>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => void onPickFile(e.target.files?.[0] ?? null)}
+          />
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            onFocus={() => {
+              photoFocusRef.current = true
+            }}
+            onBlur={() => {
+              photoFocusRef.current = false
+            }}
+            onPaste={(e) => {
+              handleClipboardImagePaste(e.nativeEvent, (source) => void applyPhoto(source))
+            }}
+            disabled={photoBusy}
+            className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-xl border border-dashed border-[#C4A484] bg-[#FAFAFA] disabled:opacity-60"
+          >
+            {imageDataUrl ? (
+              <img
+                src={imageDataUrl}
+                alt=""
+                className="h-full w-full object-cover"
+                draggable={false}
+              />
+            ) : (
+              <div className="flex flex-col items-center gap-2 px-4 text-muted">
+                <ImagePlus size={26} className="text-[#C4A484]" />
+                <span className="text-[12px] font-medium">Upload from gallery</span>
+                <span className="text-[10px]">or click here and paste (⌘V)</span>
+              </div>
+            )}
+            {imageDataUrl && (
+              <span className="absolute bottom-2 right-2 rounded-full bg-black/55 px-2 py-1 text-[10px] font-medium text-white">
+                Change
+              </span>
+            )}
+            {photoBusy && (
+              <span className="absolute inset-0 flex items-center justify-center bg-white/70">
+                <Loader2 size={22} className="animate-spin text-[#8B5A2B]" />
+              </span>
+            )}
+          </button>
+          {photoError && (
+            <p className="mt-1 text-[11px] text-[#FF3B30]">{photoError}</p>
+          )}
+          {imageDataUrl && (
+            <button
+              type="button"
+              onClick={() => setImageDataUrl('')}
+              className="mt-1.5 text-[11px] font-medium text-muted hover:text-[#FF3B30]"
+            >
+              Remove photo
+            </button>
+          )}
+        </div>
 
         <label className="block">
           <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">

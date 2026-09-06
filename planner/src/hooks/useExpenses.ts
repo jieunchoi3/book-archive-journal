@@ -116,6 +116,7 @@ export interface ExpenseActions {
     priority?: WishlistPriority
     link?: string
     note?: string
+    imageDataUrl?: string
   }) => string | null
   updateWishlistItem: (
     id: string,
@@ -131,6 +132,7 @@ export interface ExpenseActions {
         | 'status'
         | 'link'
         | 'note'
+        | 'imageDataUrl'
         | 'purchasedAt'
         | 'linkedTransactionId'
       >
@@ -598,7 +600,7 @@ export function useExpenses(): ExpenseActions {
   }, [])
 
   const addWishlistItem: ExpenseActions['addWishlistItem'] = useCallback(
-    ({ name, brand, shop, categoryId, estimatedPrice, priority, link, note }) => {
+    ({ name, brand, shop, categoryId, estimatedPrice, priority, link, note, imageDataUrl }) => {
       const trimmed = name.trim()
       if (!trimmed || !categoryId) return null
       if (!wishlistCategories.some((c) => c.id === categoryId)) return null
@@ -613,6 +615,7 @@ export function useExpenses(): ExpenseActions {
         status: 'want',
         link: link?.trim() ?? '',
         note: note?.trim() ?? '',
+        imageDataUrl: imageDataUrl?.trim() ?? '',
         createdAt: new Date().toISOString(),
       }
       persist({
@@ -638,6 +641,10 @@ export function useExpenses(): ExpenseActions {
             store: patch.store !== undefined ? patch.store.trim() : (item.store ?? ''),
             link: patch.link !== undefined ? patch.link.trim() : item.link,
             note: patch.note !== undefined ? patch.note.trim() : item.note,
+            imageDataUrl:
+              patch.imageDataUrl !== undefined
+                ? patch.imageDataUrl.trim()
+                : (item.imageDataUrl ?? ''),
           }
         }),
       })

@@ -73,6 +73,8 @@ export interface WishlistItem {
   status: WishlistStatus
   link: string
   note: string
+  /** Compressed JPEG data URL for the product photo. */
+  imageDataUrl?: string
   createdAt: string
   purchasedAt?: string
   linkedTransactionId?: string

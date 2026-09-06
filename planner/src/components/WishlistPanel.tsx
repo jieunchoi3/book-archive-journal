@@ -86,6 +86,7 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
     priority: WishlistItem['priority']
     link: string
     note: string
+    imageDataUrl: string
   }) => {
     const price = values.estimatedPrice.trim()
       ? Number(values.estimatedPrice.replace(/,/g, ''))
@@ -99,6 +100,7 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
       priority: values.priority,
       link: values.link,
       note: values.note,
+      imageDataUrl: values.imageDataUrl,
     })
   }
 
@@ -111,6 +113,7 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
     priority: WishlistItem['priority']
     link: string
     note: string
+    imageDataUrl: string
   }) => {
     if (!editingItem) return
     const price = values.estimatedPrice.trim()
@@ -125,6 +128,7 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
       priority: values.priority,
       link: values.link,
       note: values.note,
+      imageDataUrl: values.imageDataUrl,
     })
     setEditingItem(null)
   }
@@ -184,7 +188,19 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
                   key={item.id}
                   className="rounded-2xl border border-hairline bg-white p-4 shadow-sm"
                 >
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    {item.imageDataUrl ? (
+                      <img
+                        src={item.imageDataUrl}
+                        alt=""
+                        className="h-20 w-20 shrink-0 rounded-xl border border-hairline object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-xl border border-dashed border-hairline bg-[#FAFAFA] text-[10px] text-muted">
+                        No photo
+                      </div>
+                    )}
+                    <div className="flex min-w-0 flex-1 items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-[15px] font-semibold text-[#1C1C1E]">
@@ -281,6 +297,7 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
                         <Trash2 size={13} />
                         Delete
                       </button>
+                    </div>
                     </div>
                   </div>
                 </article>
