@@ -1,3 +1,4 @@
+import { ArrowRight, Trash2 } from 'lucide-react'
 import type { ItemOccurrence } from '../types/item'
 
 interface ItemChipProps {
@@ -5,9 +6,18 @@ interface ItemChipProps {
   categoryColor?: string
   onToggleDone?: () => void
   onClick?: () => void
+  onDelete?: () => void
+  onPostpone?: () => void
 }
 
-export function ItemChip({ occurrence, categoryColor, onToggleDone, onClick }: ItemChipProps) {
+export function ItemChip({
+  occurrence,
+  categoryColor,
+  onToggleDone,
+  onClick,
+  onDelete,
+  onPostpone,
+}: ItemChipProps) {
   const { item, done } = occurrence
   const color = categoryColor ?? '#8E8E93'
 
@@ -62,6 +72,36 @@ export function ItemChip({ occurrence, categoryColor, onToggleDone, onClick }: I
           )}
         </span>
       </button>
+
+      {onPostpone && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onPostpone()
+          }}
+          className="mt-0.5 shrink-0 rounded-md p-0.5 text-muted hover:bg-white/80 hover:text-[#007AFF]"
+          aria-label="Postpone to tomorrow"
+          title="내일로 미루기"
+        >
+          <ArrowRight size={13} strokeWidth={2.25} />
+        </button>
+      )}
+
+      {onDelete && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onDelete()
+          }}
+          className="mt-0.5 shrink-0 rounded-md p-0.5 text-muted hover:bg-white/80 hover:text-[#FF3B30]"
+          aria-label="Delete"
+          title="삭제"
+        >
+          <Trash2 size={13} strokeWidth={2.25} />
+        </button>
+      )}
     </div>
   )
 }

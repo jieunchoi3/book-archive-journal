@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1"
+import { runWishlistEnrich, type EnrichBody } from "../_shared/wishlistEnrichCore.ts"
 
 const PROMPT_VERSION = "v1"
 const SYSTEM_PROMPT = `너는 사용자의 라이프 디자인 기록을 읽고 해석하는 분석가다.
@@ -32,10 +33,15 @@ const SYSTEM_PROMPT = `너는 사용자의 라이프 디자인 기록을 읽고 
 }`
 
 type Body = {
-  reportType: "snapshot" | "compare" | "pathway"
-  inputHash: string
-  inputRefs: Record<string, unknown>
-  payload: unknown
+  action?: 'wishlist-enrich'
+  link?: string
+  name?: string
+  brand?: string
+  store?: string
+  reportType?: "snapshot" | "compare" | "pathway"
+  inputHash?: string
+  inputRefs?: Record<string, unknown>
+  payload?: unknown
 }
 
 async function callGemini(model: string, userText: string, apiKey: string) {
@@ -113,6 +119,20 @@ Deno.serve(async (req) => {
     }
 
     const body = (await req.json()) as Body
+
+    if (body.action === 'wishlist-enrich') {
+      const enrichBody: EnrichBody = {
+        link: body.link,
+        name: body.name,
+        brand: body.brand,
+        store: body.store,
+      }
+      const { result, model } = await runWishlistEnrich(enrichBody, geminiKey)
+      return new Response(JSON.stringify({ result, model }), {
+        headers: { ...corsHeaders(), "Content-Type": "application/json" },
+      })
+    }
+
     if (!body?.reportType || !body?.inputHash) {
       return new Response(JSON.stringify({ error: "invalid body" }), {
         status: 400,

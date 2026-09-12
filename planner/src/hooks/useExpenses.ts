@@ -110,11 +110,13 @@ export interface ExpenseActions {
   addWishlistItem: (input: {
     name: string
     brand?: string
+    shop?: string
     categoryId: string
     estimatedPrice?: number | null
     priority?: WishlistPriority
     link?: string
     note?: string
+    imageDataUrl?: string
   }) => string | null
   updateWishlistItem: (
     id: string,
@@ -123,12 +125,14 @@ export interface ExpenseActions {
         WishlistItem,
         | 'name'
         | 'brand'
+        | 'store'
         | 'categoryId'
         | 'estimatedPrice'
         | 'priority'
         | 'status'
         | 'link'
         | 'note'
+        | 'imageDataUrl'
         | 'purchasedAt'
         | 'linkedTransactionId'
       >
@@ -596,7 +600,7 @@ export function useExpenses(): ExpenseActions {
   }, [])
 
   const addWishlistItem: ExpenseActions['addWishlistItem'] = useCallback(
-    ({ name, brand, categoryId, estimatedPrice, priority, link, note }) => {
+    ({ name, brand, shop, categoryId, estimatedPrice, priority, link, note, imageDataUrl }) => {
       const trimmed = name.trim()
       if (!trimmed || !categoryId) return null
       if (!wishlistCategories.some((c) => c.id === categoryId)) return null
@@ -604,12 +608,14 @@ export function useExpenses(): ExpenseActions {
         id: generateId(),
         name: trimmed,
         brand: brand?.trim() ?? '',
+        store: shop?.trim() ?? '',
         categoryId,
         estimatedPrice: estimatedPrice ?? null,
         priority: priority ?? 'medium',
         status: 'want',
         link: link?.trim() ?? '',
         note: note?.trim() ?? '',
+        imageDataUrl: imageDataUrl?.trim() ?? '',
         createdAt: new Date().toISOString(),
       }
       persist({
@@ -632,8 +638,13 @@ export function useExpenses(): ExpenseActions {
             ...patch,
             name: patch.name !== undefined ? patch.name.trim() : item.name,
             brand: patch.brand !== undefined ? patch.brand.trim() : item.brand,
+            store: patch.store !== undefined ? patch.store.trim() : (item.store ?? ''),
             link: patch.link !== undefined ? patch.link.trim() : item.link,
             note: patch.note !== undefined ? patch.note.trim() : item.note,
+            imageDataUrl:
+              patch.imageDataUrl !== undefined
+                ? patch.imageDataUrl.trim()
+                : (item.imageDataUrl ?? ''),
           }
         }),
       })

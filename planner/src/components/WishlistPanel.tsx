@@ -11,8 +11,12 @@ import type { ExpenseActions } from '../hooks/useExpenses'
 import type { WishlistItem } from '../types/expense'
 import { formatMoney } from '../types/expense'
 import {
+  buildWishlistBrandOptions,
+  buildWishlistStoreOptions,
   categoryPathLabel,
   itemMatchesFilter,
+  wishlistFilterLabel,
+  wishlistItemSubtitle,
   type WishlistFilter,
   wishlistPriorityLabel,
 } from '../lib/wishlistCategories'
@@ -53,9 +57,20 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
   const [filter, setFilter] = useState<WishlistFilter>({ type: 'all' })
   const [editingItem, setEditingItem] = useState<WishlistItem | null>(null)
   const [purchaseItem, setPurchaseItem] = useState<WishlistItem | null>(null)
+  const [addFormKey, setAddFormKey] = useState(0)
 
   const purchasedCount = useMemo(
     () => wishlistItems.filter((i) => i.status === 'purchased').length,
+    [wishlistItems],
+  )
+
+  const storeOptions = useMemo(
+    () => buildWishlistStoreOptions(wishlistItems),
+    [wishlistItems],
+  )
+
+  const brandOptions = useMemo(
+    () => buildWishlistBrandOptions(wishlistItems),
     [wishlistItems],
   )
 
@@ -70,20 +85,35 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
       })
   }, [wishlistItems, filter, wishlistCategories])
 
-  const filterLabel = useMemo(() => {
-    if (filter.type === 'all') return 'All items'
-    if (filter.type === 'purchased') return 'Purchased'
-    return categoryPathLabel(wishlistCategories, filter.categoryId)
-  }, [filter, wishlistCategories])
+  const filterLabel = useMemo(
+    () => wishlistFilterLabel(filter, wishlistCategories, storeOptions, brandOptions),
+    [filter, wishlistCategories, storeOptions, brandOptions],
+  )
+
+  const formInitial = useMemo(() => {
+    if (editingItem) return editingItem
+    if (filter.type === 'category') return { categoryId: filter.categoryId }
+    if (filter.type === 'store') {
+      const label = storeOptions.find((o) => o.key === filter.storeKey)?.label
+      return label ? { store: label } : undefined
+    }
+    if (filter.type === 'brand') {
+      const label = brandOptions.find((o) => o.key === filter.brandKey)?.label
+      return label ? { brand: label } : undefined
+    }
+    return undefined
+  }, [editingItem, filter, storeOptions, brandOptions])
 
   const handleAdd = (values: {
     name: string
     brand: string
+    store: string
     categoryId: string
     estimatedPrice: string
     priority: WishlistItem['priority']
     link: string
     note: string
+    imageDataUrl: string
   }) => {
     const price = values.estimatedPrice.trim()
       ? Number(values.estimatedPrice.replace(/,/g, ''))
@@ -91,22 +121,27 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
     addWishlistItem({
       name: values.name,
       brand: values.brand,
+      shop: values.store,
       categoryId: values.categoryId,
       estimatedPrice: price != null && price > 0 ? price : null,
       priority: values.priority,
       link: values.link,
       note: values.note,
+      imageDataUrl: values.imageDataUrl,
     })
+    setAddFormKey((k) => k + 1)
   }
 
   const handleUpdate = (values: {
     name: string
     brand: string
+    store: string
     categoryId: string
     estimatedPrice: string
     priority: WishlistItem['priority']
     link: string
     note: string
+    imageDataUrl: string
   }) => {
     if (!editingItem) return
     const price = values.estimatedPrice.trim()
@@ -115,11 +150,13 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
     updateWishlistItem(editingItem.id, {
       name: values.name,
       brand: values.brand,
+      store: values.store,
       categoryId: values.categoryId,
       estimatedPrice: price != null && price > 0 ? price : null,
       priority: values.priority,
       link: values.link,
       note: values.note,
+      imageDataUrl: values.imageDataUrl,
     })
     setEditingItem(null)
   }
@@ -129,6 +166,8 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
       <WishlistSidebar
         tree={wishlistTree}
         categories={wishlistCategories}
+        storeOptions={storeOptions}
+        brandOptions={brandOptions}
         filter={filter}
         purchasedCount={purchasedCount}
         onFilterChange={setFilter}
@@ -150,14 +189,9 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
         <div className="grid gap-4 lg:grid-cols-[minmax(0,320px)_1fr]">
           {filter.type !== 'purchased' && (
             <WishlistItemForm
+              key={editingItem ? `edit-${editingItem.id}` : `add-${addFormKey}`}
               categories={wishlistCategories}
-              initial={
-                editingItem
-                  ? editingItem
-                  : filter.type === 'category'
-                    ? { categoryId: filter.categoryId }
-                    : undefined
-              }
+              initial={formInitial}
               submitLabel={editingItem ? 'Save changes' : 'Add item'}
               onSubmit={editingItem ? handleUpdate : handleAdd}
               onCancel={editingItem ? () => setEditingItem(null) : undefined}
@@ -179,7 +213,19 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
                   key={item.id}
                   className="rounded-2xl border border-hairline bg-white p-4 shadow-sm"
                 >
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    {item.imageDataUrl ? (
+                      <img
+                        src={item.imageDataUrl}
+                        alt=""
+                        className="h-20 w-20 shrink-0 rounded-xl border border-hairline object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-xl border border-dashed border-hairline bg-[#FAFAFA] text-[10px] text-muted">
+                        No photo
+                      </div>
+                    )}
+                    <div className="flex min-w-0 flex-1 items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <h3 className="text-[15px] font-semibold text-[#1C1C1E]">
@@ -203,8 +249,10 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
                           </span>
                         )}
                       </div>
-                      {item.brand && (
-                        <p className="mt-0.5 text-[13px] text-muted">{item.brand}</p>
+                      {wishlistItemSubtitle(item) && (
+                        <p className="mt-0.5 text-[13px] text-muted">
+                          {wishlistItemSubtitle(item)}
+                        </p>
                       )}
                       <p className="mt-1 text-[11px] text-[#8B5A2B]">
                         {categoryPathLabel(wishlistCategories, item.categoryId)}
@@ -274,6 +322,7 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
                         <Trash2 size={13} />
                         Delete
                       </button>
+                    </div>
                     </div>
                   </div>
                 </article>

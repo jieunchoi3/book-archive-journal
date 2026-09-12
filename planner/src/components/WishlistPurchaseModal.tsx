@@ -14,6 +14,7 @@ import {
   buildWishlistNote,
   suggestExpenseKindForCategory,
   suggestExpensePurposeForKind,
+  wishlistItemTitle,
 } from '../lib/wishlistCategories'
 import { getTodayKey } from '../lib/weekUtils'
 
@@ -132,9 +133,7 @@ export function WishlistPurchaseModal({
             <h2 id="wishlist-purchase-title" className="text-[17px] font-semibold text-[#1C1C1E]">
               Log purchase
             </h2>
-            <p className="mt-0.5 text-[13px] text-muted">
-              {[item.brand, item.name].filter(Boolean).join(' ')}
-            </p>
+            <p className="mt-0.5 text-[13px] text-muted">{wishlistItemTitle(item)}</p>
           </div>
           <button
             type="button"

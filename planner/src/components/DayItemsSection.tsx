@@ -5,6 +5,7 @@ import type { ItemsActions } from '../hooks/useItems'
 import type { ItemOccurrence } from '../types/item'
 import { getDateKeyForDay } from '../lib/weekUtils'
 import { dayKeyToRRuleDay, normalizeRecurrenceForDate } from '../lib/itemRecurrence'
+import { postponeItemOccurrence } from '../lib/itemOccurrenceActions'
 import { EventQuickAddForm } from './EventQuickAddForm'
 import { ItemChip } from './ItemChip'
 import { EditItemModal } from './ItemModals'
@@ -73,6 +74,7 @@ export function DayItemsSection({
                     : undefined
                 }
                 onClick={() => setEditingId(occ.item.id)}
+                onPostpone={() => postponeItemOccurrence(items, occ)}
               />
             )
           })}

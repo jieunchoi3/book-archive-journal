@@ -13,6 +13,7 @@ import type { WishlistCategory } from '../types/expense'
 import {
   WISHLIST_MAX_DEPTH,
   canAddChildCategory,
+  type WishlistFacetOption,
   type WishlistFilter,
   type WishlistTreeNode,
 } from '../lib/wishlistCategories'
@@ -22,12 +23,67 @@ const STORAGE_KEY = 'planner:wishlistSidebarCollapsed'
 interface WishlistSidebarProps {
   tree: WishlistTreeNode[]
   categories: WishlistCategory[]
+  storeOptions: WishlistFacetOption[]
+  brandOptions: WishlistFacetOption[]
   filter: WishlistFilter
   purchasedCount: number
   onFilterChange: (filter: WishlistFilter) => void
   onAddCategory: (input: { name: string; parentId: string | null }) => void
   onRenameCategory: (categoryId: string, name: string) => void
   onDeleteCategory: (categoryId: string, mode: 'move' | 'delete') => void
+}
+
+function FacetFilterList({
+  title,
+  options,
+  filterType,
+  activeKey,
+  onSelect,
+}: {
+  title: string
+  options: WishlistFacetOption[]
+  filterType: 'store' | 'brand'
+  activeKey?: string
+  onSelect: (filter: WishlistFilter) => void
+}) {
+  if (options.length === 0) return null
+
+  return (
+    <>
+      <div className="my-2 border-t border-hairline" />
+      <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">
+        {title}
+      </p>
+      <div className="max-h-36 space-y-0.5 overflow-y-auto">
+        {options.map((option) => {
+          const isActive = activeKey === option.key
+          return (
+            <button
+              key={option.key}
+              type="button"
+              onClick={() =>
+                onSelect(
+                  filterType === 'store'
+                    ? { type: 'store', storeKey: option.key }
+                    : { type: 'brand', brandKey: option.key },
+                )
+              }
+              className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-[12px] ${
+                isActive
+                  ? 'bg-[#8B5A2B]/10 font-semibold text-[#8B5A2B]'
+                  : 'text-[#1C1C1E] hover:bg-white'
+              }`}
+            >
+              <span className="truncate">{option.label}</span>
+              <span className="ml-2 shrink-0 text-[10px] tabular-nums text-muted">
+                {option.count}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </>
+  )
 }
 
 function TreeNodeRow({
@@ -174,6 +230,8 @@ function TreeNodeRow({
 export function WishlistSidebar({
   tree,
   categories,
+  storeOptions,
+  brandOptions,
   filter,
   purchasedCount,
   onFilterChange,
@@ -368,6 +426,22 @@ export function WishlistSidebar({
             New category
           </button>
         )}
+
+        <FacetFilterList
+          title="Store"
+          options={storeOptions}
+          filterType="store"
+          activeKey={filter.type === 'store' ? filter.storeKey : undefined}
+          onSelect={onFilterChange}
+        />
+
+        <FacetFilterList
+          title="Brand"
+          options={brandOptions}
+          filterType="brand"
+          activeKey={filter.type === 'brand' ? filter.brandKey : undefined}
+          onSelect={onFilterChange}
+        />
       </div>
     </aside>
   )

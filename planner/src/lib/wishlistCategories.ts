@@ -15,6 +15,16 @@ export type WishlistFilter =
   | { type: 'all' }
   | { type: 'purchased' }
   | { type: 'category'; categoryId: string }
+  | { type: 'store'; storeKey: string }
+  | { type: 'brand'; brandKey: string }
+
+export interface WishlistFacetOption {
+  /** Normalized key for matching (trimmed, lowercased). */
+  key: string
+  /** Display label (first seen casing). */
+  label: string
+  count: number
+}
 
 export interface WishlistTreeNode {
   id: string
@@ -169,6 +179,55 @@ export function buildWishlistTree(
   return childrenOf(categories, null).map((c) => buildNode(c, 0))
 }
 
+export function normalizeWishlistFacetKey(value: string): string {
+  return value.trim().toLowerCase()
+}
+
+function buildFacetOptions(
+  items: WishlistItem[],
+  pick: (item: WishlistItem) => string,
+): WishlistFacetOption[] {
+  const counts = new Map<string, { label: string; count: number }>()
+  for (const item of items) {
+    if (item.status !== 'want') continue
+    const raw = pick(item).trim()
+    if (!raw) continue
+    const key = normalizeWishlistFacetKey(raw)
+    const existing = counts.get(key)
+    if (existing) {
+      existing.count += 1
+    } else {
+      counts.set(key, { label: raw, count: 1 })
+    }
+  }
+  return [...counts.entries()]
+    .map(([key, { label, count }]) => ({ key, label, count }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'ko'))
+}
+
+export function buildWishlistStoreOptions(items: WishlistItem[]): WishlistFacetOption[] {
+  return buildFacetOptions(items, (item) => item.store)
+}
+
+export function buildWishlistBrandOptions(items: WishlistItem[]): WishlistFacetOption[] {
+  return buildFacetOptions(items, (item) => item.brand)
+}
+
+export function wishlistFilterLabel(
+  filter: WishlistFilter,
+  categories: WishlistCategory[],
+  storeOptions: WishlistFacetOption[],
+  brandOptions: WishlistFacetOption[],
+): string {
+  if (filter.type === 'all') return 'All items'
+  if (filter.type === 'purchased') return 'Purchased'
+  if (filter.type === 'category') return categoryPathLabel(categories, filter.categoryId)
+  if (filter.type === 'store') {
+    return storeOptions.find((o) => o.key === filter.storeKey)?.label ?? filter.storeKey
+  }
+  return brandOptions.find((o) => o.key === filter.brandKey)?.label ?? filter.brandKey
+}
+
 export function itemMatchesFilter(
   item: WishlistItem,
   filter: WishlistFilter,
@@ -179,6 +238,14 @@ export function itemMatchesFilter(
   if (filter.type === 'category') {
     if (item.status !== 'want') return false
     return descendantCategoryIds(categories, filter.categoryId).has(item.categoryId)
+  }
+  if (filter.type === 'store') {
+    if (item.status !== 'want') return false
+    return normalizeWishlistFacetKey(item.store) === filter.storeKey
+  }
+  if (filter.type === 'brand') {
+    if (item.status !== 'want') return false
+    return normalizeWishlistFacetKey(item.brand) === filter.brandKey
   }
   return true
 }
@@ -281,9 +348,32 @@ export function wishlistStatusLabel(status: WishlistStatus): string {
   }
 }
 
-export function buildWishlistNote(item: Pick<WishlistItem, 'brand' | 'name' | 'note'>): string {
-  const title = [item.brand.trim(), item.name.trim()].filter(Boolean).join(' ')
+export function buildWishlistNote(
+  item: Pick<WishlistItem, 'store' | 'brand' | 'name' | 'note'>,
+): string {
+  const title = wishlistItemTitle(item)
   if (!item.note.trim()) return title
   if (!title) return item.note.trim()
   return `${title} — ${item.note.trim()}`
+}
+
+export function wishlistItemTitle(
+  item: Pick<WishlistItem, 'store' | 'brand' | 'name'>,
+): string {
+  const product = [item.brand.trim(), item.name.trim()].filter(Boolean).join(' ')
+  const store = item.store.trim()
+  if (store && product) return `${store} · ${product}`
+  return store || product
+}
+
+export function wishlistItemSubtitle(
+  item: Pick<WishlistItem, 'store' | 'brand' | 'name'>,
+): string | null {
+  const store = item.store.trim()
+  const brand = item.brand.trim()
+  const parts: string[] = []
+  if (store) parts.push(store)
+  if (brand) parts.push(brand)
+  if (parts.length === 0) return null
+  return parts.join(' · ')
 }
