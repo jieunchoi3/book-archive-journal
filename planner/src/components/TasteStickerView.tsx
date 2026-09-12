@@ -153,7 +153,7 @@ export function TasteStickerView() {
       />
       <div aria-hidden className="pointer-events-none absolute inset-0 bg-[#2b1508]/20" />
 
-      <div className="relative z-10 mx-auto w-full max-w-[1240px] px-4 pt-4 sm:px-6 sm:pt-6">
+      <div className="relative z-10 mx-auto w-full max-w-[1800px] px-3 pt-4 sm:px-5 sm:pt-6 lg:px-8 xl:px-10">
         <header className="mb-2 flex items-center justify-center gap-2 sm:gap-4">
           <button
             type="button"
@@ -246,7 +246,7 @@ export function TasteStickerView() {
           return (
             <>
               <div
-                className={`flex gap-2 overflow-x-auto px-0.5 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] sm:gap-2.5 [&::-webkit-scrollbar]:hidden ${
+                className={`flex flex-wrap justify-center gap-2 sm:justify-start sm:gap-2.5 ${
                   hasSubs ? 'mb-2' : 'mb-5'
                 }`}
               >
@@ -265,7 +265,7 @@ export function TasteStickerView() {
                 ))}
               </div>
               {hasSubs && activeCat ? (
-                <div className="mb-5 flex gap-2 overflow-x-auto px-0.5 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] sm:gap-2 [&::-webkit-scrollbar]:hidden">
+                <div className="mb-5 flex flex-wrap justify-center gap-2 sm:justify-start sm:gap-2">
                   <FilterPill
                     label="All"
                     compact
@@ -305,7 +305,7 @@ export function TasteStickerView() {
             {taste.syncing ? 'Syncing from Supabase…' : 'Loading…'}
           </p>
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 md:gap-3">
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
             {!selectMode && (
               <AddPolaroidCard
                 delayMs={0}
@@ -507,10 +507,10 @@ function FilterPill({
     <button
       type="button"
       onClick={onClick}
-      className={`shrink-0 rounded-full px-3.5 font-semibold tracking-wide transition ${
+      className={`rounded-full px-3.5 font-semibold tracking-wide transition whitespace-nowrap ${
         compact
           ? 'h-9 text-[12px] sm:h-10'
-          : 'h-11 text-[13px] sm:h-12 sm:min-w-0 sm:flex-1'
+          : 'h-10 text-[12px] sm:h-11'
       } ${
         active
           ? 'bg-[#fffac0] text-[#3a2010] shadow-[0_4px_14px_rgba(0,0,0,0.18)]'
@@ -1161,7 +1161,7 @@ function BatchSelectBar({
 }) {
   return (
     <div className="fixed inset-x-0 bottom-[4.5rem] z-40 px-4 sm:bottom-[5rem] sm:px-6">
-      <div className="mx-auto flex max-w-[1240px] flex-wrap items-center gap-2 rounded-2xl border border-[#fffac0]/25 bg-[#2b1508]/92 px-3 py-3 shadow-xl backdrop-blur-md sm:gap-3 sm:px-4">
+      <div className="mx-auto flex max-w-[1800px] flex-wrap items-center gap-2 rounded-2xl border border-[#fffac0]/25 bg-[#2b1508]/92 px-3 py-3 shadow-xl backdrop-blur-md sm:gap-3 sm:px-4">
         <p className="min-w-[5.5rem] text-[12px] font-semibold text-[#fffac0]">
           {selectedCount > 0 ? `${selectedCount} selected` : 'Tap to select'}
         </p>
