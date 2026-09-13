@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useAuth } from '../hooks/useAuth'
-import { loadWishlistBackupEntries } from '../lib/wishlistBackup'
+import { restoreWishlistFromBackup } from '../lib/wishlistBackup'
 import { createPortal } from 'react-dom'
 import {
   ExternalLink,
@@ -54,6 +54,7 @@ const PRIORITY_FILTERS: { id: PriorityFilter; label: string }[] = [
 
 export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
   const {
+    loading,
     wishlistCategories,
     wishlistItems,
     wishlistTree,
@@ -115,9 +116,22 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
   )
 
   const backupItemCount = useMemo(() => {
-    const entries = loadWishlistBackupEntries(user.id)
-    return entries.reduce((max, entry) => Math.max(max, entry.items.length), 0)
+    return restoreWishlistFromBackup(user.id).length
   }, [user.id, wishlistItems.length])
+
+  const autoRestoreAttempted = useRef(false)
+  useEffect(() => {
+    if (loading || autoRestoreAttempted.current) return
+    if (wishlistItems.length > 0) return
+    if (backupItemCount === 0) return
+    autoRestoreAttempted.current = true
+    const count = restoreWishlistFromLocalBackup()
+    if (count > 0) {
+      setRestoreMessage(
+        `Restored ${count} item${count === 1 ? '' : 's'} from browser backup.`,
+      )
+    }
+  }, [loading, wishlistItems.length, backupItemCount, restoreWishlistFromLocalBackup])
 
   const formInitial = useMemo(() => {
     if (editingItem) return editingItem

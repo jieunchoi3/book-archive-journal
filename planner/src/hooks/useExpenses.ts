@@ -22,7 +22,13 @@ import {
   sumKindBudgetsForPurpose,
 } from '../types/expense'
 import { getMissingExpenseLogDays } from '../lib/expenseMissingDays'
-import { ensureExpenseStore, loadExpenseStore, saveExpenseStore } from '../lib/expenseStorage'
+import {
+  ensureExpenseStore,
+  loadExpenseStore,
+  saveExpenseStore,
+  type SaveExpenseStoreOptions,
+} from '../lib/expenseStorage'
+import { saveWishlistMetadataBackup } from '../lib/wishlistBackup'
 import { restoreWishlistFromBackup } from '../lib/wishlistBackup'
 import {
   buildWishlistTree,
@@ -172,14 +178,20 @@ export function useExpenses(): ExpenseActions {
     month: today.getMonth(),
   }))
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hydratedRef = useRef(false)
+  const saveOptionsRef = useRef<SaveExpenseStoreOptions>({})
 
   useEffect(() => {
     let cancelled = false
     void (async () => {
       setLoading(true)
+      hydratedRef.current = false
       try {
         const loaded = ensureExpenseStore(await loadExpenseStore(userId), userId)
         if (cancelled) return
+        if ((loaded.wishlistItems?.length ?? 0) > 0) {
+          saveWishlistMetadataBackup(userId, loaded.wishlistItems!)
+        }
         if (loaded.categories.length === 0) {
           const seeded = ensureExpenseStore(
             {
@@ -189,10 +201,12 @@ export function useExpenses(): ExpenseActions {
             userId,
           )
           setStore(seeded)
+          hydratedRef.current = true
           void saveExpenseStore(userId, seeded)
         } else {
           const normalized = ensureExpenseStore(loaded, userId)
           setStore(normalized)
+          hydratedRef.current = true
           const kindsChanged =
             JSON.stringify(
               (loaded.spendKinds ?? []).map((k) => k.id).sort(),
@@ -234,11 +248,13 @@ export function useExpenses(): ExpenseActions {
   }, [])
 
   const persist = useCallback(
-    (next: ExpenseStore) => {
+    (next: ExpenseStore, options: SaveExpenseStoreOptions = {}) => {
       setStore(next)
+      if (!hydratedRef.current) return
+      saveOptionsRef.current = options
       if (saveTimer.current) clearTimeout(saveTimer.current)
       saveTimer.current = setTimeout(() => {
-        void saveExpenseStore(userId, next).catch((e) =>
+        void saveExpenseStore(userId, next, saveOptionsRef.current).catch((e) =>
           console.error('[expenses] save failed', e),
         )
       }, 350)
@@ -670,10 +686,13 @@ export function useExpenses(): ExpenseActions {
 
   const deleteWishlistItem = useCallback(
     (id: string) => {
-      persist({
-        ...store,
-        wishlistItems: wishlistItems.filter((item) => item.id !== id),
-      })
+      persist(
+        {
+          ...store,
+          wishlistItems: wishlistItems.filter((item) => item.id !== id),
+        },
+        { allowWishlistShrink: true },
+      )
     },
     [persist, store, wishlistItems],
   )
@@ -727,11 +746,14 @@ export function useExpenses(): ExpenseActions {
         )
       }
 
-      persist({
-        ...store,
-        wishlistCategories: nextCategories,
-        wishlistItems: nextItems,
-      })
+      persist(
+        {
+          ...store,
+          wishlistCategories: nextCategories,
+          wishlistItems: nextItems,
+        },
+        mode === 'delete' ? { allowWishlistShrink: true } : {},
+      )
     },
     [persist, store, wishlistCategories, wishlistItems],
   )
