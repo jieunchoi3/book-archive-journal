@@ -377,17 +377,42 @@ export async function handleWishlistEnrichRequest(req: Request): Promise<Respons
     const userText = buildUserPrompt(body, extracted, htmlSnippet)
     let model = 'gemini-2.5-flash'
     let raw = ''
+    let llmError: string | null = null
     try {
       raw = await callLlm(model, userText, llmAuth)
-    } catch {
-      model = 'gemini-2.5-pro'
-      raw = await callLlm(model, userText, llmAuth)
+    } catch (e) {
+      llmError = String(e)
+      try {
+        model = 'gemini-2.5-pro'
+        raw = await callLlm(model, userText, llmAuth)
+        llmError = null
+      } catch (e2) {
+        llmError = String(e2)
+      }
+    }
+
+    if (llmError) {
+      if (extracted && (extracted.name || extracted.store || extracted.brand)) {
+        const result = normalizeResult(extracted, body)
+        return jsonResponse({
+          result: {
+            ...result,
+            note: result.note || 'Filled from page metadata — AI price estimate unavailable.',
+          },
+          model: 'metadata-only',
+        })
+      }
+      return jsonResponse({ error: llmError }, 502)
     }
 
     let parsed: EnrichResult
     try {
       parsed = parseJsonFromModel(raw)
     } catch {
+      if (extracted && (extracted.name || extracted.store || extracted.brand)) {
+        const result = normalizeResult(extracted, body)
+        return jsonResponse({ result, model: 'metadata-only' })
+      }
       return jsonResponse({ error: 'invalid model json', raw }, 502)
     }
 

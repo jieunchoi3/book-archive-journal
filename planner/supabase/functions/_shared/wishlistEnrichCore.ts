@@ -75,6 +75,7 @@ export function storeFromUrl(url: string): string {
       'refybeauty.com': 'Refy',
       'tkmaxx.com': 'TK Maxx',
       'oliveyoung.co.kr': 'Olive Young',
+      'uniqlo.com': 'Uniqlo',
     }
     if (known[host]) return known[host]
     const base = host.split('.')[0] ?? host
@@ -237,14 +238,44 @@ export async function runWishlistEnrich(
   const userText = buildUserPrompt(body, extracted, htmlSnippet)
   let model = 'gemini-2.5-flash'
   let raw = ''
+  let llmError: string | null = null
   try {
     raw = await callGemini(model, userText, geminiKey)
-  } catch {
-    model = 'gemini-2.5-pro'
-    raw = await callGemini(model, userText, geminiKey)
+  } catch (e) {
+    llmError = String(e)
+    try {
+      model = 'gemini-2.5-pro'
+      raw = await callGemini(model, userText, geminiKey)
+      llmError = null
+    } catch (e2) {
+      llmError = String(e2)
+    }
   }
 
-  const parsed = parseJsonFromModel(raw)
+  if (llmError) {
+    if (extracted && (extracted.name || extracted.store || extracted.brand)) {
+      const result = normalizeResult(extracted, body)
+      return {
+        result: {
+          ...result,
+          note: result.note || 'Filled from page metadata — AI price estimate unavailable.',
+        },
+        model: 'metadata-only',
+      }
+    }
+    throw new Error(llmError)
+  }
+
+  let parsed: EnrichResult
+  try {
+    parsed = parseJsonFromModel(raw)
+  } catch {
+    if (extracted && (extracted.name || extracted.store || extracted.brand)) {
+      return { result: normalizeResult(extracted, body), model: 'metadata-only' }
+    }
+    throw new Error('invalid model json')
+  }
+
   const result = normalizeResult(
     {
       ...extracted,
