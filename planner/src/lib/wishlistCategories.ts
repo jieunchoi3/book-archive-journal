@@ -368,6 +368,14 @@ export function wishlistItemTitle(
   return store || product
 }
 
+export function wishlistItemImages(item: Pick<WishlistItem, 'imageDataUrl' | 'imageDataUrls'>): string[] {
+  if (item.imageDataUrls?.length) {
+    return item.imageDataUrls.filter(Boolean)
+  }
+  const legacy = item.imageDataUrl?.trim()
+  return legacy ? [legacy] : []
+}
+
 export function wishlistItemSubtitle(
   item: Pick<WishlistItem, 'store' | 'brand' | 'name' | 'size'>,
 ): string | null {

@@ -19,11 +19,13 @@ import {
   categoryPathLabel,
   itemMatchesFilter,
   wishlistFilterLabel,
+  wishlistItemImages,
   wishlistItemSubtitle,
   type WishlistFilter,
   wishlistPriorityLabel,
 } from '../lib/wishlistCategories'
 import { WishlistItemForm, type WishlistItemFormValues } from './WishlistItemForm'
+import { WishlistPhotoCarousel } from './WishlistPhotoCarousel'
 import { WishlistPurchaseModal } from './WishlistPurchaseModal'
 import { WishlistSidebar } from './WishlistSidebar'
 
@@ -141,7 +143,7 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
       link: values.link,
       note: values.note,
       size: values.size,
-      imageDataUrl: values.imageDataUrl,
+      imageDataUrls: values.imageDataUrls,
     })
     setAddFormKey((k) => k + 1)
     setShowAddForm(false)
@@ -162,7 +164,7 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
       link: values.link,
       note: values.note,
       size: values.size,
-      imageDataUrl: values.imageDataUrl,
+      imageDataUrls: values.imageDataUrls,
     })
     setEditingItem(null)
   }
@@ -371,21 +373,12 @@ function WishlistGridCard({
 }) {
   const subtitle = wishlistItemSubtitle(item)
   const categoryLabel = categoryPathLabel(categories, item.categoryId)
+  const images = wishlistItemImages(item)
 
   return (
     <article className="group relative flex aspect-[3/4] flex-col overflow-hidden rounded-2xl border border-hairline bg-white shadow-sm">
       <div className="relative min-h-0 flex-1 bg-[#F5F5F7]">
-        {item.imageDataUrl ? (
-          <img
-            src={item.imageDataUrl}
-            alt=""
-            className="h-full w-full object-cover"
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-[10px] text-muted">
-            No photo
-          </div>
-        )}
+        <WishlistPhotoCarousel images={images} className="h-full" />
 
         {item.status === 'want' && (
           <span
