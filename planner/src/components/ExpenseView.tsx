@@ -342,9 +342,7 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
 
   return (
     <div className="min-h-screen p-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:p-6 sm:pb-24">
-      <div
-        className={`mx-auto ${pageMode === 'wishlist' ? 'max-w-[1800px]' : 'max-w-6xl'}`}
-      >
+      <div className="mx-auto max-w-6xl">
         <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-start gap-3">
             <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl bg-[#8B5A2B]/12 text-[#8B5A2B]">

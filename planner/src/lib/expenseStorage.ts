@@ -1,4 +1,4 @@
-import type { ExpenseStore } from '../types/expense'
+import type { ExpenseStore, MoneyTransaction, WishlistItem } from '../types/expense'
 import {
   emptyExpenseStore,
   ensureDualAxisCatalogs,
@@ -56,6 +56,74 @@ async function loadExpenseStoreLocal(
   })
 }
 
+function mergeById<T extends { id: string }>(primary: T[], secondary: T[]): T[] {
+  const map = new Map<string, T>()
+  for (const item of secondary) map.set(item.id, item)
+  for (const item of primary) map.set(item.id, item)
+  return [...map.values()]
+}
+
+function wishlistItemRichness(item: WishlistItem): number {
+  let score = 0
+  if (item.name?.trim()) score += 2
+  if (item.imageDataUrl?.trim()) score += 3
+  const extraPhotos = (item as WishlistItem & { imageDataUrls?: string[] }).imageDataUrls
+  if (extraPhotos?.length) score += 3
+  if (item.brand?.trim()) score += 1
+  if (item.store?.trim()) score += 1
+  if (item.link?.trim()) score += 1
+  if (item.note?.trim()) score += 1
+  return score
+}
+
+function mergeWishlistItems(primary: WishlistItem[], secondary: WishlistItem[]): WishlistItem[] {
+  const map = new Map<string, WishlistItem>()
+  for (const item of secondary) map.set(item.id, item)
+  for (const item of primary) {
+    const existing = map.get(item.id)
+    if (!existing) {
+      map.set(item.id, item)
+      continue
+    }
+    map.set(
+      item.id,
+      wishlistItemRichness(item) >= wishlistItemRichness(existing) ? item : existing,
+    )
+  }
+  return [...map.values()]
+}
+
+function mergeExpenseSnapshots(
+  a: { store: ExpenseStore; updatedAt: string },
+  b: { store: ExpenseStore; updatedAt: string },
+): { store: ExpenseStore; updatedAt: string } {
+  const newer = (a.updatedAt || '') >= (b.updatedAt || '') ? a : b
+  const older = newer === a ? b : a
+
+  const merged: ExpenseStore = {
+    ...newer.store,
+    transactions: mergeById<MoneyTransaction>(
+      newer.store.transactions ?? [],
+      older.store.transactions ?? [],
+    ),
+    wishlistItems: mergeWishlistItems(
+      newer.store.wishlistItems ?? [],
+      older.store.wishlistItems ?? [],
+    ),
+    wishlistCategories: mergeById(
+      newer.store.wishlistCategories ?? [],
+      older.store.wishlistCategories ?? [],
+    ),
+    categories: mergeById(newer.store.categories ?? [], older.store.categories ?? []),
+    dayMarks: { ...(older.store.dayMarks ?? {}), ...(newer.store.dayMarks ?? {}) },
+  }
+
+  return {
+    store: merged,
+    updatedAt: (a.updatedAt || '') >= (b.updatedAt || '') ? a.updatedAt : b.updatedAt,
+  }
+}
+
 async function saveExpenseStoreLocal(
   userId: string,
   store: ExpenseStore,
@@ -95,14 +163,19 @@ export async function loadExpenseStore(userId: string): Promise<ExpenseStore | n
     }
 
     if (cloud && local) {
-      const preferCloud = (cloud.updatedAt || '') >= (local.updatedAt || '')
-      const best = preferCloud ? cloud : local
-      if (preferCloud) {
-        await saveExpenseStoreLocal(userId, cloud.store, cloud.updatedAt)
-      } else {
-        await upsertExpenseStoreCloud(userId, local.store)
+      const merged = mergeExpenseSnapshots(cloud, local)
+      const mergedAt = new Date().toISOString()
+      await saveExpenseStoreLocal(userId, merged.store, mergedAt)
+      await upsertExpenseStoreCloud(userId, merged.store)
+      const cloudCount = cloud.store.wishlistItems?.length ?? 0
+      const localCount = local.store.wishlistItems?.length ?? 0
+      const mergedCount = merged.store.wishlistItems?.length ?? 0
+      if (mergedCount > Math.max(cloudCount, localCount)) {
+        console.info(
+          `[expenses] recovered ${mergedCount - Math.max(cloudCount, localCount)} wishlist item(s) from sync merge`,
+        )
       }
-      return best.store
+      return merged.store
     }
 
     return null

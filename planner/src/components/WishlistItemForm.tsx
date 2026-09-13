@@ -8,9 +8,7 @@ import {
   categoryPathLabel,
   childrenOf,
   defaultWishlistCategoryId,
-  wishlistItemImages,
 } from '../lib/wishlistCategories'
-import { WishlistPhotoCarousel } from './WishlistPhotoCarousel'
 import {
   canEnrichWishlistFromLink,
   canEnrichWishlistFromNameBrand,
@@ -27,8 +25,7 @@ export type WishlistItemFormValues = {
   priority: WishlistPriority
   link: string
   note: string
-  size: string
-  imageDataUrls: string[]
+  imageDataUrl: string
 }
 
 interface WishlistItemFormProps {
@@ -56,12 +53,8 @@ export function WishlistItemForm({
   )
   const [priority, setPriority] = useState<WishlistPriority>(initial?.priority ?? 'medium')
   const [link, setLink] = useState(initial?.link ?? '')
-  const [size, setSize] = useState(initial?.size ?? '')
   const [note, setNote] = useState(initial?.note ?? '')
-  const [imageDataUrls, setImageDataUrls] = useState<string[]>(() =>
-    initial ? wishlistItemImages(initial) : [],
-  )
-  const [activePhotoIndex, setActivePhotoIndex] = useState(0)
+  const [imageDataUrl, setImageDataUrl] = useState(initial?.imageDataUrl ?? '')
   const [photoBusy, setPhotoBusy] = useState(false)
   const [photoError, setPhotoError] = useState<string | null>(null)
   const [enriching, setEnriching] = useState(false)
@@ -77,10 +70,8 @@ export function WishlistItemForm({
     setEstimatedPrice(initial?.estimatedPrice != null ? String(initial.estimatedPrice) : '')
     setPriority(initial?.priority ?? 'medium')
     setLink(initial?.link ?? '')
-    setSize(initial?.size ?? '')
     setNote(initial?.note ?? '')
-    setImageDataUrls(initial ? wishlistItemImages(initial) : [])
-    setActivePhotoIndex(0)
+    setImageDataUrl(initial?.imageDataUrl ?? '')
     setPhotoError(null)
     setEnrichError(null)
     lastAutoKey.current = ''
@@ -198,77 +189,30 @@ export function WishlistItemForm({
     return () => window.clearTimeout(timer)
   }, [brand, name, link, estimatedPrice, runEnrich])
 
-  const appendPhotos = useCallback((compressed: string[]) => {
-    if (compressed.length === 0) return
-    setImageDataUrls((prev) => {
-      const next = [...prev, ...compressed]
-      setActivePhotoIndex(next.length - 1)
-      return next
-    })
+  const applyPhoto = useCallback(async (source: File | string) => {
+    setPhotoBusy(true)
+    setPhotoError(null)
+    try {
+      const compressed = await compressImageSource(source, 1200, 0.86)
+      setImageDataUrl(compressed)
+    } catch {
+      setPhotoError('Couldn’t read that photo. Try another file or paste again.')
+    } finally {
+      setPhotoBusy(false)
+    }
   }, [])
 
-  const applyPhoto = useCallback(
-    async (source: File | string) => {
-      setPhotoBusy(true)
-      setPhotoError(null)
-      try {
-        const compressed = await compressImageSource(source, 1200, 0.86)
-        appendPhotos([compressed])
-      } catch {
-        setPhotoError('Couldn’t read that photo. Try another file or paste again.')
-      } finally {
-        setPhotoBusy(false)
-      }
-    },
-    [appendPhotos],
-  )
-
-  const onPickFiles = useCallback(
-    async (files: File[]) => {
-      if (files.length === 0) return
-
-      const valid = files.filter(
-        (file) =>
-          file.type.startsWith('image/') ||
-          /\.(png|jpe?g|gif|webp|heic|heif)$/i.test(file.name),
-      )
-      if (valid.length === 0) {
-        setPhotoError('Please choose image files only.')
+  const onPickFile = useCallback(
+    async (file: File | null) => {
+      if (!file) return
+      if (!file.type.startsWith('image/') && !/\.(png|jpe?g|gif|webp|heic|heif)$/i.test(file.name)) {
+        setPhotoError('Please choose an image file.')
         return
       }
-      if (valid.length < files.length) {
-        setPhotoError('Some files were skipped — image files only.')
-      } else {
-        setPhotoError(null)
-      }
-
-      setPhotoBusy(true)
-      try {
-        const compressed = await Promise.all(
-          valid.map((file) => compressImageSource(file, 1200, 0.86)),
-        )
-        appendPhotos(compressed)
-      } catch {
-        setPhotoError('Couldn’t read those photos. Try again.')
-      } finally {
-        setPhotoBusy(false)
-      }
+      await applyPhoto(file)
     },
-    [appendPhotos],
+    [applyPhoto],
   )
-
-  const removePhotoAt = useCallback((photoIndex: number) => {
-    setImageDataUrls((prev) => {
-      const next = prev.filter((_, i) => i !== photoIndex)
-      setActivePhotoIndex((current) => {
-        if (next.length === 0) return 0
-        if (current >= next.length) return next.length - 1
-        if (current > photoIndex) return current - 1
-        return current
-      })
-      return next
-    })
-  }, [])
 
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
@@ -293,8 +237,7 @@ export function WishlistItemForm({
       priority,
       link,
       note,
-      size,
-      imageDataUrls,
+      imageDataUrl,
     })
   }
 
@@ -347,101 +290,60 @@ export function WishlistItemForm({
 
         <div>
           <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">
-            Photos
+            Photo
           </span>
           <input
             ref={fileRef}
             type="file"
             accept="image/*"
-            multiple
             className="hidden"
-            onChange={(e) => {
-              const picked = e.target.files ? Array.from(e.target.files) : []
-              e.target.value = ''
-              void onPickFiles(picked)
-            }}
+            onChange={(e) => void onPickFile(e.target.files?.[0] ?? null)}
           />
-          <div
-            className="relative aspect-[4/5] w-full overflow-hidden rounded-xl border border-dashed border-[#C4A484] bg-[#FAFAFA]"
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
             onPaste={(e) => {
               handleClipboardImagePaste(e.nativeEvent, (source) => void applyPhoto(source))
             }}
+            disabled={photoBusy}
+            className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-xl border border-dashed border-[#C4A484] bg-[#FAFAFA] disabled:opacity-60"
           >
-            {imageDataUrls.length > 0 ? (
-              <WishlistPhotoCarousel
-                images={imageDataUrls}
-                className="h-full"
-                activeIndex={activePhotoIndex}
-                onActiveIndexChange={setActivePhotoIndex}
+            {imageDataUrl ? (
+              <img
+                src={imageDataUrl}
+                alt=""
+                className="h-full w-full object-cover"
+                draggable={false}
               />
             ) : (
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                disabled={photoBusy}
-                className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-muted disabled:opacity-60"
-              >
+              <div className="flex flex-col items-center gap-2 px-4 text-muted">
                 <ImagePlus size={26} className="text-[#C4A484]" />
                 <span className="text-[12px] font-medium">Upload from gallery</span>
                 <span className="text-[10px]">or click here and paste (⌘V)</span>
-              </button>
+              </div>
+            )}
+            {imageDataUrl && (
+              <span className="absolute bottom-2 right-2 rounded-full bg-black/55 px-2 py-1 text-[10px] font-medium text-white">
+                Change
+              </span>
             )}
             {photoBusy && (
               <span className="absolute inset-0 flex items-center justify-center bg-white/70">
                 <Loader2 size={22} className="animate-spin text-[#8B5A2B]" />
               </span>
             )}
-          </div>
+          </button>
           {photoError && (
             <p className="mt-1 text-[11px] text-[#FF3B30]">{photoError}</p>
           )}
-          <div className="mt-2 flex flex-wrap items-center gap-2">
+          {imageDataUrl && (
             <button
               type="button"
-              onClick={() => fileRef.current?.click()}
-              disabled={photoBusy}
-              className="inline-flex items-center gap-1 rounded-full border border-hairline bg-white px-2.5 py-1 text-[11px] font-medium text-[#8B5A2B] hover:bg-[#FBF7F2] disabled:opacity-50"
+              onClick={() => setImageDataUrl('')}
+              className="mt-1.5 text-[11px] font-medium text-muted hover:text-[#FF3B30]"
             >
-              <ImagePlus size={12} />
-              Add photo
+              Remove photo
             </button>
-            {imageDataUrls.length > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  setImageDataUrls([])
-                  setActivePhotoIndex(0)
-                }}
-                className="text-[11px] font-medium text-muted hover:text-[#FF3B30]"
-              >
-                Remove all
-              </button>
-            )}
-          </div>
-          {imageDataUrls.length > 0 && (
-            <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
-              {imageDataUrls.map((url, i) => (
-                <div key={`${i}-${url.slice(0, 24)}`} className="relative shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setActivePhotoIndex(i)}
-                    className={`block h-14 w-14 overflow-hidden rounded-lg border-2 ${
-                      i === activePhotoIndex ? 'border-[#8B5A2B]' : 'border-transparent'
-                    }`}
-                  >
-                    <img src={url} alt="" className="h-full w-full object-cover" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => removePhotoAt(i)}
-                    className="absolute -right-1 -top-1 rounded-full bg-[#FF3B30] p-0.5 text-white shadow-sm"
-                    aria-label="Remove photo"
-                  >
-                    <X size={10} />
-                  </button>
-                </div>
-              ))}
-            </div>
           )}
         </div>
 
@@ -477,18 +379,6 @@ export function WishlistItemForm({
             value={store}
             onChange={(e) => setStore(e.target.value)}
             placeholder="e.g. TK Maxx, Olive Young"
-            className="w-full rounded-xl border border-hairline bg-[#FAFAFA] px-3 py-2 text-[14px]"
-          />
-        </label>
-
-        <label className="block">
-          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">
-            Size <span className="font-normal normal-case">(optional)</span>
-          </span>
-          <input
-            value={size}
-            onChange={(e) => setSize(e.target.value)}
-            placeholder="e.g. M, 38, UK 6"
             className="w-full rounded-xl border border-hairline bg-[#FAFAFA] px-3 py-2 text-[14px]"
           />
         </label>
