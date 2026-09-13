@@ -140,6 +140,7 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
       priority: values.priority,
       link: values.link,
       note: values.note,
+      size: values.size,
       imageDataUrl: values.imageDataUrl,
     })
     setAddFormKey((k) => k + 1)
@@ -160,6 +161,7 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
       priority: values.priority,
       link: values.link,
       note: values.note,
+      size: values.size,
       imageDataUrl: values.imageDataUrl,
     })
     setEditingItem(null)

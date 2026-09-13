@@ -25,6 +25,7 @@ export type WishlistItemFormValues = {
   priority: WishlistPriority
   link: string
   note: string
+  size: string
   imageDataUrl: string
 }
 
@@ -53,6 +54,7 @@ export function WishlistItemForm({
   )
   const [priority, setPriority] = useState<WishlistPriority>(initial?.priority ?? 'medium')
   const [link, setLink] = useState(initial?.link ?? '')
+  const [size, setSize] = useState(initial?.size ?? '')
   const [note, setNote] = useState(initial?.note ?? '')
   const [imageDataUrl, setImageDataUrl] = useState(initial?.imageDataUrl ?? '')
   const [photoBusy, setPhotoBusy] = useState(false)
@@ -70,6 +72,7 @@ export function WishlistItemForm({
     setEstimatedPrice(initial?.estimatedPrice != null ? String(initial.estimatedPrice) : '')
     setPriority(initial?.priority ?? 'medium')
     setLink(initial?.link ?? '')
+    setSize(initial?.size ?? '')
     setNote(initial?.note ?? '')
     setImageDataUrl(initial?.imageDataUrl ?? '')
     setPhotoError(null)
@@ -237,6 +240,7 @@ export function WishlistItemForm({
       priority,
       link,
       note,
+      size,
       imageDataUrl,
     })
   }
@@ -379,6 +383,18 @@ export function WishlistItemForm({
             value={store}
             onChange={(e) => setStore(e.target.value)}
             placeholder="e.g. TK Maxx, Olive Young"
+            className="w-full rounded-xl border border-hairline bg-[#FAFAFA] px-3 py-2 text-[14px]"
+          />
+        </label>
+
+        <label className="block">
+          <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">
+            Size <span className="font-normal normal-case">(optional)</span>
+          </span>
+          <input
+            value={size}
+            onChange={(e) => setSize(e.target.value)}
+            placeholder="e.g. M, 38, UK 6"
             className="w-full rounded-xl border border-hairline bg-[#FAFAFA] px-3 py-2 text-[14px]"
           />
         </label>
