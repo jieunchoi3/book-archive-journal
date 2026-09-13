@@ -1,4 +1,5 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import {
   ExternalLink,
   Heart,
@@ -222,7 +223,7 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,clamp(6.75rem,22cqi,12.5rem)),1fr))] gap-[clamp(0.5rem,1.5cqi,0.875rem)]">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,clamp(6.75rem,22cqi,12.5rem)),1fr))] gap-[clamp(0.5rem,1.5cqi,0.875rem)] overflow-visible">
             {filter.type !== 'purchased' && (
               <button
                 type="button"
@@ -376,16 +377,84 @@ function WishlistGridCard({
   const subtitle = wishlistItemSubtitle(item)
   const categoryLabel = categoryPathLabel(categories, item.categoryId)
   const images = wishlistItemImages(item)
+  const photoRef = useRef<HTMLDivElement>(null)
+  const [photoIndex, setPhotoIndex] = useState(0)
+  const [hoverPreview, setHoverPreview] = useState<{
+    top: number
+    left: number
+    width: number
+  } | null>(null)
+
+  const showHoverPreview = useCallback(() => {
+    if (images.length === 0) return
+    if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return
+    const rect = photoRef.current?.getBoundingClientRect()
+    if (!rect) return
+
+    const width = Math.min(Math.max(rect.width * 2.35, 168), 320)
+    const height = width * (5 / 4)
+    const margin = 10
+    let top = rect.top - height - margin
+    if (top < margin) top = rect.bottom + margin
+    const left = Math.min(
+      Math.max(margin, rect.left + rect.width / 2 - width / 2),
+      window.innerWidth - width - margin,
+    )
+    setHoverPreview({ top, left, width })
+  }, [images.length])
+
+  const hideHoverPreview = useCallback(() => {
+    setHoverPreview(null)
+  }, [])
+
+  useEffect(() => {
+    if (!hoverPreview) return
+    const onScroll = () => hideHoverPreview()
+    window.addEventListener('scroll', onScroll, true)
+    return () => window.removeEventListener('scroll', onScroll, true)
+  }, [hoverPreview, hideHoverPreview])
 
   return (
-    <article className="group relative flex w-full flex-col overflow-hidden rounded-2xl border border-hairline bg-white shadow-sm transition-shadow hover:shadow-md">
-      <div className="relative aspect-[4/5] w-full bg-[#F5F5F7]">
+    <article className="group relative z-0 flex w-full flex-col overflow-hidden rounded-2xl border border-hairline bg-white shadow-sm transition-shadow hover:z-20 hover:shadow-md">
+      <div
+        ref={photoRef}
+        className="relative aspect-[4/5] w-full bg-[#F5F5F7]"
+        onMouseEnter={showHoverPreview}
+        onMouseLeave={hideHoverPreview}
+        onFocus={showHoverPreview}
+        onBlur={hideHoverPreview}
+      >
         <WishlistPhotoCarousel
           images={images}
-          className="h-full w-full"
+          className="h-full w-full transition-transform duration-200 [@media(hover:hover)]:hover:scale-[1.03]"
+          activeIndex={photoIndex}
+          onActiveIndexChange={setPhotoIndex}
           onTap={onEdit}
           emptyLabel="No photo · tap to edit"
         />
+
+        {hoverPreview &&
+          images[photoIndex] &&
+          createPortal(
+            <div
+              className="pointer-events-none fixed z-[100]"
+              style={{
+                top: hoverPreview.top,
+                left: hoverPreview.left,
+                width: hoverPreview.width,
+              }}
+            >
+              <div className="overflow-hidden rounded-xl border border-white/90 bg-white shadow-[0_24px_60px_rgba(0,0,0,0.28)]">
+                <img
+                  src={images[photoIndex]}
+                  alt=""
+                  className="aspect-[4/5] w-full object-cover"
+                  draggable={false}
+                />
+              </div>
+            </div>,
+            document.body,
+          )}
 
         {item.status === 'want' && (
           <span
