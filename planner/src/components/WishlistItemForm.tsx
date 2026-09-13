@@ -198,38 +198,63 @@ export function WishlistItemForm({
     return () => window.clearTimeout(timer)
   }, [brand, name, link, estimatedPrice, runEnrich])
 
-  const applyPhoto = useCallback(async (source: File | string) => {
-    setPhotoBusy(true)
-    setPhotoError(null)
-    try {
-      const compressed = await compressImageSource(source, 1200, 0.86)
-      setImageDataUrls((prev) => {
-        const next = [...prev, compressed]
-        setActivePhotoIndex(next.length - 1)
-        return next
-      })
-    } catch {
-      setPhotoError('Couldn’t read that photo. Try another file or paste again.')
-    } finally {
-      setPhotoBusy(false)
-    }
+  const appendPhotos = useCallback((compressed: string[]) => {
+    if (compressed.length === 0) return
+    setImageDataUrls((prev) => {
+      const next = [...prev, ...compressed]
+      setActivePhotoIndex(next.length - 1)
+      return next
+    })
   }, [])
 
-  const onPickFiles = useCallback(
-    async (files: FileList | null) => {
-      if (!files?.length) return
-      for (const file of files) {
-        if (
-          !file.type.startsWith('image/') &&
-          !/\.(png|jpe?g|gif|webp|heic|heif)$/i.test(file.name)
-        ) {
-          setPhotoError('Please choose image files only.')
-          continue
-        }
-        await applyPhoto(file)
+  const applyPhoto = useCallback(
+    async (source: File | string) => {
+      setPhotoBusy(true)
+      setPhotoError(null)
+      try {
+        const compressed = await compressImageSource(source, 1200, 0.86)
+        appendPhotos([compressed])
+      } catch {
+        setPhotoError('Couldn’t read that photo. Try another file or paste again.')
+      } finally {
+        setPhotoBusy(false)
       }
     },
-    [applyPhoto],
+    [appendPhotos],
+  )
+
+  const onPickFiles = useCallback(
+    async (files: File[]) => {
+      if (files.length === 0) return
+
+      const valid = files.filter(
+        (file) =>
+          file.type.startsWith('image/') ||
+          /\.(png|jpe?g|gif|webp|heic|heif)$/i.test(file.name),
+      )
+      if (valid.length === 0) {
+        setPhotoError('Please choose image files only.')
+        return
+      }
+      if (valid.length < files.length) {
+        setPhotoError('Some files were skipped — image files only.')
+      } else {
+        setPhotoError(null)
+      }
+
+      setPhotoBusy(true)
+      try {
+        const compressed = await Promise.all(
+          valid.map((file) => compressImageSource(file, 1200, 0.86)),
+        )
+        appendPhotos(compressed)
+      } catch {
+        setPhotoError('Couldn’t read those photos. Try again.')
+      } finally {
+        setPhotoBusy(false)
+      }
+    },
+    [appendPhotos],
   )
 
   const removePhotoAt = useCallback((photoIndex: number) => {
@@ -331,8 +356,9 @@ export function WishlistItemForm({
             multiple
             className="hidden"
             onChange={(e) => {
-              void onPickFiles(e.target.files)
+              const picked = e.target.files ? Array.from(e.target.files) : []
               e.target.value = ''
+              void onPickFiles(picked)
             }}
           />
           <div
