@@ -95,6 +95,7 @@ export interface TasteActions {
   addCategory: (name: string) => TasteCategory | null
   renameCategory: (id: string, name: string) => void
   deleteCategory: (id: string) => void
+  moveCategoryIntoCategory: (sourceId: string, targetId: string) => boolean
   addSubcategory: (categoryId: string, name: string) => TasteSubcategory | null
   renameSubcategory: (categoryId: string, subcategoryId: string, name: string) => void
   deleteSubcategory: (categoryId: string, subcategoryId: string) => void
@@ -577,6 +578,70 @@ export function useTasteStickers(): TasteActions {
     [persist, store, kindFilter, setKindFilter],
   )
 
+  const moveCategoryIntoCategory = useCallback(
+    (sourceId: string, targetId: string) => {
+      if (sourceId === targetId || store.categories.length <= 1) return false
+      const source = store.categories.find((c) => c.id === sourceId)
+      const target = store.categories.find((c) => c.id === targetId)
+      if (!source || !target) return false
+
+      const sourceNameLower = source.name.trim().toLowerCase()
+      let parentSub =
+        target.subcategories.find((s) => s.name.trim().toLowerCase() === sourceNameLower) ??
+        ({ id: generateId(), name: source.name.trim() } as TasteSubcategory)
+
+      let nextTargetSubs = [...target.subcategories]
+      if (!nextTargetSubs.some((s) => s.id === parentSub.id)) {
+        nextTargetSubs.push(parentSub)
+      }
+
+      const subIdMap = new Map<string, string>()
+      for (const srcSub of source.subcategories) {
+        const srcNameLower = srcSub.name.trim().toLowerCase()
+        const existing = nextTargetSubs.find(
+          (s) => s.name.trim().toLowerCase() === srcNameLower,
+        )
+        if (existing) {
+          subIdMap.set(srcSub.id, existing.id)
+        } else {
+          const merged: TasteSubcategory = { id: generateId(), name: srcSub.name.trim() }
+          nextTargetSubs.push(merged)
+          subIdMap.set(srcSub.id, merged.id)
+        }
+      }
+
+      const parentSubId = parentSub.id
+      const targetMeta = tasteCategoryMeta(store.categories, targetId)
+
+      const nextCategories = store.categories
+        .filter((c) => c.id !== sourceId)
+        .map((c) => (c.id === targetId ? { ...c, subcategories: nextTargetSubs } : c))
+
+      const nextStickers = store.stickers.map((s) => {
+        if (s.categoryId !== sourceId) return s
+        const subId = s.subcategoryId
+          ? (subIdMap.get(s.subcategoryId) ?? parentSubId)
+          : parentSubId
+        return {
+          ...s,
+          categoryId: targetId,
+          subcategoryId: subId,
+          accent: targetMeta.accent,
+        }
+      })
+
+      persist({ ...store, categories: nextCategories, stickers: nextStickers })
+
+      if (kindFilter === sourceId) {
+        setKindFilter(targetId)
+        setSubFilter(parentSubId)
+      }
+
+      return true
+    },
+    [persist, store, kindFilter, setKindFilter, setSubFilter],
+  )
+
   const addSubcategory = useCallback(
     (categoryId: string, name: string) => {
       const trimmed = name.trim()
@@ -735,6 +800,7 @@ export function useTasteStickers(): TasteActions {
     addCategory,
     renameCategory,
     deleteCategory,
+    moveCategoryIntoCategory,
     addSubcategory,
     renameSubcategory,
     deleteSubcategory,

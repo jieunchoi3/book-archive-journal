@@ -337,6 +337,7 @@ export function TasteStickerView() {
           onAdd={(name) => taste.addCategory(name)}
           onRename={(id, name) => taste.renameCategory(id, name)}
           onDelete={(id) => taste.deleteCategory(id)}
+          onMoveInto={(sourceId, targetId) => taste.moveCategoryIntoCategory(sourceId, targetId)}
           onAddSub={(categoryId, name) => taste.addSubcategory(categoryId, name)}
           onRenameSub={(categoryId, subId, name) =>
             taste.renameSubcategory(categoryId, subId, name)
@@ -671,6 +672,7 @@ function CategoryManager({
   onAdd,
   onRename,
   onDelete,
+  onMoveInto,
   onAddSub,
   onRenameSub,
   onDeleteSub,
@@ -682,6 +684,7 @@ function CategoryManager({
   onAdd: (name: string) => TasteCategory | null
   onRename: (id: string, name: string) => void
   onDelete: (id: string) => void
+  onMoveInto: (sourceId: string, targetId: string) => boolean
   onAddSub: (categoryId: string, name: string) => TasteSubcategory | null
   onRenameSub: (categoryId: string, subcategoryId: string, name: string) => void
   onDeleteSub: (categoryId: string, subcategoryId: string) => void
@@ -736,6 +739,7 @@ function CategoryManager({
         <div className="space-y-3 px-5 py-5">
           <p className="text-[12px] text-[#8A7A6A]">
             Add subcategories under a category (e.g. Place → cafe, park) to use them as filters.
+            Move a category into another to nest it — all polaroids in it move too.
           </p>
           <ul className="space-y-3">
             {categories.map((cat) => (
@@ -816,6 +820,45 @@ function CategoryManager({
                     </>
                   )}
                 </div>
+
+                {editingId !== cat.id && categories.length > 1 ? (
+                  <div className="mt-2 flex items-center gap-1.5 border-t border-black/5 pt-2">
+                    <label htmlFor={`move-${cat.id}`} className="shrink-0 text-[11px] text-[#8A7A6A]">
+                      Move into
+                    </label>
+                    <select
+                      id={`move-${cat.id}`}
+                      defaultValue=""
+                      onChange={(e) => {
+                        const targetId = e.target.value
+                        e.target.value = ''
+                        if (!targetId) return
+                        const targetName =
+                          categories.find((c) => c.id === targetId)?.name ?? 'that category'
+                        if (
+                          !confirm(
+                            `Move “${cat.name}” into “${targetName}”? It becomes a subcategory and all polaroids move with it.`,
+                          )
+                        ) {
+                          return
+                        }
+                        const ok = onMoveInto(cat.id, targetId)
+                        if (!ok) setError('Could not move that category.')
+                        else setError(null)
+                      }}
+                      className="min-w-0 flex-1 rounded-lg border border-black/10 bg-[#fffaf0] px-2 py-1 text-[12px] text-[#3a2010] outline-none focus:border-[#3a2010]/30"
+                    >
+                      <option value="">Choose category…</option>
+                      {categories
+                        .filter((c) => c.id !== cat.id)
+                        .map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                ) : null}
 
                 <ul className="mt-2 space-y-1.5 border-t border-black/5 pt-2">
                   {cat.subcategories.map((sub) => {
