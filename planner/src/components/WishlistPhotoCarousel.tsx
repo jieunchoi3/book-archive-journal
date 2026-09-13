@@ -8,6 +8,8 @@ interface WishlistPhotoCarouselProps {
   showArrows?: boolean
   activeIndex?: number
   onActiveIndexChange?: (index: number) => void
+  /** Fires on tap/click when the gesture was not a swipe. */
+  onTap?: () => void
 }
 
 export function WishlistPhotoCarousel({
@@ -17,9 +19,12 @@ export function WishlistPhotoCarousel({
   showArrows = true,
   activeIndex: controlledIndex,
   onActiveIndexChange,
+  onTap,
 }: WishlistPhotoCarouselProps) {
   const [internalIndex, setInternalIndex] = useState(0)
   const touchStartX = useRef(0)
+  const touchStartY = useRef(0)
+  const ignoreClickRef = useRef(false)
   const count = images.length
   const index = controlledIndex ?? internalIndex
   const safeIndex = count > 0 ? Math.min(index, count - 1) : 0
@@ -51,25 +56,53 @@ export function WishlistPhotoCarousel({
 
   if (count === 0) {
     return (
-      <div
-        className={`flex h-full w-full items-center justify-center text-[10px] text-muted ${className}`}
+      <button
+        type="button"
+        onClick={onTap}
+        className={`flex h-full w-full cursor-pointer items-center justify-center text-[10px] text-muted transition-colors hover:bg-[#EFEFEF] ${className}`}
       >
         {emptyLabel}
-      </div>
+      </button>
     )
   }
 
   return (
     <div
-      className={`relative h-full w-full overflow-hidden ${className}`}
+      role={onTap ? 'button' : undefined}
+      tabIndex={onTap ? 0 : undefined}
+      onKeyDown={
+        onTap
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onTap()
+              }
+            }
+          : undefined
+      }
+      onClick={() => {
+        if (ignoreClickRef.current) {
+          ignoreClickRef.current = false
+          return
+        }
+        onTap?.()
+      }}
+      className={`relative h-full w-full overflow-hidden ${onTap ? 'cursor-pointer' : ''} ${className}`}
       onTouchStart={(e) => {
         touchStartX.current = e.touches[0]?.clientX ?? 0
+        touchStartY.current = e.touches[0]?.clientY ?? 0
       }}
       onTouchEnd={(e) => {
         const endX = e.changedTouches[0]?.clientX ?? 0
+        const endY = e.changedTouches[0]?.clientY ?? 0
         const dx = endX - touchStartX.current
+        const dy = endY - touchStartY.current
         if (dx < -40) goNext()
         else if (dx > 40) goPrev()
+        else if (onTap && Math.abs(dx) < 12 && Math.abs(dy) < 12) {
+          ignoreClickRef.current = true
+          onTap()
+        }
       }}
     >
       <img

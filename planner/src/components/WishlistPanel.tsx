@@ -376,9 +376,14 @@ function WishlistGridCard({
   const images = wishlistItemImages(item)
 
   return (
-    <article className="group relative flex aspect-[3/4] flex-col overflow-hidden rounded-2xl border border-hairline bg-white shadow-sm">
+    <article className="group relative flex aspect-[3/4] flex-col overflow-hidden rounded-2xl border border-hairline bg-white shadow-sm transition-shadow hover:shadow-md">
       <div className="relative min-h-0 flex-1 bg-[#F5F5F7]">
-        <WishlistPhotoCarousel images={images} className="h-full" />
+        <WishlistPhotoCarousel
+          images={images}
+          className="h-full"
+          onTap={onEdit}
+          emptyLabel="No photo · tap to edit"
+        />
 
         {item.status === 'want' && (
           <span
@@ -400,10 +405,13 @@ function WishlistGridCard({
           </span>
         )}
 
-        <div className="absolute right-2 top-2">
+        <div className="absolute right-2 top-2 z-10">
           <button
             type="button"
-            onClick={onToggleMenu}
+            onClick={(e) => {
+              e.stopPropagation()
+              onToggleMenu()
+            }}
             className="rounded-lg bg-white/90 p-1.5 text-[#48484A] shadow-sm backdrop-blur-sm hover:bg-white"
             aria-label="Item actions"
           >
@@ -444,7 +452,11 @@ function WishlistGridCard({
         </div>
       </div>
 
-      <div className="shrink-0 space-y-0.5 p-2.5">
+      <button
+        type="button"
+        onClick={onEdit}
+        className="shrink-0 space-y-0.5 p-2.5 text-left transition-colors hover:bg-[#FAFAFA]"
+      >
         <h3 className="line-clamp-2 text-[12px] font-semibold leading-snug text-[#1C1C1E]">
           {item.name}
         </h3>
@@ -457,7 +469,7 @@ function WishlistGridCard({
             {formatMoney(item.estimatedPrice)}
           </p>
         )}
-      </div>
+      </button>
     </article>
   )
 }
