@@ -67,14 +67,18 @@ export interface WishlistItem {
   brand: string
   /** Retailer or shop (e.g. TK Maxx), when that matters more than brand. */
   store: string
+  /** Optional size (e.g. M, 38, UK 6). */
+  size?: string
   categoryId: string
   estimatedPrice: number | null
   priority: WishlistPriority
   status: WishlistStatus
   link: string
   note: string
-  /** Compressed JPEG data URL for the product photo. */
+  /** Legacy single photo — migrated to imageDataUrls on read. */
   imageDataUrl?: string
+  /** Product photos (compressed JPEG data URLs). */
+  imageDataUrls?: string[]
   createdAt: string
   purchasedAt?: string
   linkedTransactionId?: string

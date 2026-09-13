@@ -117,7 +117,8 @@ export interface ExpenseActions {
     priority?: WishlistPriority
     link?: string
     note?: string
-    imageDataUrl?: string
+    size?: string
+    imageDataUrls?: string[]
   }) => string | null
   updateWishlistItem: (
     id: string,
@@ -133,7 +134,9 @@ export interface ExpenseActions {
         | 'status'
         | 'link'
         | 'note'
+        | 'size'
         | 'imageDataUrl'
+        | 'imageDataUrls'
         | 'purchasedAt'
         | 'linkedTransactionId'
       >
@@ -605,7 +608,7 @@ export function useExpenses(): ExpenseActions {
   }, [])
 
   const addWishlistItem: ExpenseActions['addWishlistItem'] = useCallback(
-    ({ name, brand, shop, categoryId, estimatedPrice, priority, link, note, imageDataUrl }) => {
+    ({ name, brand, shop, categoryId, estimatedPrice, priority, link, note, size, imageDataUrls }) => {
       const trimmed = name.trim()
       if (!trimmed || !categoryId) return null
       if (!wishlistCategories.some((c) => c.id === categoryId)) return null
@@ -620,7 +623,8 @@ export function useExpenses(): ExpenseActions {
         status: 'want',
         link: link?.trim() ?? '',
         note: note?.trim() ?? '',
-        imageDataUrl: imageDataUrl?.trim() ?? '',
+        size: size?.trim() ?? '',
+        imageDataUrls: (imageDataUrls ?? []).map((u) => u.trim()).filter(Boolean),
         createdAt: new Date().toISOString(),
       }
       persist({
@@ -646,10 +650,17 @@ export function useExpenses(): ExpenseActions {
             store: patch.store !== undefined ? patch.store.trim() : (item.store ?? ''),
             link: patch.link !== undefined ? patch.link.trim() : item.link,
             note: patch.note !== undefined ? patch.note.trim() : item.note,
-            imageDataUrl:
-              patch.imageDataUrl !== undefined
-                ? patch.imageDataUrl.trim()
-                : (item.imageDataUrl ?? ''),
+            size: patch.size !== undefined ? patch.size.trim() : (item.size ?? ''),
+            imageDataUrls:
+              patch.imageDataUrls !== undefined
+                ? patch.imageDataUrls.map((u) => u.trim()).filter(Boolean)
+                : patch.imageDataUrl !== undefined
+                  ? patch.imageDataUrl.trim()
+                    ? [patch.imageDataUrl.trim()]
+                    : []
+                  : (item.imageDataUrls ??
+                    (item.imageDataUrl?.trim() ? [item.imageDataUrl.trim()] : [])),
+            imageDataUrl: undefined,
           }
         }),
       })

@@ -349,12 +349,14 @@ export function wishlistStatusLabel(status: WishlistStatus): string {
 }
 
 export function buildWishlistNote(
-  item: Pick<WishlistItem, 'store' | 'brand' | 'name' | 'note'>,
+  item: Pick<WishlistItem, 'store' | 'brand' | 'name' | 'size' | 'note'>,
 ): string {
   const title = wishlistItemTitle(item)
-  if (!item.note.trim()) return title
-  if (!title) return item.note.trim()
-  return `${title} — ${item.note.trim()}`
+  const size = item.size?.trim()
+  const withSize = size ? (title ? `${title} (${size})` : size) : title
+  if (!item.note.trim()) return withSize
+  if (!withSize) return item.note.trim()
+  return `${withSize} — ${item.note.trim()}`
 }
 
 export function wishlistItemTitle(
@@ -366,14 +368,26 @@ export function wishlistItemTitle(
   return store || product
 }
 
+export function wishlistItemImages(
+  item: Pick<WishlistItem, 'imageDataUrl' | 'imageDataUrls'>,
+): string[] {
+  if (item.imageDataUrls?.length) {
+    return item.imageDataUrls.filter(Boolean)
+  }
+  const legacy = item.imageDataUrl?.trim()
+  return legacy ? [legacy] : []
+}
+
 export function wishlistItemSubtitle(
-  item: Pick<WishlistItem, 'store' | 'brand' | 'name'>,
+  item: Pick<WishlistItem, 'store' | 'brand' | 'name' | 'size'>,
 ): string | null {
   const store = item.store.trim()
   const brand = item.brand.trim()
+  const size = item.size?.trim() ?? ''
   const parts: string[] = []
   if (store) parts.push(store)
   if (brand) parts.push(brand)
+  if (size) parts.push(`Size ${size}`)
   if (parts.length === 0) return null
   return parts.join(' · ')
 }

@@ -48,6 +48,7 @@ function storeFromUrl(url: string): string {
       'refybeauty.com': 'Refy',
       'tkmaxx.com': 'TK Maxx',
       'oliveyoung.co.kr': 'Olive Young',
+      'uniqlo.com': 'Uniqlo',
     }
     if (known[host]) return known[host]
     const base = host.split('.')[0] ?? host
@@ -67,6 +68,7 @@ export function enrichWishlistFromLinkLocal(link: string): WishlistEnrichResult 
       'spacenk.com': 'Space NK',
       'tkmaxx.com': 'TK Maxx',
       'oliveyoung.co.kr': 'Olive Young',
+      'uniqlo.com': 'Uniqlo',
     }
     const dtcBrands: Record<string, string> = {
       'refybeauty.com': 'Refy',
@@ -103,14 +105,14 @@ async function getAccessToken(): Promise<string> {
   return data.session.access_token
 }
 
-function isRetryableEnrichError(message: string): boolean {
+/** Only stop the fallback chain for client-side validation / auth issues. */
+function isNonRetryableEnrichError(message: string): boolean {
   return (
-    message.includes('GEMINI_API_KEY missing') ||
-    message.includes('not configured on the server') ||
-    message.includes('Failed to send a request to the Edge Function') ||
-    message.includes('AI auto-fill service is unavailable') ||
-    message.includes('Function not found') ||
-    message.includes('404')
+    message.includes('Sign in required') ||
+    message.includes('Enter a valid http(s) link') ||
+    message.includes('Add a link, or both name and brand') ||
+    message.includes('Provide a product link') ||
+    message.includes('Connect Supabase')
   )
 }
 
@@ -127,17 +129,6 @@ function friendlyEnrichError(message: string, status?: number): WishlistEnrichEr
   return new WishlistEnrichError(message || 'AI auto-fill failed.')
 }
 
-function parseEnrichPayload(data: unknown): WishlistEnrichResult {
-  const payload = data as { result?: WishlistEnrichResult; error?: string } | null
-  if (payload?.error) {
-    throw friendlyEnrichError(String(payload.error))
-  }
-  if (!payload?.result) {
-    throw new WishlistEnrichError('AI returned no data.')
-  }
-  return payload.result
-}
-
 async function invokeWishlistEnrichEdge(
   body: WishlistEnrichInput,
   functionName: 'wishlist-enrich' | 'compass-analyze',
@@ -147,10 +138,19 @@ async function invokeWishlistEnrichEdge(
       ? { action: 'wishlist-enrich' as const, ...body }
       : body
   const { data, error } = await supabase.functions.invoke(functionName, { body: payload })
+  const response = data as { result?: WishlistEnrichResult; error?: string } | null
+
+  // Supabase sets a generic invoke error on non-2xx, but the JSON body is still in `data`.
+  if (response?.error) {
+    throw friendlyEnrichError(String(response.error))
+  }
   if (error) {
     throw friendlyEnrichError(error.message)
   }
-  return parseEnrichPayload(data)
+  if (!response?.result) {
+    throw new WishlistEnrichError('AI returned no data.')
+  }
+  return response.result
 }
 
 async function invokeWishlistEnrichApi(
@@ -212,10 +212,11 @@ export async function enrichWishlistItem(
   }
 
   const token = await getAccessToken()
+  // Vercel API first — uses AI Gateway OIDC when GEMINI_API_KEY is unset on Supabase.
   const attempts: Array<() => Promise<WishlistEnrichResult>> = [
+    () => invokeWishlistEnrichApi(token, body),
     () => invokeWishlistEnrichEdge(body, 'wishlist-enrich'),
     () => invokeWishlistEnrichEdge(body, 'compass-analyze'),
-    () => invokeWishlistEnrichApi(token, body),
   ]
 
   let lastError: WishlistEnrichError | null = null
@@ -227,7 +228,7 @@ export async function enrichWishlistItem(
         e instanceof WishlistEnrichError
           ? e
           : new WishlistEnrichError(e instanceof Error ? e.message : 'AI auto-fill failed.')
-      if (!isRetryableEnrichError(err.message)) {
+      if (isNonRetryableEnrichError(err.message)) {
         throw err
       }
       lastError = err

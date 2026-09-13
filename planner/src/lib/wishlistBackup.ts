@@ -13,14 +13,23 @@ function backupKey(userId: string) {
 }
 
 export function normalizeWishlistItems(items: WishlistItem[] | undefined): WishlistItem[] {
-  return (items ?? []).map((item) => ({
-    ...item,
-    status: item.status ?? 'want',
-    brand: item.brand ?? '',
-    store: item.store ?? '',
-    link: item.link ?? '',
-    note: item.note ?? '',
-  }))
+  return (items ?? []).map((item) => {
+    const legacyPhoto = item.imageDataUrl?.trim()
+    const photos =
+      item.imageDataUrls?.filter(Boolean) ??
+      (legacyPhoto ? [legacyPhoto] : [])
+    return {
+      ...item,
+      status: item.status ?? 'want',
+      brand: item.brand ?? '',
+      store: item.store ?? '',
+      link: item.link ?? '',
+      note: item.note ?? '',
+      size: item.size ?? '',
+      imageDataUrls: photos.length > 0 ? photos : undefined,
+      imageDataUrl: undefined,
+    }
+  })
 }
 
 export function saveWishlistBackup(userId: string, items: WishlistItem[]): void {
