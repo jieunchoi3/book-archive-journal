@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react'
+import { useAuth } from '../hooks/useAuth'
+import { loadWishlistBackupEntries } from '../lib/wishlistBackup'
 import {
   ExternalLink,
   Heart,
@@ -46,6 +48,7 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
     addWishlistCategory,
     renameWishlistCategory,
     deleteWishlistCategory,
+    restoreWishlistFromLocalBackup,
     markWishlistPurchased,
     expenseCategories,
     purposes,
@@ -53,8 +56,10 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
     purposeKindLinks,
     kindsForActivePurpose,
   } = expenses
+  const { user } = useAuth()
 
   const [filter, setFilter] = useState<WishlistFilter>({ type: 'all' })
+  const [restoreMessage, setRestoreMessage] = useState<string | null>(null)
   const [editingItem, setEditingItem] = useState<WishlistItem | null>(null)
   const [purchaseItem, setPurchaseItem] = useState<WishlistItem | null>(null)
   const [addFormKey, setAddFormKey] = useState(0)
@@ -88,6 +93,15 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
   const filterLabel = useMemo(
     () => wishlistFilterLabel(filter, wishlistCategories, storeOptions, brandOptions),
     [filter, wishlistCategories, storeOptions, brandOptions],
+  )
+
+  const backupEntries = useMemo(
+    () => loadWishlistBackupEntries(user.id),
+    [user.id, wishlistItems.length],
+  )
+  const backupItemCount = useMemo(
+    () => backupEntries.reduce((max, entry) => Math.max(max, entry.items.length), 0),
+    [backupEntries],
   )
 
   const formInitial = useMemo(() => {
@@ -204,8 +218,35 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
                 <Heart size={28} className="mb-2 text-[#C4A484]" />
                 <p className="text-[14px] font-medium text-[#1C1C1E]">Nothing here yet</p>
                 <p className="mt-1 max-w-xs text-[12px] text-muted">
-                  Save things you want to buy — organized by category like 화장품 or 옷 · 자켓.
+                  {filter.type === 'all'
+                    ? 'No items match this filter yet — tap + to add one.'
+                    : 'Save things you want to buy — organized by category like 화장품 or 옷 · 자켓.'}
                 </p>
+                {filter.type === 'all' && backupItemCount > 0 && (
+                  <div className="mt-4 space-y-2">
+                    <p className="text-[12px] text-[#8B5A2B]">
+                      Found a local backup with up to {backupItemCount} item
+                      {backupItemCount === 1 ? '' : 's'}.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const count = restoreWishlistFromLocalBackup()
+                        setRestoreMessage(
+                          count > 0
+                            ? `Restored ${count} item${count === 1 ? '' : 's'} from this browser backup.`
+                            : 'No backup could be restored.',
+                        )
+                      }}
+                      className="rounded-lg bg-[#8B5A2B] px-3 py-1.5 text-[12px] font-semibold text-white"
+                    >
+                      Restore from browser backup
+                    </button>
+                  </div>
+                )}
+                {restoreMessage && (
+                  <p className="mt-3 text-[12px] text-[#1C1C1E]">{restoreMessage}</p>
+                )}
               </div>
             ) : (
               visibleItems.map((item) => (

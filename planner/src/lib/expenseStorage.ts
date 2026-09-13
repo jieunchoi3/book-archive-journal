@@ -5,6 +5,12 @@ import {
   normalizeExpenseTransactions,
 } from '../types/expense'
 import { ensureWishlistSeed } from './wishlistCategories'
+import {
+  loadLatestWishlistBackup,
+  normalizeWishlistItems,
+  restoreWishlistFromBackup,
+  saveWishlistBackup,
+} from './wishlistBackup'
 import { fetchExpenseStoreCloud, upsertExpenseStoreCloud } from './expenseCloud'
 import { isSupabaseConfigured } from './supabase'
 
@@ -144,75 +150,131 @@ async function saveExpenseStoreLocal(
   })
 }
 
+function applyWishlistBackupRecovery(store: ExpenseStore, userId: string): ExpenseStore {
+  const items = normalizeWishlistItems(store.wishlistItems)
+  if (items.length > 0) return { ...store, wishlistItems: items }
+  const backup = restoreWishlistFromBackup(userId)
+  if (backup.length === 0) return { ...store, wishlistItems: items }
+  console.info(`[expenses] restored ${backup.length} wishlist item(s) from local backup history`)
+  return { ...store, wishlistItems: backup }
+}
+
 export async function loadExpenseStore(userId: string): Promise<ExpenseStore | null> {
   const local = await loadExpenseStoreLocal(userId)
 
-  if (!isSupabaseConfigured) return local?.store ?? null
+  if (!isSupabaseConfigured) {
+    const store = local?.store ?? null
+    return store ? applyWishlistBackupRecovery(store, userId) : null
+  }
 
   try {
     const cloud = await fetchExpenseStoreCloud(userId)
 
     if (!cloud && local) {
-      await upsertExpenseStoreCloud(userId, local.store)
-      return local.store
+      const recovered = applyWishlistBackupRecovery(local.store, userId)
+      await upsertExpenseStoreCloud(userId, recovered)
+      return recovered
     }
 
     if (cloud && !local) {
-      await saveExpenseStoreLocal(userId, cloud.store, cloud.updatedAt)
-      return cloud.store
+      const recovered = applyWishlistBackupRecovery(cloud.store, userId)
+      await saveExpenseStoreLocal(userId, recovered, cloud.updatedAt)
+      if ((recovered.wishlistItems?.length ?? 0) > (cloud.store.wishlistItems?.length ?? 0)) {
+        await upsertExpenseStoreCloud(userId, recovered)
+      }
+      return recovered
     }
 
     if (cloud && local) {
       const merged = mergeExpenseSnapshots(cloud, local)
+      const recovered = applyWishlistBackupRecovery(merged.store, userId)
       const mergedAt = new Date().toISOString()
-      await saveExpenseStoreLocal(userId, merged.store, mergedAt)
-      await upsertExpenseStoreCloud(userId, merged.store)
+      await saveExpenseStoreLocal(userId, recovered, mergedAt)
+      await upsertExpenseStoreCloud(userId, recovered)
       const cloudCount = cloud.store.wishlistItems?.length ?? 0
       const localCount = local.store.wishlistItems?.length ?? 0
-      const mergedCount = merged.store.wishlistItems?.length ?? 0
+      const mergedCount = recovered.wishlistItems?.length ?? 0
       if (mergedCount > Math.max(cloudCount, localCount)) {
         console.info(
           `[expenses] recovered ${mergedCount - Math.max(cloudCount, localCount)} wishlist item(s) from sync merge`,
         )
       }
-      return merged.store
+      return recovered
+    }
+
+    const backupOnly = restoreWishlistFromBackup(userId)
+    if (backupOnly.length > 0) {
+      console.info(`[expenses] restored ${backupOnly.length} wishlist item(s) from local backup only`)
+      return { ...emptyExpenseStore(), wishlistItems: backupOnly }
     }
 
     return null
   } catch (e) {
     console.warn('[expenses] cloud load failed, using local', e)
-    return local?.store ?? null
+    const store = local?.store ?? null
+    return store ? applyWishlistBackupRecovery(store, userId) : null
   }
 }
 
 export async function saveExpenseStore(userId: string, store: ExpenseStore): Promise<void> {
+  let toSave: ExpenseStore = {
+    ...store,
+    wishlistItems: normalizeWishlistItems(store.wishlistItems),
+  }
+
+  if ((toSave.wishlistItems?.length ?? 0) > 0) {
+    saveWishlistBackup(userId, toSave.wishlistItems!)
+  }
+
+  if (isSupabaseConfigured) {
+    try {
+      const cloud = await fetchExpenseStoreCloud(userId)
+      const cloudItems = normalizeWishlistItems(cloud?.store.wishlistItems)
+      const localItems = toSave.wishlistItems ?? []
+      if (cloudItems.length > 0 && localItems.length === 0) {
+        console.warn('[expenses] blocked empty wishlist from overwriting cloud copy')
+        toSave = { ...toSave, wishlistItems: cloudItems }
+      }
+    } catch (e) {
+      console.warn('[expenses] cloud pre-save check failed', e)
+    }
+  }
+
   const updatedAt = new Date().toISOString()
-  await saveExpenseStoreLocal(userId, store, updatedAt)
+  await saveExpenseStoreLocal(userId, toSave, updatedAt)
 
   if (!isSupabaseConfigured) return
 
   try {
-    await upsertExpenseStoreCloud(userId, store)
+    await upsertExpenseStoreCloud(userId, toSave)
   } catch (e) {
     console.error('[expenses] cloud save failed', e)
     throw e
   }
 }
 
-function ensureWishlistInStore(store: ExpenseStore): ExpenseStore {
+function ensureWishlistInStore(store: ExpenseStore, userId?: string): ExpenseStore {
+  let items = normalizeWishlistItems(store.wishlistItems)
+  if (items.length === 0 && userId) {
+    const backup = loadLatestWishlistBackup(userId)
+    if (backup.length > 0) {
+      console.info(`[expenses] restored ${backup.length} wishlist item(s) from local backup`)
+      items = backup
+    }
+  }
   return {
     ...store,
     wishlistCategories: ensureWishlistSeed(store.wishlistCategories),
-    wishlistItems: store.wishlistItems ?? [],
+    wishlistItems: items,
   }
 }
 
-export function ensureExpenseStore(store: ExpenseStore | null): ExpenseStore {
-  if (!store) return ensureWishlistInStore(emptyExpenseStore())
+export function ensureExpenseStore(store: ExpenseStore | null, userId?: string): ExpenseStore {
+  if (!store) return ensureWishlistInStore(emptyExpenseStore(), userId)
   const withMarks = {
     ...store,
     dayMarks: store.dayMarks ?? {},
     transactions: normalizeExpenseTransactions(store.transactions ?? []),
   }
-  return ensureDualAxisCatalogs(ensureWishlistInStore(withMarks))
+  return ensureDualAxisCatalogs(ensureWishlistInStore(withMarks, userId))
 }

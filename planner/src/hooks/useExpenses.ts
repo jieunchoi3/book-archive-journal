@@ -23,6 +23,7 @@ import {
 } from '../types/expense'
 import { getMissingExpenseLogDays } from '../lib/expenseMissingDays'
 import { ensureExpenseStore, loadExpenseStore, saveExpenseStore } from '../lib/expenseStorage'
+import { restoreWishlistFromBackup } from '../lib/wishlistBackup'
 import {
   buildWishlistTree,
   collectDescendantCategoryIds,
@@ -142,6 +143,7 @@ export interface ExpenseActions {
   addWishlistCategory: (input: { name: string; parentId: string | null }) => string | null
   renameWishlistCategory: (categoryId: string, name: string) => void
   deleteWishlistCategory: (categoryId: string, mode: 'move' | 'delete') => void
+  restoreWishlistFromLocalBackup: () => number
   markWishlistPurchased: (
     id: string,
     input: {
@@ -173,17 +175,20 @@ export function useExpenses(): ExpenseActions {
     void (async () => {
       setLoading(true)
       try {
-        const loaded = ensureExpenseStore(await loadExpenseStore(userId))
+        const loaded = ensureExpenseStore(await loadExpenseStore(userId), userId)
         if (cancelled) return
         if (loaded.categories.length === 0) {
-          const seeded = ensureExpenseStore({
-            ...loaded,
-            categories: seedCategories(),
-          })
+          const seeded = ensureExpenseStore(
+            {
+              ...loaded,
+              categories: seedCategories(),
+            },
+            userId,
+          )
           setStore(seeded)
           void saveExpenseStore(userId, seeded)
         } else {
-          const normalized = ensureExpenseStore(loaded)
+          const normalized = ensureExpenseStore(loaded, userId)
           setStore(normalized)
           const kindsChanged =
             JSON.stringify(
@@ -720,6 +725,16 @@ export function useExpenses(): ExpenseActions {
     [persist, store, wishlistCategories, wishlistItems],
   )
 
+  const restoreWishlistFromLocalBackup = useCallback((): number => {
+    const restored = restoreWishlistFromBackup(userId)
+    if (restored.length === 0) return 0
+    persist({
+      ...store,
+      wishlistItems: restored,
+    })
+    return restored.length
+  }, [persist, store, userId])
+
   const markWishlistPurchased: ExpenseActions['markWishlistPurchased'] = useCallback(
     (id, input) => {
       const item = wishlistItems.find((w) => w.id === id)
@@ -812,6 +827,7 @@ export function useExpenses(): ExpenseActions {
     addWishlistCategory,
     renameWishlistCategory,
     deleteWishlistCategory,
+    restoreWishlistFromLocalBackup,
     markWishlistPurchased,
   }
 }
