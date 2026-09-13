@@ -184,7 +184,7 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
         onDeleteCategory={deleteWishlistCategory}
       />
 
-      <div className="min-w-0 flex-1 space-y-3">
+      <div className="@container min-w-0 flex-1 space-y-3">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-[16px] font-semibold text-[#1C1C1E]">{filterLabel}</h2>
@@ -222,18 +222,20 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,clamp(6.75rem,22cqi,12.5rem)),1fr))] gap-[clamp(0.5rem,1.5cqi,0.875rem)]">
             {filter.type !== 'purchased' && (
               <button
                 type="button"
                 onClick={() => setShowAddForm(true)}
-                className="group flex aspect-[3/4] flex-col items-center justify-center rounded-2xl border border-dashed border-hairline bg-white/80 text-muted transition-colors hover:border-[#8B5A2B]/35 hover:bg-[#FBF7F2] hover:text-[#8B5A2B]"
+                className="group flex w-full flex-col text-muted transition-colors hover:text-[#8B5A2B]"
                 aria-label="Add wishlist item"
               >
-                <span className="flex h-12 w-12 items-center justify-center rounded-full border border-hairline bg-[#FAFAFA] transition-colors group-hover:border-[#8B5A2B]/25 group-hover:bg-white">
-                  <Plus size={22} strokeWidth={1.75} />
+                <span className="flex aspect-[4/5] w-full flex-col items-center justify-center rounded-2xl border border-dashed border-hairline bg-white/80 transition-colors group-hover:border-[#8B5A2B]/35 group-hover:bg-[#FBF7F2]">
+                  <span className="flex h-[clamp(2rem,5vw,3rem)] w-[clamp(2rem,5vw,3rem)] items-center justify-center rounded-full border border-hairline bg-[#FAFAFA] transition-colors group-hover:border-[#8B5A2B]/25 group-hover:bg-white">
+                    <Plus size={22} strokeWidth={1.75} />
+                  </span>
                 </span>
-                <span className="mt-2 text-[11px] font-medium">Add item</span>
+                <span className="mt-1.5 text-center text-[11px] font-medium">Add item</span>
               </button>
             )}
 
@@ -376,11 +378,11 @@ function WishlistGridCard({
   const images = wishlistItemImages(item)
 
   return (
-    <article className="group relative flex aspect-[3/4] flex-col overflow-hidden rounded-2xl border border-hairline bg-white shadow-sm transition-shadow hover:shadow-md">
-      <div className="relative min-h-0 flex-1 bg-[#F5F5F7]">
+    <article className="group relative flex w-full flex-col overflow-hidden rounded-2xl border border-hairline bg-white shadow-sm transition-shadow hover:shadow-md">
+      <div className="relative aspect-[4/5] w-full bg-[#F5F5F7]">
         <WishlistPhotoCarousel
           images={images}
-          className="h-full"
+          className="h-full w-full"
           onTap={onEdit}
           emptyLabel="No photo · tap to edit"
         />

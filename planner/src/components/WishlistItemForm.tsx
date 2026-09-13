@@ -362,7 +362,7 @@ export function WishlistItemForm({
             }}
           />
           <div
-            className="relative aspect-[4/3] w-full overflow-hidden rounded-xl border border-dashed border-[#C4A484] bg-[#FAFAFA]"
+            className="relative aspect-[4/5] w-full overflow-hidden rounded-xl border border-dashed border-[#C4A484] bg-[#FAFAFA]"
             onPaste={(e) => {
               handleClipboardImagePaste(e.nativeEvent, (source) => void applyPhoto(source))
             }}
