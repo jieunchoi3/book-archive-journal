@@ -182,18 +182,109 @@ function extractFromHtml(html: string, url: string): EnrichResult {
   }
 }
 
-async function fetchHtml(url: string): Promise<string> {
-  const res = await fetch(url, {
+async function fetchViaJinaReader(url: string): Promise<string> {
+  const res = await fetch(`https://r.jina.ai/${url}`, {
     redirect: 'follow',
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      Accept: 'text/html,application/xhtml+xml',
-    },
+    headers: { Accept: 'text/plain', 'User-Agent': 'WeeklyPlanner-WishlistEnrich/1.0' },
   })
-  if (!res.ok) throw new Error(`Could not fetch link (${res.status})`)
+  if (!res.ok) throw new Error(`Could not fetch link via reader (${res.status})`)
   const text = await res.text()
+  if (!text.trim()) throw new Error('Could not fetch link (empty reader response)')
   return text.slice(0, 120_000)
+}
+
+async function fetchHtml(url: string): Promise<string> {
+  try {
+    const res = await fetch(url, {
+      redirect: 'follow',
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml',
+      },
+    })
+    if (res.ok) {
+      const text = await res.text()
+      if (text.length > 400 && /<html|<meta|application\/ld\+json/i.test(text)) {
+        return text.slice(0, 120_000)
+      }
+    }
+  } catch {
+    /* reader fallback */
+  }
+  return fetchViaJinaReader(url)
+}
+
+function parsePriceFromMarkdownSection(text: string): number | null {
+  const main =
+    text.split(/You may also like|Receive a complimentary|Related products|Customers also bought/i)[0] ??
+    text
+  const oldNew = main.match(
+    /Old price\s*([£$€₩])?\s*([\d.,]+)\s*New price\s*([£$€₩])?\s*([\d.,]+)/i,
+  )
+  if (oldNew) return parsePrice(oldNew[4])
+  const newOnly = main.match(/New price\s*([£$€₩])?\s*([\d.,]+)/i)
+  if (newOnly) return parsePrice(newOnly[2])
+  return null
+}
+
+function extractFromReaderMarkdown(text: string, url: string): EnrichResult {
+  const titleLine = text.match(/^Title:\s*(.+)$/m)?.[1]?.trim()
+  const h1 = text.match(/^#\s+(.+)$/m)?.[1]?.trim()
+  const rawName = h1 ?? titleLine?.split(/\s*[|\u2013\u2014-]\s*/)[0]?.trim() ?? ''
+  const name = rawName.replace(/\s*[|\u2013\u2014-]\s*.+$/i, '').trim()
+  const mainSection =
+    text.split(/You may also like|Receive a complimentary|Related products|Customers also bought/i)[0] ??
+    text
+  let imageUrl: string | undefined
+  let bestScore = -1
+  const imgRe = /!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/g
+  let imgMatch: RegExpExecArray | null
+  while ((imgMatch = imgRe.exec(mainSection))) {
+    const candidate = imgMatch[1]!
+    const lower = candidate.toLowerCase()
+    if (
+      lower.includes('logo') ||
+      lower.includes('/navigation/') ||
+      lower.includes('flyout-nav') ||
+      lower.includes('/loyalty/')
+    ) {
+      continue
+    }
+    let score = 0
+    if (lower.includes('packshot')) score = 4
+    else if (lower.includes('master-catalog')) score = 3
+    else if (lower.includes('/images/')) score = 1
+    if (score > bestScore) {
+      bestScore = score
+      imageUrl = candidate
+    }
+  }
+  return {
+    name,
+    brand: url.includes('lancome') ? 'Lancôme' : '',
+    store: storeFromUrl(url),
+    estimatedPrice: parsePriceFromMarkdownSection(text),
+    currency: text.match(/shown in\s*\*\*([A-Z]{3})\*\*/i)?.[1],
+    imageUrl,
+    note: '',
+  }
+}
+
+function extractPageContent(content: string, url: string): EnrichResult {
+  if (/^Title:\s/m.test(content) || /Markdown Content:/i.test(content)) {
+    return extractFromReaderMarkdown(content, url)
+  }
+  const html = extractFromHtml(content, url)
+  if (html.estimatedPrice != null && html.estimatedPrice > 0) return html
+  const md = extractFromReaderMarkdown(content, url)
+  return {
+    ...html,
+    estimatedPrice: html.estimatedPrice ?? md.estimatedPrice,
+    name: html.name || md.name,
+    imageUrl: html.imageUrl || md.imageUrl,
+    currency: html.currency || md.currency,
+  }
 }
 
 function buildUserPrompt(body: EnrichBody, extracted: EnrichResult | null, htmlSnippet?: string) {
@@ -250,7 +341,7 @@ export async function runWishlistEnrich(
   if (link) {
     try {
       htmlSnippet = await fetchHtml(link)
-      extracted = extractFromHtml(htmlSnippet, link)
+      extracted = extractPageContent(htmlSnippet, link)
     } catch (e) {
       extracted = { store: storeFromUrl(link), note: String(e) }
     }

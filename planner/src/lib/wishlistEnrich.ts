@@ -102,7 +102,7 @@ export function enrichWishlistFromLinkLocal(link: string): WishlistEnrichResult 
       store,
       brand,
       name: name.length > 1 ? name : undefined,
-      note: 'Could not reach product page — sign in and retry for price & photo.',
+      note: 'Price & photo need the product page — paste them manually or retry auto-fill.',
     }
   } catch {
     return {}

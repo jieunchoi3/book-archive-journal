@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { extractFromHtml, fetchProductHtml, storeFromUrl } from './wishlistPageExtract'
+import { extractFromPageContent, fetchProductHtml, storeFromUrl } from './wishlistPageExtract'
 
 const PROMPT_VERSION = 'v1'
 const SYSTEM_PROMPT = `You extract shopping wishlist fields from product pages or product descriptions.
@@ -225,7 +225,7 @@ async function metadataOnlyResponse(body: EnrichBody): Promise<Response | null> 
   if (!link) return null
   try {
     const html = await fetchProductHtml(link)
-    const extracted = extractFromHtml(html, link) as EnrichResult
+    const extracted = extractFromPageContent(html, link) as EnrichResult
     if (!hasExtractedData(extracted)) return null
     const result = normalizeResult(extracted, body)
     return jsonResponse({
@@ -303,7 +303,7 @@ export async function handleWishlistEnrichRequest(req: Request): Promise<Respons
     if (link) {
       try {
         htmlSnippet = await fetchProductHtml(link)
-        extracted = extractFromHtml(htmlSnippet, link) as EnrichResult
+        extracted = extractFromPageContent(htmlSnippet, link) as EnrichResult
       } catch (e) {
         extracted = { store: storeFromUrl(link), note: String(e) }
       }
