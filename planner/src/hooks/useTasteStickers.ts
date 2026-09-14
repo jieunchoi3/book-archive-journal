@@ -382,8 +382,8 @@ export function useTasteStickers(): TasteActions {
         return b.dateKey.localeCompare(a.dateKey) || b.createdAt.localeCompare(a.createdAt)
       }
       if (!aDated && !bDated) return b.createdAt.localeCompare(a.createdAt)
-      // Undated “liked” items float above dated ones in View all.
-      return aDated ? 1 : -1
+      // Dated items first (newest date), then undated.
+      return aDated ? -1 : 1
     })
   }, [store.stickers, browseMode, monthPrefix, kindFilter, subFilter])
 

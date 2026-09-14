@@ -265,10 +265,16 @@ export function TasteStickerView() {
                 ))}
               </div>
               {hasSubs && activeCat ? (
-                <div className="mb-5 flex flex-wrap justify-center gap-2 sm:justify-start sm:gap-2">
+                <div className="mb-5 flex flex-wrap items-center justify-center gap-2 sm:justify-start sm:gap-2">
+                  <span className="flex h-8 shrink-0 items-center rounded-lg bg-[#fffde8]/15 px-2 text-[10px] font-semibold uppercase tracking-wide text-[#fffac0]/80 ring-1 ring-[#fffac0]/25">
+                    {activeCat.name}
+                  </span>
+                  <span className="hidden text-[#fffac0]/40 sm:inline" aria-hidden>
+                    ›
+                  </span>
                   <FilterPill
                     label="All"
-                    compact
+                    variant="subcategory"
                     active={taste.subFilter === 'all'}
                     onClick={() => taste.setSubFilter('all')}
                   />
@@ -276,7 +282,7 @@ export function TasteStickerView() {
                     <FilterPill
                       key={sub.id}
                       label={sub.name}
-                      compact
+                      variant="subcategory"
                       active={taste.subFilter === sub.id}
                       onClick={() => taste.setSubFilter(sub.id)}
                     />
@@ -497,25 +503,30 @@ function FilterPill({
   label,
   active,
   onClick,
-  compact = false,
+  variant = 'category',
 }: {
   label: string
   active: boolean
   onClick: () => void
-  compact?: boolean
+  variant?: 'category' | 'subcategory'
 }) {
+  const isSub = variant === 'subcategory'
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-full px-3.5 font-semibold tracking-wide transition whitespace-nowrap ${
-        compact
-          ? 'h-9 text-[12px] sm:h-10'
-          : 'h-10 text-[12px] sm:h-11'
-      } ${
-        active
-          ? 'bg-[#fffac0] text-[#3a2010] shadow-[0_4px_14px_rgba(0,0,0,0.18)]'
-          : 'bg-[#fffde8]/35 text-[#2b2118]/80 ring-1 ring-white/25 backdrop-blur-[2px] hover:bg-[#fffde8]/50'
+      className={`font-semibold tracking-wide transition whitespace-nowrap ${
+        isSub
+          ? `h-8 rounded-lg px-2.5 text-[11px] sm:h-9 ${
+              active
+                ? 'bg-[#3a2010] text-[#fffac0] ring-1 ring-[#fffac0]/35'
+                : 'bg-transparent text-[#fffde8]/90 ring-1 ring-[#fffac0]/30 hover:bg-[#fffde8]/15'
+            }`
+          : `h-10 rounded-full px-3.5 text-[12px] sm:h-11 ${
+              active
+                ? 'bg-[#fffac0] text-[#3a2010] shadow-[0_4px_14px_rgba(0,0,0,0.18)]'
+                : 'bg-[#fffde8]/35 text-[#2b2118]/80 ring-1 ring-white/25 backdrop-blur-[2px] hover:bg-[#fffde8]/50'
+            }`
       }`}
     >
       {label}
