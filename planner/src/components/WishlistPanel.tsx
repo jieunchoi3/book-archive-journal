@@ -148,6 +148,7 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
   }, [editingItem, filter, storeOptions, brandOptions])
 
   const showFormModal = showAddForm || editingItem != null
+  const overlayOpen = showFormModal || purchaseItem != null
 
   const closeFormModal = () => {
     setShowAddForm(false)
@@ -269,6 +270,7 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
                 key={item.id}
                 item={item}
                 categories={wishlistCategories}
+                disableHoverPreview={overlayOpen}
                 menuOpen={menuItemId === item.id}
                 onToggleMenu={() =>
                   setMenuItemId((id) => (id === item.id ? null : item.id))
@@ -407,6 +409,7 @@ function WishlistItemFormModal({
 function WishlistGridCard({
   item,
   categories,
+  disableHoverPreview = false,
   menuOpen,
   onToggleMenu,
   onCloseMenu,
@@ -417,6 +420,7 @@ function WishlistGridCard({
 }: {
   item: WishlistItem
   categories: WishlistCategory[]
+  disableHoverPreview?: boolean
   menuOpen: boolean
   onToggleMenu: () => void
   onCloseMenu: () => void
@@ -437,6 +441,7 @@ function WishlistGridCard({
   } | null>(null)
 
   const showHoverPreview = useCallback(() => {
+    if (disableHoverPreview || menuOpen) return
     if (images.length === 0) return
     if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return
     const rect = photoRef.current?.getBoundingClientRect()
@@ -452,11 +457,15 @@ function WishlistGridCard({
       window.innerWidth - width - margin,
     )
     setHoverPreview({ top, left, width })
-  }, [images.length])
+  }, [disableHoverPreview, images.length, menuOpen])
 
   const hideHoverPreview = useCallback(() => {
     setHoverPreview(null)
   }, [])
+
+  useEffect(() => {
+    if (disableHoverPreview || menuOpen) hideHoverPreview()
+  }, [disableHoverPreview, hideHoverPreview, menuOpen])
 
   useEffect(() => {
     if (!hoverPreview) return
@@ -488,7 +497,7 @@ function WishlistGridCard({
           images[photoIndex] &&
           createPortal(
             <div
-              className="pointer-events-none fixed z-[100]"
+              className="pointer-events-none fixed z-40"
               style={{
                 top: hoverPreview.top,
                 left: hoverPreview.left,
