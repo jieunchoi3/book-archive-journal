@@ -32,6 +32,8 @@ export interface SnapBooking {
   photosUrl: string | null
   note: string | null
   source: SnapSource
+  /** Linked Expenses income transaction (Freelance). */
+  expenseTransactionId?: string
   createdAt: string
 }
 

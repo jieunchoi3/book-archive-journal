@@ -37,7 +37,14 @@ import {
   defaultWishlistCategoryId,
   type WishlistTreeNode,
 } from '../lib/wishlistCategories'
+import {
+  freelanceIncomeCategoryId,
+  snapIncomeAmountGbp,
+  snapIncomeDateKey,
+  snapIncomeNote,
+} from '../lib/snapExpenseSync'
 import { generateId, getTodayKey } from '../lib/weekUtils'
+import type { SnapBooking } from '../types/snap'
 import { useAuth } from './useAuth'
 
 function seedCategories(): ExpenseCategory[] {
@@ -79,6 +86,12 @@ export interface ExpenseActions {
     },
   ) => void
   deleteTransaction: (id: string) => void
+  /** Create or update an In · Freelance row for a Snap booking. */
+  upsertSnapIncomeTransaction: (
+    booking: SnapBooking,
+    linkedTransactionId?: string,
+  ) => string | undefined
+  hasTransaction: (id: string) => boolean
   /** Mark a day as intentionally empty (no spending to record). */
   markDayNoSpend: (dateKey: string) => void
   clearDayMark: (dateKey: string) => void
@@ -422,6 +435,81 @@ export function useExpenses(): ExpenseActions {
       })
     },
     [persist, store],
+  )
+
+  const hasTransaction = useCallback(
+    (id: string) => store.transactions.some((t) => t.id === id),
+    [store.transactions],
+  )
+
+  const upsertSnapIncomeTransaction = useCallback(
+    (booking: SnapBooking, linkedTransactionId?: string): string | undefined => {
+      const categoryId = freelanceIncomeCategoryId(incomeCategories)
+      if (!categoryId) return linkedTransactionId
+
+      const amount = snapIncomeAmountGbp(booking)
+      const dateKey = snapIncomeDateKey(booking)
+      const note = snapIncomeNote(booking)
+      const linked = linkedTransactionId?.trim()
+      const existing = linked
+        ? store.transactions.find((t) => t.id === linked)
+        : undefined
+
+      if (!(amount > 0)) {
+        if (existing) {
+          persist({
+            ...store,
+            transactions: store.transactions.filter((t) => t.id !== existing.id),
+          })
+        }
+        return undefined
+      }
+
+      const dayMarks = { ...(store.dayMarks ?? {}) }
+      delete dayMarks[dateKey]
+
+      if (existing) {
+        persist({
+          ...store,
+          transactions: store.transactions.map((t) =>
+            t.id === existing.id
+              ? {
+                  ...t,
+                  amount,
+                  flow: 'in',
+                  categoryId,
+                  purposeId: '',
+                  spendKindId: '',
+                  dateKey,
+                  note,
+                }
+              : t,
+          ),
+          dayMarks,
+        })
+        return existing.id
+      }
+
+      const id = generateId()
+      const tx: MoneyTransaction = {
+        id,
+        amount,
+        flow: 'in',
+        categoryId,
+        purposeId: '',
+        spendKindId: '',
+        dateKey,
+        note,
+        createdAt: new Date().toISOString(),
+      }
+      persist({
+        ...store,
+        transactions: [tx, ...store.transactions],
+        dayMarks,
+      })
+      return id
+    },
+    [incomeCategories, persist, store],
   )
 
   const markDayNoSpend = useCallback(
@@ -826,6 +914,8 @@ export function useExpenses(): ExpenseActions {
     addTransaction,
     updateTransaction,
     deleteTransaction,
+    upsertSnapIncomeTransaction,
+    hasTransaction,
     markDayNoSpend,
     clearDayMark,
     markDaysNoSpend,

@@ -26,6 +26,12 @@ import { useAuth } from './useAuth'
 
 export type SnapBookingInput = Omit<SnapBooking, 'id' | 'createdAt'>
 
+export interface SnapExpenseBridge {
+  upsertSnapIncome: (booking: SnapBooking, linkedTransactionId?: string) => string | undefined
+  removeSnapIncome: (linkedTransactionId: string) => void
+  hasTransaction: (id: string) => boolean
+}
+
 export interface SnapActions {
   loading: boolean
   bookings: SnapBooking[]
@@ -68,7 +74,31 @@ export interface SnapActions {
   repeatCustomers: Array<{ name: string; count: number; revenue: number }>
 }
 
-export function useSnapBookings(): SnapActions {
+function syncBookingExpenseLink(
+  booking: SnapBooking,
+  bridge: SnapExpenseBridge | undefined,
+): SnapBooking {
+  if (!bridge) return booking
+  const amount = revenueGbp(booking)
+  if (!(amount > 0)) {
+    if (booking.expenseTransactionId && bridge.hasTransaction(booking.expenseTransactionId)) {
+      bridge.removeSnapIncome(booking.expenseTransactionId)
+    }
+    const { expenseTransactionId: _removed, ...rest } = booking
+    return rest as SnapBooking
+  }
+  if (
+    booking.expenseTransactionId &&
+    bridge.hasTransaction(booking.expenseTransactionId)
+  ) {
+    const txId = bridge.upsertSnapIncome(booking, booking.expenseTransactionId)
+    return txId ? { ...booking, expenseTransactionId: txId } : booking
+  }
+  const txId = bridge.upsertSnapIncome(booking, booking.expenseTransactionId)
+  return txId ? { ...booking, expenseTransactionId: txId } : booking
+}
+
+export function useSnapBookings(expenseBridge?: SnapExpenseBridge): SnapActions {
   const { user } = useAuth()
   const userId = user.id
   const [bookings, setBookings] = useState<SnapBooking[]>([])
@@ -118,6 +148,34 @@ export function useSnapBookings(): SnapActions {
     },
     [userId],
   )
+
+  useEffect(() => {
+    if (loading || !expenseBridge) return
+    const needsSync = bookings.some(
+      (b) =>
+        revenueGbp(b) > 0 &&
+        (!b.expenseTransactionId || !expenseBridge.hasTransaction(b.expenseTransactionId)),
+    )
+    if (!needsSync) return
+
+    let changed = false
+    const next = bookings.map((b) => {
+      if (revenueGbp(b) <= 0) return b
+      if (
+        b.expenseTransactionId &&
+        expenseBridge.hasTransaction(b.expenseTransactionId)
+      ) {
+        return b
+      }
+      const synced = syncBookingExpenseLink(b, expenseBridge)
+      if (synced.expenseTransactionId !== b.expenseTransactionId) {
+        changed = true
+        return synced
+      }
+      return b
+    })
+    if (changed) persist(next)
+  }, [loading, expenseBridge, bookings, persist])
 
   const periodBookings = useMemo(
     () => bookings.filter((b) => bookingInPeriod(b, period)),
@@ -286,45 +344,56 @@ export function useSnapBookings(): SnapActions {
 
   const addBooking = useCallback(
     (input: SnapBookingInput) => {
-      const booking: SnapBooking = {
+      let booking: SnapBooking = {
         ...input,
         source: input.source ?? 'manual',
         id: generateId(),
         createdAt: new Date().toISOString(),
       }
+      booking = syncBookingExpenseLink(booking, expenseBridge)
       const next = [booking, ...bookings]
       persist(next)
       void persistSnapBookingUpsert(userId, booking, next)
     },
-    [bookings, persist, userId],
+    [bookings, expenseBridge, persist, userId],
   )
 
   const updateBooking = useCallback(
     (id: string, input: SnapBookingInput) => {
-      const next = bookings.map((b) =>
-        b.id === id
-          ? {
-              ...input,
-              id,
-              createdAt: b.createdAt,
-              source: input.source ?? b.source ?? 'manual',
-            }
-          : b,
-      )
+      const prev = bookings.find((b) => b.id === id)
+      let updated: SnapBooking | undefined
+      const next = bookings.map((b) => {
+        if (b.id !== id) return b
+        updated = {
+          ...input,
+          id,
+          createdAt: b.createdAt,
+          source: input.source ?? b.source ?? 'manual',
+          expenseTransactionId: b.expenseTransactionId,
+        }
+        updated = syncBookingExpenseLink(updated, expenseBridge)
+        return updated
+      })
       persist(next)
-      const updated = next.find((b) => b.id === id)
       if (updated) void persistSnapBookingUpsert(userId, updated, next)
+      else if (prev?.expenseTransactionId && expenseBridge) {
+        expenseBridge.removeSnapIncome(prev.expenseTransactionId)
+      }
     },
-    [bookings, persist, userId],
+    [bookings, expenseBridge, persist, userId],
   )
 
   const deleteBooking = useCallback(
     (id: string) => {
+      const removed = bookings.find((b) => b.id === id)
+      if (removed?.expenseTransactionId && expenseBridge) {
+        expenseBridge.removeSnapIncome(removed.expenseTransactionId)
+      }
       const next = bookings.filter((b) => b.id !== id)
       persist(next)
       void persistSnapBookingDelete(userId, id, next)
     },
-    [bookings, persist, userId],
+    [bookings, expenseBridge, persist, userId],
   )
 
   return {

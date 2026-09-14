@@ -1,11 +1,11 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { AuthProvider } from './components/AuthProvider'
 import { useAuth } from './hooks/useAuth'
 import { PlannerDataProvider } from './context/PlannerDataContext'
 import { usePlanner } from './hooks/usePlanner'
 import { useItems } from './hooks/useItems'
 import { useExpenses } from './hooks/useExpenses'
-import { useSnapBookings } from './hooks/useSnapBookings'
+import { useSnapBookings, type SnapExpenseBridge } from './hooks/useSnapBookings'
 import { useLinkedApps } from './hooks/useLinkedApps'
 import { useCompass } from './hooks/useCompass'
 import { ImportLocalDataBanner } from './components/ImportLocalDataBanner'
@@ -31,7 +31,21 @@ function AppContent() {
   const planner = usePlanner()
   const items = useItems(planner.weekStart)
   const expenses = useExpenses()
-  const snap = useSnapBookings()
+  const snapExpenseBridge = useMemo<SnapExpenseBridge | undefined>(() => {
+    if (expenses.loading) return undefined
+    return {
+      upsertSnapIncome: (booking, linkedTransactionId) =>
+        expenses.upsertSnapIncomeTransaction(booking, linkedTransactionId),
+      removeSnapIncome: (id) => expenses.deleteTransaction(id),
+      hasTransaction: (id) => expenses.hasTransaction(id),
+    }
+  }, [
+    expenses.loading,
+    expenses.upsertSnapIncomeTransaction,
+    expenses.deleteTransaction,
+    expenses.hasTransaction,
+  ])
+  const snap = useSnapBookings(snapExpenseBridge)
   const linkedApps = useLinkedApps()
   const compass = useCompass()
 
