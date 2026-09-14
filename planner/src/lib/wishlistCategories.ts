@@ -1,12 +1,15 @@
 import type {
+  ExpenseCategory,
+  ExpensePurpose,
   ExpensePurposeKindLink,
   ExpenseSpendKind,
+  MoneyFlow,
   WishlistCategory,
   WishlistItem,
   WishlistPriority,
   WishlistStatus,
 } from '../types/expense'
-import { SEED_KIND_IDS, SEED_PURPOSE_IDS } from '../types/expense'
+import { isExpenseHierarchyDate, SEED_KIND_IDS, SEED_PURPOSE_IDS } from '../types/expense'
 import { generateId } from './weekUtils'
 
 export const WISHLIST_MAX_DEPTH = 3
@@ -334,6 +337,114 @@ export function wishlistPriorityLabel(priority: WishlistPriority): string {
       return 'Medium'
     default:
       return 'Low'
+  }
+}
+
+const PRIORITY_ORDER: WishlistPriority[] = ['low', 'medium', 'high']
+
+export function shiftWishlistPriority(
+  priority: WishlistPriority,
+  direction: 'up' | 'down',
+): WishlistPriority | null {
+  const idx = PRIORITY_ORDER.indexOf(priority)
+  if (idx === -1) return null
+  const next = direction === 'up' ? idx + 1 : idx - 1
+  if (next < 0 || next >= PRIORITY_ORDER.length) return null
+  return PRIORITY_ORDER[next]!
+}
+
+export interface WishlistPurchaseInput {
+  amount: number
+  flow: MoneyFlow
+  categoryId?: string
+  purposeId?: string
+  spendKindId?: string
+  dateKey: string
+  note?: string
+}
+
+export interface WishlistPurchaseDefaults {
+  amount: string
+  note: string
+  flow: MoneyFlow
+  categoryId: string
+  purposeId: string
+  spendKindId: string
+  useDualAxis: boolean
+}
+
+export function buildWishlistPurchaseDefaults(
+  item: WishlistItem,
+  wishlistCategories: WishlistCategory[],
+  expenseCategories: ExpenseCategory[],
+  purposes: ExpensePurpose[],
+  spendKinds: ExpenseSpendKind[],
+  purposeKindLinks: ExpensePurposeKindLink[],
+  dateKey: string,
+): WishlistPurchaseDefaults {
+  const useDualAxis = isExpenseHierarchyDate(dateKey)
+  const suggestedKindId = suggestExpenseKindForCategory(
+    wishlistCategories,
+    item.categoryId,
+    spendKinds,
+  )
+  const suggestedPurposeId = suggestedKindId
+    ? suggestExpensePurposeForKind(suggestedKindId, purposeKindLinks ?? [])
+    : null
+
+  return {
+    amount: item.estimatedPrice != null ? String(item.estimatedPrice) : '',
+    note: buildWishlistNote(item),
+    flow: 'out',
+    categoryId: expenseCategories[0]?.id ?? '',
+    purposeId: suggestedPurposeId ?? purposes[0]?.id ?? '',
+    spendKindId: suggestedKindId ?? '',
+    useDualAxis,
+  }
+}
+
+/** One-tap purchase input when estimated price and expense targets are configured. */
+export function buildWishlistPurchaseInput(
+  item: WishlistItem,
+  wishlistCategories: WishlistCategory[],
+  expenseCategories: ExpenseCategory[],
+  purposes: ExpensePurpose[],
+  spendKinds: ExpenseSpendKind[],
+  purposeKindLinks: ExpensePurposeKindLink[],
+  dateKey: string,
+): WishlistPurchaseInput | null {
+  const amount = item.estimatedPrice ?? 0
+  if (!(amount > 0)) return null
+
+  const defaults = buildWishlistPurchaseDefaults(
+    item,
+    wishlistCategories,
+    expenseCategories,
+    purposes,
+    spendKinds,
+    purposeKindLinks,
+    dateKey,
+  )
+
+  if (defaults.useDualAxis) {
+    if (!defaults.purposeId || !defaults.spendKindId) return null
+    return {
+      amount,
+      flow: defaults.flow,
+      purposeId: defaults.purposeId,
+      spendKindId: defaults.spendKindId,
+      dateKey,
+      note: defaults.note,
+    }
+  }
+
+  if (!defaults.categoryId) return null
+  return {
+    amount,
+    flow: defaults.flow,
+    categoryId: defaults.categoryId,
+    dateKey,
+    note: defaults.note,
   }
 }
 
