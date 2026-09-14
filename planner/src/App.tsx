@@ -12,6 +12,7 @@ import { ImportLocalDataBanner } from './components/ImportLocalDataBanner'
 import { WeekView } from './components/WeekView'
 import { MonthCalendarView } from './components/MonthCalendarView'
 import { DiaryView } from './components/DiaryView'
+import { RelationsView } from './components/RelationsView'
 import { ExpenseView } from './components/ExpenseView'
 import { SnapView } from './components/SnapView'
 import { TasteStickerView } from './components/TasteStickerView'
@@ -62,7 +63,9 @@ function AppContent() {
   return (
     <>
       <ImportLocalDataBanner />
-      {view === 'diary' ? (
+      {view === 'relations' ? (
+        <RelationsView />
+      ) : view === 'diary' ? (
         <DiaryView expenses={expenses} />
       ) : view === 'expenses' ? (
         <ExpenseView expenses={expenses} />

@@ -334,39 +334,43 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
         )}
       </div>
 
-      {showFormModal && (
-        <WishlistItemFormModal
-          title={editingItem ? 'Edit item' : 'Add to wishlist'}
-          onClose={closeFormModal}
-        >
-          <WishlistItemForm
-            key={editingItem ? `edit-${editingItem.id}` : `add-${addFormKey}`}
-            categories={wishlistCategories}
-            initial={formInitial}
-            submitLabel={editingItem ? 'Save changes' : 'Add item'}
-            onSubmit={editingItem ? handleUpdate : handleAdd}
-            onCancel={closeFormModal}
-          />
-        </WishlistItemFormModal>
-      )}
+      {showFormModal &&
+        createPortal(
+          <WishlistItemFormModal
+            title={editingItem ? 'Edit item' : 'Add to wishlist'}
+            onClose={closeFormModal}
+          >
+            <WishlistItemForm
+              key={editingItem ? `edit-${editingItem.id}` : `add-${addFormKey}`}
+              categories={wishlistCategories}
+              initial={formInitial}
+              submitLabel={editingItem ? 'Save changes' : 'Add item'}
+              onSubmit={editingItem ? handleUpdate : handleAdd}
+              onCancel={closeFormModal}
+            />
+          </WishlistItemFormModal>,
+          document.body,
+        )}
 
-      {purchaseItem && (
-        <WishlistPurchaseModal
-          item={purchaseItem}
-          wishlistCategories={wishlistCategories}
-          expenseCategories={expenseCategories}
-          purposes={purposes}
-          spendKinds={spendKinds}
-          purposeKindLinks={purposeKindLinks ?? []}
-          kindsForActivePurpose={kindsForActivePurpose}
-          onClose={() => setPurchaseItem(null)}
-          onConfirm={(input) => {
-            const txnId = markWishlistPurchased(purchaseItem.id, input)
-            setPurchaseItem(null)
-            if (txnId) onPurchased?.(txnId)
-          }}
-        />
-      )}
+      {purchaseItem &&
+        createPortal(
+          <WishlistPurchaseModal
+            item={purchaseItem}
+            wishlistCategories={wishlistCategories}
+            expenseCategories={expenseCategories}
+            purposes={purposes}
+            spendKinds={spendKinds}
+            purposeKindLinks={purposeKindLinks ?? []}
+            kindsForActivePurpose={kindsForActivePurpose}
+            onClose={() => setPurchaseItem(null)}
+            onConfirm={(input) => {
+              const txnId = markWishlistPurchased(purchaseItem.id, input)
+              setPurchaseItem(null)
+              if (txnId) onPurchased?.(txnId)
+            }}
+          />,
+          document.body,
+        )}
     </div>
   )
 }
@@ -381,7 +385,7 @@ function WishlistItemFormModal({
   children: ReactNode
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/35 p-4 sm:items-center">
+    <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/35 p-4 sm:items-center">
       <div
         className="flex max-h-[min(90vh,720px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-hairline bg-white shadow-xl"
         role="dialog"
@@ -493,11 +497,12 @@ function WishlistGridCard({
           emptyLabel="No photo · tap to edit"
         />
 
-        {hoverPreview &&
+        {!disableHoverPreview &&
+          hoverPreview &&
           images[photoIndex] &&
           createPortal(
             <div
-              className="pointer-events-none fixed z-40"
+              className="pointer-events-none fixed z-30"
               style={{
                 top: hoverPreview.top,
                 left: hoverPreview.left,
@@ -559,7 +564,14 @@ function WishlistGridCard({
               <div className="absolute right-0 z-20 mt-1 min-w-[120px] overflow-hidden rounded-xl border border-hairline bg-white py-1 shadow-md">
                 {item.status === 'want' && (
                   <>
-                    <MenuAction icon={ShoppingBag} label="Bought" onClick={onPurchase} />
+                    <MenuAction
+                      icon={ShoppingBag}
+                      label="Bought"
+                      onClick={() => {
+                        hideHoverPreview()
+                        onPurchase()
+                      }}
+                    />
                     <MenuAction icon={Pencil} label="Edit" onClick={onEdit} />
                     <MenuAction icon={XCircle} label="Drop" onClick={onDrop} />
                   </>

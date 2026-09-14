@@ -122,7 +122,7 @@ export function WishlistPurchaseModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/35 p-4 sm:items-center">
+    <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/35 p-4 sm:items-center">
       <div
         className="w-full max-w-md rounded-2xl border border-hairline bg-white p-5 shadow-xl"
         role="dialog"

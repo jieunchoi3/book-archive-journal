@@ -6,10 +6,12 @@ import {
   Camera,
   Compass,
   Sticker,
+  User,
   Wallet,
 } from 'lucide-react'
 
 export type AppView =
+  | 'relations'
   | 'diary'
   | 'expenses'
   | 'taste'
@@ -37,6 +39,14 @@ export function BottomNav({ active, onChange, badges }: BottomNavProps) {
       }`}
     >
       <div className="mx-auto flex max-w-xl justify-between gap-0.5 px-0.5 py-1.5 sm:justify-around sm:gap-0 sm:px-3 sm:py-2">
+        <NavButton
+          label="Relations"
+          icon={<User size={20} />}
+          active={active === 'relations'}
+          badge={badges?.relations}
+          onClick={() => onChange('relations')}
+          light={transparent}
+        />
         <NavButton
           label="Diary"
           icon={<BookHeart size={20} />}
