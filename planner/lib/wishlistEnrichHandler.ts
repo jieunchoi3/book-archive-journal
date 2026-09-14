@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { extractFromHtml, fetchProductHtml, storeFromUrl } from './wishlistPageExtract'
 
 const PROMPT_VERSION = 'v1'
 const SYSTEM_PROMPT = `You extract shopping wishlist fields from product pages or product descriptions.
@@ -33,6 +34,7 @@ export type EnrichResult = {
   store?: string
   estimatedPrice?: number | null
   currency?: string
+  imageUrl?: string
   note?: string
 }
 
@@ -170,107 +172,6 @@ async function callLlm(model: string, userText: string, auth: LlmAuth): Promise<
   return callViaAiGateway(model, userText, auth.token)
 }
 
-function storeFromUrl(url: string): string {
-  try {
-    const host = new URL(url).hostname.replace(/^www\./, '')
-    const base = host.split('.')[0] ?? host
-    if (!base) return ''
-    return base.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-  } catch {
-    return ''
-  }
-}
-
-function metaContent(html: string, key: string): string | undefined {
-  const patterns = [
-    new RegExp(`<meta[^>]+property=["']${key}["'][^>]+content=["']([^"']+)["']`, 'i'),
-    new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+property=["']${key}["']`, 'i'),
-    new RegExp(`<meta[^>]+name=["']${key}["'][^>]+content=["']([^"']+)["']`, 'i'),
-    new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+name=["']${key}["']`, 'i'),
-  ]
-  for (const re of patterns) {
-    const match = html.match(re)
-    if (match?.[1]) return match[1].trim()
-  }
-  return undefined
-}
-
-function parsePrice(raw: string | undefined): number | null {
-  if (!raw) return null
-  const cleaned = raw.replace(/[^\d.,]/g, '').replace(/,/g, '')
-  const value = Number(cleaned)
-  return Number.isFinite(value) && value > 0 ? value : null
-}
-
-function extractFromHtml(html: string, url: string): EnrichResult {
-  const title =
-    metaContent(html, 'og:title') ??
-    metaContent(html, 'twitter:title') ??
-    html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]?.trim()
-  const site =
-    metaContent(html, 'og:site_name') ??
-    metaContent(html, 'application-name') ??
-    storeFromUrl(url)
-  const priceRaw =
-    metaContent(html, 'product:price:amount') ??
-    metaContent(html, 'og:price:amount') ??
-    metaContent(html, 'twitter:data1')
-
-  let jsonLd: Record<string, unknown> | null = null
-  const ldMatch = html.match(
-    /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/i,
-  )
-  if (ldMatch?.[1]) {
-    try {
-      const parsed = JSON.parse(ldMatch[1].trim())
-      jsonLd = Array.isArray(parsed)
-        ? (parsed.find((x) => x?.['@type'] === 'Product') as Record<string, unknown>) ?? parsed[0]
-        : parsed
-    } catch {
-      /* ignore */
-    }
-  }
-
-  const ldName = typeof jsonLd?.name === 'string' ? jsonLd.name : undefined
-  const ldBrand =
-    typeof jsonLd?.brand === 'string'
-      ? jsonLd.brand
-      : typeof (jsonLd?.brand as { name?: string } | undefined)?.name === 'string'
-        ? (jsonLd!.brand as { name: string }).name
-        : undefined
-  let ldPrice: number | null = null
-  const offers = jsonLd?.offers
-  if (offers) {
-    const offer = Array.isArray(offers) ? offers[0] : offers
-    if (offer && typeof offer === 'object' && 'price' in offer) {
-      ldPrice = parsePrice(String((offer as { price?: string | number }).price ?? ''))
-    }
-  }
-
-  return {
-    name: ldName ?? title ?? '',
-    brand: ldBrand ?? '',
-    store: site ?? storeFromUrl(url),
-    estimatedPrice: ldPrice ?? parsePrice(priceRaw),
-    currency: metaContent(html, 'product:price:currency') ?? undefined,
-    note: '',
-  }
-}
-
-async function fetchHtml(url: string): Promise<string> {
-  const res = await fetch(url, {
-    redirect: 'follow',
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      Accept: 'text/html,application/xhtml+xml',
-    },
-  })
-  if (!res.ok) throw new Error(`Could not fetch link (${res.status})`)
-  const text = await res.text()
-  return text.slice(0, 120_000)
-}
-
 function buildUserPrompt(body: EnrichBody, extracted: EnrichResult | null, htmlSnippet?: string) {
   const parts = [`prompt_version: ${PROMPT_VERSION}`]
   if (body.link) parts.push(`url: ${body.link}`)
@@ -303,7 +204,39 @@ function normalizeResult(raw: EnrichResult, body: EnrichBody): EnrichResult {
     store: (raw.store ?? body.store ?? '').trim(),
     estimatedPrice: price,
     currency: raw.currency?.trim() || undefined,
+    imageUrl: raw.imageUrl?.trim() || undefined,
     note: raw.note?.trim() || undefined,
+  }
+}
+
+function hasExtractedData(extracted: EnrichResult | null): boolean {
+  if (!extracted) return false
+  return Boolean(
+    extracted.name?.trim() ||
+      extracted.brand?.trim() ||
+      extracted.store?.trim() ||
+      (extracted.estimatedPrice != null && extracted.estimatedPrice > 0) ||
+      extracted.imageUrl?.trim(),
+  )
+}
+
+async function metadataOnlyResponse(body: EnrichBody): Promise<Response | null> {
+  const link = body.link?.trim()
+  if (!link) return null
+  try {
+    const html = await fetchProductHtml(link)
+    const extracted = extractFromHtml(html, link) as EnrichResult
+    if (!hasExtractedData(extracted)) return null
+    const result = normalizeResult(extracted, body)
+    return jsonResponse({
+      result: {
+        ...result,
+        note: result.note || 'Filled from product page metadata.',
+      },
+      model: 'metadata-only',
+    })
+  } catch {
+    return null
   }
 }
 
@@ -335,6 +268,8 @@ export async function handleWishlistEnrichRequest(req: Request): Promise<Respons
     if (!llmAuth) {
       const proxied = await proxyToSupabaseEdge(supabaseUrl, supabaseAnon, authHeader, body)
       if (proxied) return proxied
+      const metadata = await metadataOnlyResponse(body)
+      if (metadata) return metadata
       return jsonResponse(
         {
           error:
@@ -367,8 +302,8 @@ export async function handleWishlistEnrichRequest(req: Request): Promise<Respons
     let htmlSnippet: string | undefined
     if (link) {
       try {
-        htmlSnippet = await fetchHtml(link)
-        extracted = extractFromHtml(htmlSnippet, link)
+        htmlSnippet = await fetchProductHtml(link)
+        extracted = extractFromHtml(htmlSnippet, link) as EnrichResult
       } catch (e) {
         extracted = { store: storeFromUrl(link), note: String(e) }
       }
@@ -392,8 +327,8 @@ export async function handleWishlistEnrichRequest(req: Request): Promise<Respons
     }
 
     if (llmError) {
-      if (extracted && (extracted.name || extracted.store || extracted.brand)) {
-        const result = normalizeResult(extracted, body)
+      if (hasExtractedData(extracted)) {
+        const result = normalizeResult(extracted!, body)
         return jsonResponse({
           result: {
             ...result,
@@ -402,6 +337,8 @@ export async function handleWishlistEnrichRequest(req: Request): Promise<Respons
           model: 'metadata-only',
         })
       }
+      const metadata = await metadataOnlyResponse(body)
+      if (metadata) return metadata
       return jsonResponse({ error: llmError }, 502)
     }
 
@@ -409,8 +346,8 @@ export async function handleWishlistEnrichRequest(req: Request): Promise<Respons
     try {
       parsed = parseJsonFromModel(raw)
     } catch {
-      if (extracted && (extracted.name || extracted.store || extracted.brand)) {
-        const result = normalizeResult(extracted, body)
+      if (hasExtractedData(extracted)) {
+        const result = normalizeResult(extracted!, body)
         return jsonResponse({ result, model: 'metadata-only' })
       }
       return jsonResponse({ error: 'invalid model json', raw }, 502)
@@ -424,6 +361,7 @@ export async function handleWishlistEnrichRequest(req: Request): Promise<Respons
         brand: parsed.brand || extracted?.brand,
         store: parsed.store || extracted?.store,
         estimatedPrice: parsed.estimatedPrice ?? extracted?.estimatedPrice ?? null,
+        imageUrl: parsed.imageUrl || extracted?.imageUrl,
       },
       body,
     )

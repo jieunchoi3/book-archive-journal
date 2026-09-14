@@ -33,6 +33,7 @@ export type EnrichResult = {
   store?: string
   estimatedPrice?: number | null
   currency?: string
+  imageUrl?: string
   note?: string
 }
 
@@ -121,20 +122,28 @@ function extractFromHtml(html: string, url: string): EnrichResult {
     metaContent(html, 'og:price:amount') ??
     metaContent(html, 'twitter:data1')
 
-  let jsonLd: Record<string, unknown> | null = null
-  const ldMatch = html.match(
-    /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/i,
-  )
-  if (ldMatch?.[1]) {
+  const products: Record<string, unknown>[] = []
+  const re = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
+  let ldMatch: RegExpExecArray | null
+  while ((ldMatch = re.exec(html))) {
     try {
-      const parsed = JSON.parse(ldMatch[1].trim())
-      jsonLd = Array.isArray(parsed)
-        ? (parsed.find((x) => x?.['@type'] === 'Product') as Record<string, unknown>) ?? parsed[0]
-        : parsed
+      const parsed = JSON.parse(ldMatch[1]!.trim())
+      const queue = Array.isArray(parsed) ? [...parsed] : [parsed]
+      while (queue.length) {
+        const item = queue.shift()
+        if (!item || typeof item !== 'object') continue
+        const rec = item as Record<string, unknown>
+        const type = rec['@type']
+        if (type === 'Product' || (Array.isArray(type) && type.includes('Product'))) {
+          products.push(rec)
+        }
+        if (Array.isArray(rec['@graph'])) queue.push(...(rec['@graph'] as unknown[]))
+      }
     } catch {
       /* ignore */
     }
   }
+  const jsonLd = products[0] ?? null
 
   const ldName = typeof jsonLd?.name === 'string' ? jsonLd.name : undefined
   const ldBrand =
@@ -146,18 +155,29 @@ function extractFromHtml(html: string, url: string): EnrichResult {
   let ldPrice: number | null = null
   const offers = jsonLd?.offers
   if (offers) {
-    const offer = Array.isArray(offers) ? offers[0] : offers
-    if (offer && typeof offer === 'object' && 'price' in offer) {
-      ldPrice = parsePrice(String((offer as { price?: string | number }).price ?? ''))
+    const list = Array.isArray(offers) ? offers : [offers]
+    for (const offer of list) {
+      if (offer && typeof offer === 'object' && 'price' in offer) {
+        ldPrice = parsePrice(String((offer as { price?: string | number }).price ?? ''))
+        if (ldPrice != null) break
+      }
     }
   }
 
+  const imageUrl =
+    metaContent(html, 'og:image') ?? metaContent(html, 'twitter:image') ?? undefined
+
+  const cleanName = (ldName ?? title ?? '')
+    .replace(/\s*[|\u2013\u2014-]\s*.+$/i, '')
+    .trim()
+
   return {
-    name: ldName ?? title ?? '',
-    brand: ldBrand ?? '',
+    name: cleanName,
+    brand: ldBrand ?? (url.includes('lancome') ? 'Lancôme' : ''),
     store: site ?? storeFromUrl(url),
     estimatedPrice: ldPrice ?? parsePrice(priceRaw),
     currency: metaContent(html, 'product:price:currency') ?? undefined,
+    imageUrl,
     note: '',
   }
 }
@@ -208,6 +228,7 @@ function normalizeResult(raw: EnrichResult, body: EnrichBody): EnrichResult {
     store: (raw.store ?? body.store ?? '').trim(),
     estimatedPrice: price,
     currency: raw.currency?.trim() || undefined,
+    imageUrl: raw.imageUrl?.trim() || undefined,
     note: raw.note?.trim() || undefined,
   }
 }
@@ -284,6 +305,7 @@ export async function runWishlistEnrich(
       brand: parsed.brand || extracted?.brand,
       store: parsed.store || extracted?.store,
       estimatedPrice: parsed.estimatedPrice ?? extracted?.estimatedPrice ?? null,
+      imageUrl: parsed.imageUrl || extracted?.imageUrl,
     },
     body,
   )

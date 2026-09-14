@@ -13,6 +13,7 @@ export type WishlistEnrichResult = {
   store?: string
   estimatedPrice?: number | null
   currency?: string
+  imageUrl?: string
   note?: string
 }
 
@@ -59,38 +60,49 @@ function storeFromUrl(url: string): string {
   }
 }
 
-/** Best-effort parse when AI backends are unavailable. */
+/** Best-effort parse when AI backends are unavailable (no page fetch). */
 export function enrichWishlistFromLinkLocal(link: string): WishlistEnrichResult {
   try {
-    const url = new URL(link.trim())
+    const trimmed = link.trim()
+    const url = new URL(trimmed)
     const host = url.hostname.replace(/^www\./, '')
     const retailers: Record<string, string> = {
       'spacenk.com': 'Space NK',
       'tkmaxx.com': 'TK Maxx',
       'oliveyoung.co.kr': 'Olive Young',
       'uniqlo.com': 'Uniqlo',
+      'lancome.co.uk': 'Lancome',
+      'lancome.com': 'Lancome',
     }
-    const dtcBrands: Record<string, string> = {
-      'refybeauty.com': 'Refy',
-    }
-    const store = retailers[host] ?? storeFromUrl(link)
-    const brand = dtcBrands[host]
+    const store = retailers[host] ?? storeFromUrl(trimmed)
+    const brand = host.includes('lancome')
+      ? 'Lancôme'
+      : host.includes('refybeauty')
+        ? 'Refy'
+        : undefined
+
     const segments = url.pathname.split('/').filter(Boolean)
-    const slug =
-      [...segments]
-        .reverse()
-        .find((part) => part.length > 2 && !/^(uk|us|eu|products|product|p|shop)$/i.test(part)) ??
-      ''
+    const slug = [...segments]
+      .reverse()
+      .find((part) => {
+        const base = part.replace(/\.[a-z0-9]+$/i, '')
+        if (base.length <= 2) return false
+        if (/^\d{5,}$/.test(base)) return false
+        return !/^(uk|us|eu|products|product|p|shop)$/i.test(base)
+      })
     const name = slug
-      .replace(/[-_]+/g, ' ')
-      .replace(/\b\w/g, (c) => c.toUpperCase())
-      .trim()
+      ? slug
+          .replace(/\.[a-z0-9]+$/i, '')
+          .replace(/[-_]+/g, ' ')
+          .replace(/\b\w/g, (c) => c.toUpperCase())
+          .trim()
+      : ''
 
     return {
       store,
       brand,
       name: name.length > 1 ? name : undefined,
-      note: 'Basic parse from link — redeploy Supabase functions for full AI auto-fill.',
+      note: 'Could not reach product page — sign in and retry for price & photo.',
     }
   } catch {
     return {}
@@ -237,7 +249,12 @@ export async function enrichWishlistItem(
 
   if (link) {
     const local = enrichWishlistFromLinkLocal(link)
-    if (local.store || local.name || local.brand) {
+    if (
+      local.store ||
+      local.name ||
+      local.brand ||
+      (local.estimatedPrice != null && local.estimatedPrice > 0)
+    ) {
       return local
     }
   }

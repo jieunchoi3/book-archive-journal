@@ -109,12 +109,45 @@ export function WishlistItemForm({
     }
   }
 
+  const appendPhotos = useCallback((compressed: string[]) => {
+    if (compressed.length === 0) return
+    setImageDataUrls((prev) => {
+      const next = [...prev, ...compressed]
+      setActivePhotoIndex(next.length - 1)
+      return next
+    })
+  }, [])
+
+  const applyPhoto = useCallback(
+    async (source: File | string) => {
+      setPhotoBusy(true)
+      setPhotoError(null)
+      try {
+        const compressed = await compressImageSource(source, 1200, 0.86)
+        appendPhotos([compressed])
+      } catch {
+        setPhotoError('Couldn’t read that photo. Try another file or paste again.')
+      } finally {
+        setPhotoBusy(false)
+      }
+    },
+    [appendPhotos],
+  )
+
   const applyEnrichResult = useCallback(
-    (result: Awaited<ReturnType<typeof enrichWishlistItem>>, mode: 'link' | 'price') => {
+    (
+      result: Awaited<ReturnType<typeof enrichWishlistItem>>,
+      mode: 'link' | 'price',
+      opts?: { applyPhotoFromUrl?: (url: string) => void },
+    ) => {
       if (mode === 'link') {
         if (result.name?.trim()) setName(result.name.trim())
         if (result.brand?.trim()) setBrand(result.brand.trim())
         if (result.store?.trim()) setStore(result.store.trim())
+        const imageUrl = result.imageUrl?.trim()
+        if (imageUrl && opts?.applyPhotoFromUrl) {
+          opts.applyPhotoFromUrl(imageUrl)
+        }
       }
       if (result.estimatedPrice != null && result.estimatedPrice > 0) {
         setEstimatedPrice(String(result.estimatedPrice))
@@ -162,7 +195,11 @@ export function WishlistItemForm({
           brand: trimmedBrand || undefined,
           store: trimmedStore || undefined,
         })
-        applyEnrichResult(result, mode)
+        applyEnrichResult(result, mode, {
+          applyPhotoFromUrl: (url) => {
+            void applyPhoto(url)
+          },
+        })
         lastAutoKey.current = key
       } catch (e) {
         const message =
@@ -176,7 +213,7 @@ export function WishlistItemForm({
         setEnriching(false)
       }
     },
-    [applyEnrichResult, brand, link, name, store],
+    [applyEnrichResult, applyPhoto, brand, link, name, store],
   )
 
   useEffect(() => {
@@ -197,31 +234,6 @@ export function WishlistItemForm({
     }, 1600)
     return () => window.clearTimeout(timer)
   }, [brand, name, link, estimatedPrice, runEnrich])
-
-  const appendPhotos = useCallback((compressed: string[]) => {
-    if (compressed.length === 0) return
-    setImageDataUrls((prev) => {
-      const next = [...prev, ...compressed]
-      setActivePhotoIndex(next.length - 1)
-      return next
-    })
-  }, [])
-
-  const applyPhoto = useCallback(
-    async (source: File | string) => {
-      setPhotoBusy(true)
-      setPhotoError(null)
-      try {
-        const compressed = await compressImageSource(source, 1200, 0.86)
-        appendPhotos([compressed])
-      } catch {
-        setPhotoError('Couldn’t read that photo. Try another file or paste again.')
-      } finally {
-        setPhotoBusy(false)
-      }
-    },
-    [appendPhotos],
-  )
 
   const onPickFiles = useCallback(
     async (files: File[]) => {
