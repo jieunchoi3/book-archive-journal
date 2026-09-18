@@ -94,13 +94,19 @@ export function WishlistPurchaseModal({
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  const parsedAmount = Number(amount.replace(/,/g, ''))
+  const hasAmount = amount.trim() !== '' && Number.isFinite(parsedAmount) && parsedAmount > 0
+
   const canSubmit = useDualAxis
-    ? Boolean(purposeId && spendKindId && Number(amount.replace(/,/g, '')) > 0)
-    : Boolean(categoryId && Number(amount.replace(/,/g, '')) > 0)
+    ? Boolean(purposeId && spendKindId)
+    : Boolean(categoryId)
 
   const submit = () => {
-    const value = Number(amount.replace(/,/g, ''))
-    if (!(value > 0)) return
+    if (!canSubmit) return
+    const value =
+      amount.trim() === '' || !Number.isFinite(parsedAmount) || parsedAmount < 0
+        ? 0
+        : parsedAmount
     if (useDualAxis) {
       onConfirm({
         amount: value,
@@ -148,14 +154,15 @@ export function WishlistPurchaseModal({
         <div className="space-y-3">
           <label className="block">
             <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted">
-              Amount
+              Amount <span className="font-normal normal-case text-[#AEAEB2]">(optional)</span>
             </span>
             <input
               autoFocus
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               inputMode="decimal"
-              className="w-full rounded-xl border border-hairline bg-[#FAFAFA] px-3 py-2.5 text-[16px] font-semibold tabular-nums"
+              placeholder="Leave blank if unknown"
+              className="w-full rounded-xl border border-hairline bg-[#FAFAFA] px-3 py-2.5 text-[16px] font-semibold tabular-nums placeholder:font-normal placeholder:text-[#C7C7CC]"
             />
           </label>
 
@@ -232,7 +239,7 @@ export function WishlistPurchaseModal({
             onClick={submit}
             className="flex-1 rounded-xl bg-[#8B5A2B] px-4 py-2.5 text-[13px] font-semibold text-white disabled:opacity-40"
           >
-            Mark purchased & log {canSubmit ? formatMoney(Number(amount.replace(/,/g, ''))) : ''}
+            Mark purchased & log{hasAmount ? ` ${formatMoney(parsedAmount)}` : ''}
           </button>
           <button
             type="button"
