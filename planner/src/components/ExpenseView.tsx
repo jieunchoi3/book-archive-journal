@@ -417,14 +417,7 @@ export function ExpenseView({ expenses }: ExpenseViewProps) {
         </header>
 
         {pageMode === 'wishlist' ? (
-          <WishlistPanel
-            expenses={expenses}
-            onPurchased={(txnId) => {
-              setPageMode('spending')
-              setOverviewPanel('log')
-              openEditTxn(txnId)
-            }}
-          />
+          <WishlistPanel expenses={expenses} />
         ) : (
           <>
         <div className="mb-4">

@@ -166,6 +166,8 @@ export interface ExpenseActions {
   renameWishlistCategory: (categoryId: string, name: string) => void
   deleteWishlistCategory: (categoryId: string, mode: 'move' | 'delete') => void
   restoreWishlistFromLocalBackup: () => number
+  /** Mark wishlist item bought — no expense transaction. */
+  markWishlistBought: (id: string) => void
   markWishlistPurchased: (
     id: string,
     input: {
@@ -856,6 +858,27 @@ export function useExpenses(): ExpenseActions {
     return restored.length
   }, [persist, store, userId])
 
+  const markWishlistBought: ExpenseActions['markWishlistBought'] = useCallback(
+    (id) => {
+      const item = wishlistItems.find((w) => w.id === id)
+      if (!item || item.status === 'purchased') return
+      persist({
+        ...store,
+        wishlistItems: wishlistItems.map((w) =>
+          w.id === id
+            ? {
+                ...w,
+                status: 'purchased' as WishlistStatus,
+                purchasedAt: new Date().toISOString(),
+                linkedTransactionId: undefined,
+              }
+            : w,
+        ),
+      })
+    },
+    [persist, store, wishlistItems],
+  )
+
   const markWishlistPurchased: ExpenseActions['markWishlistPurchased'] = useCallback(
     (id, input) => {
       const item = wishlistItems.find((w) => w.id === id)
@@ -973,6 +996,7 @@ export function useExpenses(): ExpenseActions {
     renameWishlistCategory,
     deleteWishlistCategory,
     restoreWishlistFromLocalBackup,
+    markWishlistBought,
     markWishlistPurchased,
   }
 }
