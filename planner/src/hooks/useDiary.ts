@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DiaryEntry, DiaryPhotoLayer } from '../types/diary'
 import { DEFAULT_DIARY_FRAME_COLOR, emptyDiaryEntry } from '../types/diary'
+import { applyTagFoldersToEntry, getEntryTagFolders } from '../lib/diaryTags'
 import { downscaleToThumb, renderDiaryComposite } from '../lib/diaryImage'
 import {
   backfillDiaryThumbs,
@@ -15,15 +16,23 @@ import { useAuth } from './useAuth'
 type DiaryEntryPatch = Partial<
   Pick<
     DiaryEntry,
-    'title' | 'body' | 'mainTag' | 'subTag' | 'bodyImages' | 'layers' | 'frameColor' | 'canvasStrokes'
+    | 'title'
+    | 'body'
+    | 'tagFolders'
+    | 'mainTag'
+    | 'subTag'
+    | 'bodyImages'
+    | 'layers'
+    | 'frameColor'
+    | 'canvasStrokes'
   >
 >
 
 function normalizeEntry(entry: DiaryEntry): DiaryEntry {
+  const tagPatch = applyTagFoldersToEntry(getEntryTagFolders(entry))
   return {
     ...entry,
-    mainTag: entry.mainTag ?? null,
-    subTag: entry.subTag ?? null,
+    ...tagPatch,
     bodyImages: entry.bodyImages ?? [],
     frameColor: entry.frameColor || DEFAULT_DIARY_FRAME_COLOR,
     canvasStrokes: entry.canvasStrokes ?? [],

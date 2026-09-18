@@ -146,6 +146,7 @@ create table if not exists planner.diary_entries (
   body_images jsonb not null default '[]'::jsonb,
   main_tag text,
   sub_tag text,
+  tag_folders jsonb not null default '[]'::jsonb,
   frame_color text not null default '#F2F2F7',
   canvas_strokes jsonb not null default '[]'::jsonb,
   layers jsonb not null default '[]'::jsonb,
