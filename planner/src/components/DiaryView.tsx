@@ -11,6 +11,7 @@ import {
   entryMatchesTagFilter,
   filterLabel,
   formatDiaryTagLabel,
+  getEntryTagFolders,
 } from '../lib/diaryTags'
 import {
   formatMonthYear,
@@ -152,18 +153,18 @@ export function DiaryView({ expenses }: DiaryViewProps) {
     })()
   }
 
-  const handleTagsChange = (patch: { mainTag: string | null; subTag: string | null }) => {
-    if (!patch.mainTag) return
-    void saveDiaryTagFolder(user.id, { mainTag: patch.mainTag, subTag: '' }).then((folders) => {
-      if (patch.subTag) {
-        void saveDiaryTagFolder(user.id, {
-          mainTag: patch.mainTag!,
-          subTag: patch.subTag,
-        }).then(setTagFolders)
-      } else {
-        setTagFolders(folders)
+  const handleTagsChange = (entryFolders: DiaryTagFolder[]) => {
+    if (!entryFolders.length) return
+    void (async () => {
+      let folders = tagFolders
+      for (const folder of entryFolders) {
+        folders = await saveDiaryTagFolder(user.id, {
+          mainTag: folder.mainTag,
+          subTag: folder.subTag,
+        })
       }
-    })
+      setTagFolders(folders)
+    })()
   }
 
   const searchSuggestions = useMemo((): SearchSuggestion[] => {
@@ -182,9 +183,13 @@ export function DiaryView({ expenses }: DiaryViewProps) {
           title: e.title.trim() || (diaryEntryHasPhoto(e) ? 'Photo diary' : 'Diary entry'),
           subtitle: snippet || label,
           meta: label,
-          haystack: [e.body, e.dateKey, e.mainTag, e.subTag].filter(
-            (v): v is string => Boolean(v),
-          ),
+          haystack: [
+            e.body,
+            e.dateKey,
+            ...getEntryTagFolders(e).flatMap((folder) =>
+              [folder.mainTag, folder.subTag].filter(Boolean),
+            ),
+          ].filter((v): v is string => Boolean(v)),
         }
       })
   }, [allEntries])

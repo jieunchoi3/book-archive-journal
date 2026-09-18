@@ -1,3 +1,4 @@
+import { getEntryTagFolders } from '../lib/diaryTags'
 import { parseDateKey } from '../lib/weekUtils'
 import {
   diaryEntryHasPhoto,
@@ -72,9 +73,13 @@ export function DiaryTaggedEntriesList({
                     {entry.body.trim()}
                   </p>
                 ) : null}
-                {(entry.mainTag || entry.subTag) && (
+                {getEntryTagFolders(entry).length > 0 && (
                   <p className="text-[11px] font-medium text-[#FF2D55]">
-                    {[entry.mainTag, entry.subTag].filter(Boolean).map((t) => `#${t}`).join(' / ')}
+                    {getEntryTagFolders(entry)
+                      .map((folder) =>
+                        [folder.mainTag, folder.subTag].filter(Boolean).map((t) => `#${t}`).join(' / '),
+                      )
+                      .join(' · ')}
                   </p>
                 )}
               </div>

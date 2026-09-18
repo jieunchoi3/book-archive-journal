@@ -1,7 +1,11 @@
 import type { DiaryEntry } from '../types/diary'
 import { isDiaryEntryEmpty } from '../types/diary'
 import { downscaleToThumb } from './diaryImage'
-import { normalizeDiaryTag } from './diaryTags'
+import {
+  applyTagFoldersToEntry,
+  getEntryTagFolders,
+  removeTagFolderFromEntry,
+} from './diaryTags'
 import {
   deleteDiaryEntryCloud,
   fetchDiaryEntriesForMonthCloud,
@@ -375,40 +379,27 @@ export async function clearDiaryTagsForFolder(
   mainTag: string,
   subTag?: string,
 ): Promise<number> {
-  const main = normalizeDiaryTag(mainTag)
-  const sub = subTag !== undefined ? normalizeDiaryTag(subTag) : undefined
   let updated = 0
-
-  if (isSupabaseConfigured) {
-    if (sub !== undefined) {
-      const { error } = await supabase
-        .from('diary_entries')
-        .update({ sub_tag: null })
-        .eq('user_id', userId)
-        .eq('main_tag', main)
-        .eq('sub_tag', sub)
-      if (error) throw error
-    } else {
-      const { error } = await supabase
-        .from('diary_entries')
-        .update({ main_tag: null, sub_tag: null })
-        .eq('user_id', userId)
-        .eq('main_tag', main)
-      if (error) throw error
-    }
-  }
 
   const all = await loadAllDiaryEntriesLocal(userId)
   for (const entry of Object.values(all)) {
-    if (normalizeDiaryTag(entry.mainTag ?? '') !== main) continue
-    if (sub !== undefined && normalizeDiaryTag(entry.subTag ?? '') !== sub) continue
+    const remaining = removeTagFolderFromEntry(entry, mainTag, subTag)
+    if (remaining.length === getEntryTagFolders(entry).length) continue
+    const tagPatch = applyTagFoldersToEntry(remaining)
     const next: DiaryEntry = {
       ...entry,
-      mainTag: sub !== undefined ? entry.mainTag : null,
-      subTag: null,
+      ...tagPatch,
       updatedAt: new Date().toISOString(),
     }
     await saveDiaryEntryLocal(userId, next)
+    if (isSupabaseConfigured) {
+      try {
+        await upsertDiaryEntryCloud(userId, next)
+      } catch (e) {
+        console.error('[diary] clear tags cloud failed', e)
+        throw e
+      }
+    }
     updated += 1
   }
 

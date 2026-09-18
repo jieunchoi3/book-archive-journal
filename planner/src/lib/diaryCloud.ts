@@ -1,5 +1,12 @@
-import type { DiaryBodyImage, DiaryEntry, DiaryPhotoLayer, DiaryStroke } from '../types/diary'
+import type {
+  DiaryBodyImage,
+  DiaryEntry,
+  DiaryPhotoLayer,
+  DiaryStroke,
+  DiaryTagFolder,
+} from '../types/diary'
 import { isDiaryEntryEmpty } from '../types/diary'
+import { applyTagFoldersToEntry, getEntryTagFolders, normalizeTagFolders } from './diaryTags'
 import { supabase } from './supabase'
 
 const BUCKET = 'diary-media'
@@ -27,6 +34,7 @@ type DiaryRow = {
   body_images: CloudBodyImage[]
   main_tag: string | null
   sub_tag: string | null
+  tag_folders?: DiaryTagFolder[] | null
   frame_color: string
   canvas_strokes: DiaryStroke[]
   layers: CloudLayer[]
@@ -238,12 +246,33 @@ async function rowToEntry(
     }
   }
 
+  const tagFoldersFromRow = normalizeTagFolders(
+    (row.tag_folders ?? []).map((folder) => {
+      const rec = folder as DiaryTagFolder & { main_tag?: string; sub_tag?: string }
+      return {
+        mainTag: String(rec.mainTag ?? rec.main_tag ?? ''),
+        subTag: String(rec.subTag ?? rec.sub_tag ?? ''),
+      }
+    }),
+  )
+  const legacyTags =
+    tagFoldersFromRow.length === 0 && row.main_tag?.trim()
+      ? [
+          {
+            mainTag: row.main_tag.trim(),
+            subTag: row.sub_tag?.trim() ?? '',
+          },
+        ]
+      : tagFoldersFromRow
+  const tagPatch = applyTagFoldersToEntry(legacyTags)
+
   return {
     dateKey,
     title: row.title ?? '',
     body: row.body ?? '',
-    mainTag: row.main_tag?.trim() || null,
-    subTag: row.sub_tag?.trim() || null,
+    tagFolders: tagPatch.tagFolders,
+    mainTag: tagPatch.mainTag,
+    subTag: tagPatch.subTag,
     bodyImages,
     layers,
     canvasStrokes: row.canvas_strokes ?? [],
@@ -425,14 +454,18 @@ export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): 
   ]
   await removePaths(orphanPaths)
 
+  const tagFolders = getEntryTagFolders(entry)
+  const tagPatch = applyTagFoldersToEntry(tagFolders)
+
   const { error } = await supabase.from('diary_entries').upsert(
     {
       user_id: userId,
       date_key: entry.dateKey,
       title: entry.title,
       body: entry.body,
-      main_tag: entry.mainTag?.trim() || null,
-      sub_tag: entry.subTag?.trim() || null,
+      main_tag: tagPatch.mainTag?.trim() || null,
+      sub_tag: tagPatch.subTag?.trim() || null,
+      tag_folders: tagPatch.tagFolders,
       body_images: cloudBodyImages,
       frame_color: entry.frameColor,
       canvas_strokes: entry.canvasStrokes ?? [],
