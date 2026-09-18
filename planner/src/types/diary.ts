@@ -32,13 +32,20 @@ export interface DiaryPhotoLayer {
   strokes: DiaryStroke[]
 }
 
+export interface DiaryTagFolder {
+  mainTag: string
+  subTag: string
+}
+
 export interface DiaryEntry {
   dateKey: string
   title: string
   body: string
-  /** Main hashtag folder, e.g. "여행". */
+  /** All hashtag folder rows (main + optional sub). */
+  tagFolders: DiaryTagFolder[]
+  /** First row — kept in sync for search indexes / legacy clients. */
   mainTag: string | null
-  /** Sub-hashtag nested under mainTag, e.g. "포르투갈". */
+  /** Sub for the first row. */
   subTag: string | null
   /** Photos of handwritten notes alongside typed body text. */
   bodyImages: DiaryBodyImage[]
@@ -71,11 +78,6 @@ export const DIARY_FRAME_COLORS = [
   '#8E8E93',
 ] as const
 
-export interface DiaryTagFolder {
-  mainTag: string
-  subTag: string
-}
-
 export type DiaryTagFilter =
   | { type: 'all' }
   | { type: 'main'; mainTag: string }
@@ -92,6 +94,7 @@ export function emptyDiaryEntry(dateKey: string): DiaryEntry {
     dateKey,
     title: '',
     body: '',
+    tagFolders: [],
     mainTag: null,
     subTag: null,
     bodyImages: [],

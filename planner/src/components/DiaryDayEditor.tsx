@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp, ImagePlus, Pencil, Trash2, X } from 'lucide-react'
-import type { DiaryBodyImage, DiaryEntry, DiaryPhotoLayer, DiaryStroke, DiaryTagTreeNode } from '../types/diary'
+import type {
+  DiaryBodyImage,
+  DiaryEntry,
+  DiaryPhotoLayer,
+  DiaryStroke,
+  DiaryTagFolder,
+  DiaryTagTreeNode,
+} from '../types/diary'
 import { formatDateKey, generateId, parseDateKey } from '../lib/weekUtils'
 import { compressImageSource } from '../lib/diaryImage'
 import { handleClipboardImagePaste } from '../lib/clipboardImage'
@@ -16,11 +23,19 @@ interface DiaryDayEditorProps {
     patch: Partial<
       Pick<
         DiaryEntry,
-        'title' | 'body' | 'mainTag' | 'subTag' | 'bodyImages' | 'layers' | 'frameColor' | 'canvasStrokes'
+        | 'title'
+        | 'body'
+        | 'tagFolders'
+        | 'mainTag'
+        | 'subTag'
+        | 'bodyImages'
+        | 'layers'
+        | 'frameColor'
+        | 'canvasStrokes'
       >
     >,
   ) => void
-  onTagsChange?: (patch: { mainTag: string | null; subTag: string | null }) => void
+  onTagsChange?: (folders: DiaryTagFolder[]) => void
   onNavigateDate: (dateKey: string) => void
   onClose: () => void
 }
@@ -380,12 +395,13 @@ export function DiaryDayEditor({
                   </section>
 
                   <DiaryTagFields
+                    tagFolders={entry.tagFolders ?? []}
                     mainTag={entry.mainTag}
                     subTag={entry.subTag}
                     tagTree={tagTree}
                     onChange={(patch) => {
                       onChange(patch)
-                      onTagsChange?.(patch)
+                      onTagsChange?.(patch.tagFolders)
                     }}
                   />
 
