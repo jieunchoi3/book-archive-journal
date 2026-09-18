@@ -29,12 +29,10 @@ import {
 } from '../lib/wishlistCategories'
 import { WishlistItemForm, type WishlistItemFormValues } from './WishlistItemForm'
 import { WishlistPhotoCarousel } from './WishlistPhotoCarousel'
-import { WishlistPurchaseModal } from './WishlistPurchaseModal'
 import { WishlistSidebar } from './WishlistSidebar'
 
 interface WishlistPanelProps {
   expenses: ExpenseActions
-  onPurchased?: (transactionId: string) => void
 }
 
 type PriorityFilter = 'all' | WishlistPriority
@@ -52,7 +50,7 @@ const PRIORITY_FILTERS: { id: PriorityFilter; label: string }[] = [
   { id: 'low', label: 'Low' },
 ]
 
-export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
+export function WishlistPanel({ expenses }: WishlistPanelProps) {
   const {
     loading,
     wishlistCategories,
@@ -65,12 +63,7 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
     renameWishlistCategory,
     deleteWishlistCategory,
     restoreWishlistFromLocalBackup,
-    markWishlistPurchased,
-    expenseCategories,
-    purposes,
-    spendKinds,
-    purposeKindLinks,
-    kindsForActivePurpose,
+    markWishlistBought,
   } = expenses
   const { user } = useAuth()
 
@@ -79,7 +72,6 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all')
   const [editingItem, setEditingItem] = useState<WishlistItem | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
-  const [purchaseItem, setPurchaseItem] = useState<WishlistItem | null>(null)
   const [addFormKey, setAddFormKey] = useState(0)
   const [menuItemId, setMenuItemId] = useState<string | null>(null)
 
@@ -148,7 +140,7 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
   }, [editingItem, filter, storeOptions, brandOptions])
 
   const showFormModal = showAddForm || editingItem != null
-  const overlayOpen = showFormModal || purchaseItem != null
+  const overlayOpen = showFormModal
 
   const closeFormModal = () => {
     setShowAddForm(false)
@@ -282,7 +274,7 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
                 }}
                 onPurchase={() => {
                   setMenuItemId(null)
-                  setPurchaseItem(item)
+                  markWishlistBought(item.id)
                 }}
                 onDrop={() => {
                   setMenuItemId(null)
@@ -352,25 +344,6 @@ export function WishlistPanel({ expenses, onPurchased }: WishlistPanelProps) {
           document.body,
         )}
 
-      {purchaseItem &&
-        createPortal(
-          <WishlistPurchaseModal
-            item={purchaseItem}
-            wishlistCategories={wishlistCategories}
-            expenseCategories={expenseCategories}
-            purposes={purposes}
-            spendKinds={spendKinds}
-            purposeKindLinks={purposeKindLinks ?? []}
-            kindsForActivePurpose={kindsForActivePurpose}
-            onClose={() => setPurchaseItem(null)}
-            onConfirm={(input) => {
-              const txnId = markWishlistPurchased(purchaseItem.id, input)
-              setPurchaseItem(null)
-              if (txnId) onPurchased?.(txnId)
-            }}
-          />,
-          document.body,
-        )}
     </div>
   )
 }
