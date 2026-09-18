@@ -859,24 +859,47 @@ export function useExpenses(): ExpenseActions {
   const markWishlistPurchased: ExpenseActions['markWishlistPurchased'] = useCallback(
     (id, input) => {
       const item = wishlistItems.find((w) => w.id === id)
-      if (!item || !(input.amount > 0)) return null
+      if (!item) return null
 
+      const amount = input.amount > 0 ? input.amount : 0
       const dual =
         input.flow === 'out' &&
         Boolean(input.purposeId?.trim()) &&
         Boolean(input.spendKindId?.trim())
+      if (!dual && !input.categoryId?.trim()) return null
+
+      const purchasedPatch = {
+        status: 'purchased' as WishlistStatus,
+        purchasedAt: new Date().toISOString(),
+      }
+
+      if (!(amount > 0)) {
+        persist({
+          ...store,
+          wishlistItems: wishlistItems.map((w) =>
+            w.id === id
+              ? {
+                  ...w,
+                  ...purchasedPatch,
+                  linkedTransactionId: undefined,
+                }
+              : w,
+          ),
+        })
+        return null
+      }
+
       const tx: MoneyTransaction = {
         id: generateId(),
-        amount: input.amount,
+        amount,
         flow: input.flow,
-        categoryId: dual ? '' : input.categoryId?.trim() || '',
+        categoryId: dual ? '' : input.categoryId!.trim(),
         purposeId: dual ? input.purposeId!.trim() : '',
         spendKindId: dual ? input.spendKindId!.trim() : '',
         dateKey: input.dateKey || getTodayKey(),
         note: input.note?.trim() ?? '',
         createdAt: new Date().toISOString(),
       }
-      if (!dual && !tx.categoryId) return null
 
       const dayMarks = { ...(store.dayMarks ?? {}) }
       delete dayMarks[tx.dateKey]
@@ -889,8 +912,7 @@ export function useExpenses(): ExpenseActions {
           w.id === id
             ? {
                 ...w,
-                status: 'purchased' as WishlistStatus,
-                purchasedAt: new Date().toISOString(),
+                ...purchasedPatch,
                 linkedTransactionId: tx.id,
               }
             : w,
