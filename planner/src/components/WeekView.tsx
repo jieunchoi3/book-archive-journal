@@ -11,7 +11,7 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core'
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
-import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Loader2, PanelLeftOpen } from 'lucide-react'
 import type { DayKey, WeekTemplate } from '../types/planner'
 import type { PlannerActions } from '../hooks/usePlanner'
 import type { ItemsActions } from '../hooks/useItems'
@@ -29,6 +29,7 @@ import {
   shiftWeekStart,
 } from '../lib/weekUtils'
 import { useMobileLayout } from '../hooks/useMobileLayout'
+import { usePlannerSidebarCollapsed } from '../hooks/usePlannerSidebarCollapsed'
 import { PlannerSidebar } from './PlannerSidebar'
 import { DayColumn } from './DayColumn'
 import { DayFocusView } from './DayFocusView'
@@ -60,6 +61,8 @@ export function WeekView({
   onOpenCompassAsk,
 }: WeekViewProps) {
   const isMobileLayout = useMobileLayout()
+  const { collapsed: sidebarCollapsed, setCollapsed: setSidebarCollapsed } =
+    usePlannerSidebarCollapsed()
   const [activeTaskDrag, setActiveTaskDrag] = useState<TaskDragData | null>(null)
   const [focusedDayKey, setFocusedDayKey] = useState<DayKey | null>(() =>
     typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches
@@ -234,13 +237,27 @@ export function WeekView({
 
   return (
     <div className="flex min-h-screen gap-4 p-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:gap-6 sm:p-6 sm:pb-24">
-      <aside className="hidden w-52 shrink-0 lg:block">
-        <PlannerSidebar linkedApps={linkedApps} />
-      </aside>
+      {!sidebarCollapsed && (
+        <aside className="hidden shrink-0 lg:block">
+          <PlannerSidebar linkedApps={linkedApps} />
+        </aside>
+      )}
 
       <div className="min-w-0 flex-1">
         <header className="mb-4 flex flex-wrap items-center justify-between gap-3 sm:mb-6">
-          <div>
+          <div className="flex min-w-0 items-start gap-2">
+            {sidebarCollapsed && (
+              <button
+                type="button"
+                onClick={() => setSidebarCollapsed(false)}
+                className="mt-0.5 hidden shrink-0 rounded-lg p-2 text-muted transition-colors hover:bg-white hover:text-[#1C1C1E] hover:shadow-sm lg:inline-flex"
+                aria-label="Show sidebar"
+                title="Show sidebar"
+              >
+                <PanelLeftOpen size={18} />
+              </button>
+            )}
+            <div className="min-w-0">
             <h1 className="text-[20px] font-semibold tracking-tight text-[#1C1C1E] sm:text-[22px]">
               Weekly Planner
             </h1>
@@ -251,6 +268,7 @@ export function WeekView({
                 void planner.goToWeek(targetWeek)
               }}
             />
+            </div>
           </div>
           <div className="flex items-center gap-1">
             <button

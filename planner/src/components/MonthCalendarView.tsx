@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, PanelLeftOpen, Plus } from 'lucide-react'
 import type { ItemsActions } from '../hooks/useItems'
 import type { PlannerActions } from '../hooks/usePlanner'
 import type { ItemOccurrence } from '../types/item'
@@ -20,6 +20,7 @@ import { OverdueEventsSection } from './OverdueEventsSection'
 import { PlannerSidebar } from './PlannerSidebar'
 import { PageSearch, type SearchSuggestion } from './PageSearch'
 import type { LinkedAppsActions } from '../hooks/useLinkedApps'
+import { usePlannerSidebarCollapsed } from '../hooks/usePlannerSidebarCollapsed'
 
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const MAX_VISIBLE_EVENTS = 3
@@ -225,6 +226,8 @@ export function MonthCalendarView({
   const [cellAdd, setCellAdd] = useState<{ dateKey: string; rect: DOMRect } | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all')
+  const { collapsed: sidebarCollapsed, setCollapsed: setSidebarCollapsed } =
+    usePlannerSidebarCollapsed()
 
   const { year, month } = viewMonth
   const weeks = useMemo(() => getMonthGrid(year, month), [year, month])
@@ -317,15 +320,30 @@ export function MonthCalendarView({
 
   return (
     <div className="flex min-h-screen gap-4 p-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:gap-6 sm:p-6 sm:pb-24">
-      <aside className="hidden w-52 shrink-0 lg:block">
-        <PlannerSidebar linkedApps={linkedApps} />
-      </aside>
+      {!sidebarCollapsed && (
+        <aside className="hidden shrink-0 lg:block">
+          <PlannerSidebar linkedApps={linkedApps} />
+        </aside>
+      )}
 
       <div className="min-w-0 flex-1">
         <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-[22px] font-semibold tracking-tight text-[#1C1C1E]">Events</h1>
-            <p className="text-[13px] text-muted">Monthly overview of your events</p>
+          <div className="flex min-w-0 items-start gap-2">
+            {sidebarCollapsed && (
+              <button
+                type="button"
+                onClick={() => setSidebarCollapsed(false)}
+                className="mt-0.5 hidden shrink-0 rounded-lg p-2 text-muted transition-colors hover:bg-white hover:text-[#1C1C1E] hover:shadow-sm lg:inline-flex"
+                aria-label="Show sidebar"
+                title="Show sidebar"
+              >
+                <PanelLeftOpen size={18} />
+              </button>
+            )}
+            <div className="min-w-0">
+              <h1 className="text-[22px] font-semibold tracking-tight text-[#1C1C1E]">Events</h1>
+              <p className="text-[13px] text-muted">Monthly overview of your events</p>
+            </div>
           </div>
           <div className="flex items-center gap-1">
             <button

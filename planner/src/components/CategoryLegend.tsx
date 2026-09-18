@@ -1,49 +1,14 @@
-import { useEffect, useState, type ReactNode } from 'react'
-import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import type { ReactNode } from 'react'
+import { PanelLeftClose } from 'lucide-react'
 import { CATEGORY_STYLES } from '../lib/categories'
-
-const STORAGE_KEY = 'planner:sidebarCollapsed'
+import { usePlannerSidebarCollapsed } from '../hooks/usePlannerSidebarCollapsed'
 
 interface CategoryLegendProps {
   renderQuickLaunch?: (collapsed: boolean) => ReactNode
 }
 
 export function CategoryLegend({ renderQuickLaunch }: CategoryLegendProps) {
-  const [collapsed, setCollapsed] = useState(
-    () => localStorage.getItem(STORAGE_KEY) === 'true',
-  )
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, String(collapsed))
-  }, [collapsed])
-
-  if (collapsed) {
-    return (
-      <aside className="flex w-10 shrink-0 flex-col items-center pt-1">
-        <button
-          type="button"
-          onClick={() => setCollapsed(false)}
-          className="rounded-lg p-2 text-muted transition-colors hover:bg-white hover:text-[#1C1C1E] hover:shadow-sm"
-          aria-label="Show sidebar"
-          title="Show sidebar"
-        >
-          <PanelLeftOpen size={18} />
-        </button>
-        <ul className="mt-3 flex flex-col items-center gap-2">
-          {Object.entries(CATEGORY_STYLES).map(([key, style]) => (
-            <li key={key}>
-              <span
-                className="block h-2.5 w-2.5 rounded-full"
-                style={{ backgroundColor: style.dot }}
-                title={style.label}
-              />
-            </li>
-          ))}
-        </ul>
-        {renderQuickLaunch?.(true)}
-      </aside>
-    )
-  }
+  const { setCollapsed } = usePlannerSidebarCollapsed()
 
   return (
     <aside className="w-52 shrink-0">
