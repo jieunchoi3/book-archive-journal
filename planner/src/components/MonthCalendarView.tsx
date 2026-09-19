@@ -279,6 +279,7 @@ export function MonthCalendarView({
       showOnWeeklyView: true,
       time: payload.time,
       checkable: true,
+      details: payload.details,
     })
     setShowAdd(false)
     setCellAdd(null)

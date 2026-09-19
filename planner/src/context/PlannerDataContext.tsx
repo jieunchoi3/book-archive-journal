@@ -1438,7 +1438,15 @@ export function PlannerDataProvider({
         ...prev,
         items: prev.items.map((item) => {
           if (item.id !== id) return item
-          const next = { ...item, ...updates, id: item.id }
+          const next = {
+            ...item,
+            ...updates,
+            id: item.id,
+            details:
+              updates.details !== undefined
+                ? updates.details.trim() || undefined
+                : item.details,
+          }
           if (updates.recurrence !== undefined) {
             if (updates.recurrence === null && isRecurringItem(item)) {
               next.done = getItemDone(item, item.dueDate ?? undefined)

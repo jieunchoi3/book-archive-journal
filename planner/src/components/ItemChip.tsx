@@ -1,5 +1,6 @@
-import { ArrowRight, Trash2 } from 'lucide-react'
+import { ArrowRight, StickyNote, Trash2 } from 'lucide-react'
 import type { ItemOccurrence } from '../types/item'
+import { itemHasDetails } from '../types/item'
 
 interface ItemChipProps {
   occurrence: ItemOccurrence
@@ -20,6 +21,7 @@ export function ItemChip({
 }: ItemChipProps) {
   const { item, done } = occurrence
   const color = categoryColor ?? '#8E8E93'
+  const hasDetails = itemHasDetails(item)
 
   return (
     <div
@@ -64,13 +66,25 @@ export function ItemChip({
         </button>
       )}
 
-      <button type="button" onClick={onClick} className="flex min-w-0 flex-1 items-start gap-1 text-left">
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex min-w-0 flex-1 items-start gap-1 text-left"
+        title={hasDetails ? 'Tap to view details' : undefined}
+      >
         <span className="min-w-0 whitespace-normal break-words text-[11px] font-medium leading-snug text-[#48484A]">
           <span className={done && item.checkable ? 'line-through' : ''}>{item.title}</span>
           {item.time && (
             <span className="ml-1 font-normal text-muted">{item.time}</span>
           )}
         </span>
+        {hasDetails && (
+          <StickyNote
+            size={12}
+            className="mt-0.5 shrink-0 text-[#8E8E93]"
+            aria-label="Has details"
+          />
+        )}
       </button>
 
       {onPostpone && (
