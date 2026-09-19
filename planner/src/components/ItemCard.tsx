@@ -1,5 +1,11 @@
+import { StickyNote } from 'lucide-react'
 import type { Item } from '../types/item'
-import { formatDueDateLong, getItemDone, isRecurringItem } from '../types/item'
+import {
+  formatDueDateLong,
+  getItemDone,
+  isRecurringItem,
+  itemHasDetails,
+} from '../types/item'
 
 interface ItemCardProps {
   item: Item
@@ -44,8 +50,13 @@ export function ItemCard({ item, onToggle, onClick }: ItemCardProps) {
           )}
         </button>
         <button type="button" onClick={onClick} className="min-w-0 flex-1 text-left">
-          <p className={`text-[13px] font-medium leading-snug text-[#1C1C1E] ${done ? 'line-through' : ''}`}>
-            {item.title}
+          <p
+            className={`flex items-start gap-1.5 text-[13px] font-medium leading-snug text-[#1C1C1E] ${done ? 'line-through' : ''}`}
+          >
+            <span className="min-w-0 flex-1">{item.title}</span>
+            {itemHasDetails(item) && (
+              <StickyNote size={13} className="shrink-0 text-[#8E8E93]" aria-label="Has details" />
+            )}
           </p>
           <p className="mt-0.5 text-[11px] text-muted">
             {formatDueDateLong(item.dueDate)}

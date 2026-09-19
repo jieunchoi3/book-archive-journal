@@ -34,6 +34,12 @@ export interface Item {
   time?: string
   /** Whether weekly chip supports check-off (default true) */
   checkable: boolean
+  /** Extra notes / sub-details (links, checklist, context). */
+  details?: string
+}
+
+export function itemHasDetails(item: Pick<Item, 'details'>): boolean {
+  return Boolean(item.details?.trim())
 }
 
 export interface ItemOccurrence {

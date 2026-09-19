@@ -9,6 +9,7 @@ export interface EventAddPayload {
   recurrence: Recurrence | null
   categoryId: string | null
   time?: string
+  details?: string
 }
 
 interface EventQuickAddFormProps {
@@ -30,6 +31,7 @@ export function EventQuickAddForm({
   const [time, setTime] = useState('')
   const [recurrence, setRecurrence] = useState<Recurrence | null>(null)
   const [categoryId, setCategoryId] = useState<string | null>(null)
+  const [details, setDetails] = useState('')
 
   const inputClass = compact
     ? 'w-full rounded-md border border-hairline bg-white px-2 py-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-[#007AFF]/30'
@@ -43,6 +45,7 @@ export function EventQuickAddForm({
       recurrence,
       categoryId,
       time: time.trim() || undefined,
+      details: details.trim() || undefined,
     })
   }
 
@@ -80,12 +83,30 @@ export function EventQuickAddForm({
         defaultWeeklyDay={defaultWeeklyDay}
       />
       {!compact && (
-        <input
-          type="text"
-          value={time}
-          onChange={(e) => setTime(e.target.value)}
-          placeholder="시간 (선택) 16:30–18:30"
-          className="w-full rounded-lg border border-hairline bg-white px-3 py-2 text-[13px] focus:outline-none"
+        <>
+          <input
+            type="text"
+            value={time}
+            onChange={(e) => setTime(e.target.value)}
+            placeholder="시간 (선택) 16:30–18:30"
+            className="w-full rounded-lg border border-hairline bg-white px-3 py-2 text-[13px] focus:outline-none"
+          />
+          <textarea
+            value={details}
+            onChange={(e) => setDetails(e.target.value)}
+            placeholder="Details / subnotes (optional)"
+            rows={2}
+            className="w-full resize-y rounded-lg border border-hairline bg-white px-3 py-2 text-[12px] leading-relaxed focus:outline-none focus:ring-1 focus:ring-[#007AFF]/30"
+          />
+        </>
+      )}
+      {compact && (
+        <textarea
+          value={details}
+          onChange={(e) => setDetails(e.target.value)}
+          placeholder="Details (optional)"
+          rows={2}
+          className="w-full resize-y rounded-md border border-hairline bg-white px-2 py-1.5 text-[11px] leading-relaxed focus:outline-none focus:ring-1 focus:ring-[#007AFF]/30"
         />
       )}
       <div className="flex gap-2">

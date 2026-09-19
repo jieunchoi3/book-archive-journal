@@ -26,6 +26,7 @@ export function QuickAddItemModal({
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [recurrence, setRecurrence] = useState<Recurrence | null>(null)
   const [showOnWeeklyView, setShowOnWeeklyView] = useState(!!dueDate)
+  const [details, setDetails] = useState('')
 
   const toggleTag = (id: string) => {
     setSelectedTags((prev) =>
@@ -43,6 +44,7 @@ export function QuickAddItemModal({
       recurrence,
       showOnWeeklyView,
       checkable: true,
+      details: details.trim() || undefined,
     })
     onClose()
   }
@@ -83,6 +85,19 @@ export function QuickAddItemModal({
                 if (e.target.value) setShowOnWeeklyView(true)
               }}
               className="w-full rounded-lg border border-hairline px-3 py-2 text-[13px] focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[11px] font-medium text-muted">
+              Details / subnotes
+            </label>
+            <textarea
+              value={details}
+              onChange={(e) => setDetails(e.target.value)}
+              placeholder="Links, checklist, extra context…"
+              rows={3}
+              className="w-full resize-y rounded-lg border border-hairline px-3 py-2 text-[13px] leading-relaxed focus:outline-none focus:ring-1 focus:ring-[#007AFF]/30"
             />
           </div>
 
@@ -199,6 +214,20 @@ export function EditItemModal({
             placeholder="시간 (선택)"
             className="w-full rounded-lg border border-hairline px-3 py-2 text-[13px] focus:outline-none"
           />
+          <div>
+            <label className="mb-1 block text-[11px] font-medium text-muted">
+              Details / subnotes
+            </label>
+            <textarea
+              value={draft.details ?? ''}
+              onChange={(e) =>
+                setDraft({ ...draft, details: e.target.value || undefined })
+              }
+              placeholder="Links, checklist, extra context…"
+              rows={4}
+              className="w-full resize-y rounded-lg border border-hairline px-3 py-2 text-[13px] leading-relaxed focus:outline-none focus:ring-1 focus:ring-[#007AFF]/30"
+            />
+          </div>
           <EventCategoryPicker
             categories={items.categories}
             selectedId={draft.categoryId}

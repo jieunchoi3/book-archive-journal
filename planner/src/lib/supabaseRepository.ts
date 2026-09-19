@@ -436,6 +436,7 @@ export async function fetchItemsStore(userId: string): Promise<ItemsStore> {
       showOnWeeklyView: i.show_on_weekly_view,
       time: i.time_label ?? undefined,
       checkable: i.checkable,
+      details: i.details?.trim() ? String(i.details) : undefined,
     })),
   }
 }
@@ -488,6 +489,7 @@ export async function syncItemsStore(userId: string, store: ItemsStore): Promise
       show_on_weekly_view: item.showOnWeeklyView,
       time_label: item.time ?? null,
       checkable: item.checkable,
+      details: item.details?.trim() ?? '',
     })
     if (error) throw error
 

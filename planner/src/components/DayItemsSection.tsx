@@ -96,6 +96,7 @@ export function DayItemsSection({
               showOnWeeklyView: true,
               time: payload.time,
               checkable: true,
+              details: payload.details,
             })
             setShowAdd(false)
           }}

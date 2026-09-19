@@ -108,7 +108,8 @@ create table if not exists planner.items (
   done jsonb not null default 'false'::jsonb,
   show_on_weekly_view boolean not null default false,
   time_label text,
-  checkable boolean not null default true
+  checkable boolean not null default true,
+  details text not null default ''
 );
 
 -- Item ↔ tag join
