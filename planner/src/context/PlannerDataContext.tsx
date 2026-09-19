@@ -42,6 +42,7 @@ import {
   syncLinkedApps,
   upsertSidebarNote,
   syncTemplate,
+  syncWeeklyLog,
   upsertBlockWeekLog,
   upsertOneOffTask,
   deleteOneOffTaskRow,
@@ -58,6 +59,7 @@ import {
   markLocalImportDone,
 } from '../lib/localStorageLegacy'
 import { emptyWeeklyLog } from '../lib/storageUtils'
+import { mergeWeeklyLogs } from '../lib/weeklyLogMerge'
 import {
   loadTemplateLocal,
   loadWeeklyLogLocal,
@@ -355,21 +357,7 @@ export function PlannerDataProvider({
     await templateSyncQueue.current
   }, [userId, flushBlockLogWrite, enqueueTemplateSync])
 
-  useEffect(() => {
-    const onPageHide = () => {
-      void flushAllPending()
-    }
-    const onHide = () => {
-      if (document.visibilityState === 'hidden') void flushAllPending()
-    }
-    window.addEventListener('pagehide', onPageHide)
-    document.addEventListener('visibilitychange', onHide)
-    return () => {
-      window.removeEventListener('pagehide', onPageHide)
-      document.removeEventListener('visibilitychange', onHide)
-      void flushAllPending()
-    }
-  }, [flushAllPending])
+  const lastRevalidateMs = useRef(0)
 
   const persistBlockWeekLogDebounced = useCallback(
     (dayKey: DayKey, blockId: string, blockLog: BlockDayLog) => {
@@ -388,10 +376,18 @@ export function PlannerDataProvider({
       try {
         const cloud = await fetchWeeklyLog(userId, targetWeekStart)
         const local = loadWeeklyLogLocal(userId, targetWeekStart)
-        if (local && weeklyLogHasContent(local) && !weeklyLogHasContent(cloud)) {
+        if (!local || !weeklyLogHasContent(local)) {
+          saveWeeklyLogLocal(userId, cloud)
+          return cloud
+        }
+        if (!weeklyLogHasContent(cloud)) {
+          void syncWeeklyLog(userId, local).catch((e) => logError('syncWeeklyLog', e))
           return local
         }
-        return cloud
+        const merged = mergeWeeklyLogs(cloud, local)
+        saveWeeklyLogLocal(userId, merged)
+        void syncWeeklyLog(userId, merged).catch((e) => logError('syncWeeklyLog', e))
+        return merged
       } catch (e) {
         logError('fetchWeeklyLog', e)
         return loadWeeklyLogLocal(userId, targetWeekStart) ?? emptyWeeklyLog(targetWeekStart)
@@ -399,6 +395,70 @@ export function PlannerDataProvider({
     },
     [userId],
   )
+
+  const revalidateFromCloud = useCallback(async () => {
+    const week = weekStartRef.current
+    try {
+      const [tmpl, cloudLog] = await Promise.all([
+        fetchTemplate(userId),
+        fetchWeeklyLog(userId, week),
+      ])
+      if (weekStartRef.current !== week) return
+
+      if (tmpl) {
+        templateRef.current = tmpl
+        setTemplate(tmpl)
+        saveTemplateLocal(userId, tmpl)
+      }
+
+      const local = loadWeeklyLogLocal(userId, week)
+      const merged =
+        local && weeklyLogHasContent(local) && weeklyLogHasContent(cloudLog)
+          ? mergeWeeklyLogs(cloudLog, local)
+          : cloudLog
+
+      weekCacheRef.current.set(week, merged)
+      saveWeeklyLogLocal(userId, merged)
+      weeklyLogRef.current = merged
+      setWeeklyLog(merged)
+    } catch (e) {
+      logError('revalidateFromCloud', e)
+    }
+  }, [userId])
+
+  useEffect(() => {
+    const onPageHide = () => {
+      void flushAllPending()
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        void flushAllPending()
+        return
+      }
+      const now = Date.now()
+      if (now - lastRevalidateMs.current < 1500) return
+      lastRevalidateMs.current = now
+      void (async () => {
+        await flushAllPending()
+        await revalidateFromCloud()
+      })()
+    }
+    const onOnline = () => {
+      void (async () => {
+        await flushAllPending()
+        await revalidateFromCloud()
+      })()
+    }
+    window.addEventListener('pagehide', onPageHide)
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('online', onOnline)
+    return () => {
+      window.removeEventListener('pagehide', onPageHide)
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('online', onOnline)
+      void flushAllPending()
+    }
+  }, [flushAllPending, revalidateFromCloud])
 
   const putWeekCache = useCallback(
     (log: WeeklyLog) => {
@@ -815,6 +875,8 @@ export function PlannerDataProvider({
                 : d,
             ),
           }
+          templateRef.current = next
+          saveTemplateLocal(userId, next)
           if (templateTimer.current) clearTimeout(templateTimer.current)
           templateTimer.current = null
           void enqueueTemplateSync(next)
