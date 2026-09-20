@@ -5,6 +5,7 @@ import {
   CalendarDays,
   Camera,
   Compass,
+  Mail,
   Sticker,
   User,
   Wallet,
@@ -13,6 +14,7 @@ import {
 export type AppView =
   | 'relations'
   | 'diary'
+  | 'mailbox'
   | 'expenses'
   | 'taste'
   | 'snap'
@@ -53,6 +55,14 @@ export function BottomNav({ active, onChange, badges }: BottomNavProps) {
           active={active === 'diary'}
           badge={badges?.diary}
           onClick={() => onChange('diary')}
+          light={transparent}
+        />
+        <NavButton
+          label="Mail"
+          icon={<Mail size={20} />}
+          active={active === 'mailbox'}
+          badge={badges?.mailbox}
+          onClick={() => onChange('mailbox')}
           light={transparent}
         />
         <NavButton
