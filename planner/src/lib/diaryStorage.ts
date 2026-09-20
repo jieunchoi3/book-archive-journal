@@ -1,5 +1,5 @@
 import type { DiaryEntry } from '../types/diary'
-import { isDiaryEntryEmpty } from '../types/diary'
+import { ensureDiaryEntryId, isDiaryEntryEmpty } from '../types/diary'
 import { downscaleToThumb } from './diaryImage'
 import {
   applyTagFoldersToEntry,
@@ -15,21 +15,43 @@ import {
 import { isSupabaseConfigured, supabase } from './supabase'
 
 const DB_NAME = 'planner-diary'
-const DB_VERSION = 1
+const DB_VERSION = 2
 const STORE = 'entries'
 const THUMB_BUCKET = 'diary-media'
 
-function dbKey(userId: string, dateKey: string) {
-  return `${userId}:${dateKey}`
+function dbKey(userId: string, entryId: string) {
+  return `${userId}:${entryId}`
 }
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION)
-    req.onupgradeneeded = () => {
+    req.onupgradeneeded = (event) => {
       const db = req.result
       if (!db.objectStoreNames.contains(STORE)) {
         db.createObjectStore(STORE, { keyPath: 'id' })
+      }
+      const oldVersion = event.oldVersion
+      if (oldVersion > 0 && oldVersion < 2) {
+        const tx = req.transaction!
+        const store = tx.objectStore(STORE)
+        const getAll = store.getAll()
+        getAll.onsuccess = () => {
+          const rows = (getAll.result ?? []) as StoredRow[]
+          for (const row of rows) {
+            const entry = ensureDiaryEntryId(row.entry)
+            const newId = dbKey(row.userId, entry.id)
+            if (row.id !== newId) {
+              store.delete(row.id)
+            }
+            store.put({
+              id: newId,
+              userId: row.userId,
+              dateKey: row.dateKey,
+              entry,
+            })
+          }
+        }
       }
     }
     req.onsuccess = () => resolve(req.result)
@@ -50,29 +72,69 @@ function isDataImageUrl(url: string | null | undefined): url is string {
 
 /** Signed HTTP URLs expire — only persist stable data URLs in IndexedDB. */
 function entryForLocalCache(entry: DiaryEntry): DiaryEntry {
+  const normalized = ensureDiaryEntryId(entry)
   return {
-    ...entry,
-    coverDataUrl: isDataImageUrl(entry.coverDataUrl) ? entry.coverDataUrl : null,
-    thumbDataUrl: isDataImageUrl(entry.thumbDataUrl) ? entry.thumbDataUrl : null,
-    layers: entry.layers.map((layer) => ({
+    ...normalized,
+    coverDataUrl: isDataImageUrl(normalized.coverDataUrl) ? normalized.coverDataUrl : null,
+    thumbDataUrl: isDataImageUrl(normalized.thumbDataUrl) ? normalized.thumbDataUrl : null,
+    layers: normalized.layers.map((layer) => ({
       ...layer,
       src: isDataImageUrl(layer.src) ? layer.src : layer.src ? '' : layer.src,
     })),
-    bodyImages: (entry.bodyImages ?? []).map((image) => ({
+    bodyImages: (normalized.bodyImages ?? []).map((image) => ({
       ...image,
       src: isDataImageUrl(image.src) ? image.src : image.src ? '' : image.src,
     })),
   }
 }
 
-async function loadDiaryEntryLocal(
+export function groupDiaryEntriesByDate(
+  entries: DiaryEntry[],
+): Record<string, DiaryEntry[]> {
+  const out: Record<string, DiaryEntry[]> = {}
+  for (const raw of entries) {
+    const entry = ensureDiaryEntryId(raw)
+    const list = out[entry.dateKey] ?? []
+    if (!list.some((e) => e.id === entry.id)) list.push(entry)
+    out[entry.dateKey] = list
+  }
+  for (const key of Object.keys(out)) {
+    out[key].sort((a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0))
+  }
+  return out
+}
+
+function mergeEntryLists(
+  cloud: Record<string, DiaryEntry[]>,
+  local: Record<string, DiaryEntry[]>,
+): Record<string, DiaryEntry[]> {
+  const out: Record<string, DiaryEntry[]> = {}
+  const allDates = new Set([...Object.keys(cloud), ...Object.keys(local)])
+  for (const dateKey of allDates) {
+    const byId = new Map<string, DiaryEntry>()
+    for (const entry of cloud[dateKey] ?? []) {
+      byId.set(entry.id, ensureDiaryEntryId(entry))
+    }
+    for (const entry of local[dateKey] ?? []) {
+      const normalized = ensureDiaryEntryId(entry)
+      if (!byId.has(normalized.id)) byId.set(normalized.id, normalized)
+    }
+    const list = [...byId.values()].sort(
+      (a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0),
+    )
+    if (list.length) out[dateKey] = list
+  }
+  return out
+}
+
+async function loadDiaryEntryLocalById(
   userId: string,
-  dateKey: string,
+  entryId: string,
 ): Promise<DiaryEntry | null> {
   const db = await openDb()
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readonly')
-    const req = tx.objectStore(STORE).get(dbKey(userId, dateKey))
+    const req = tx.objectStore(STORE).get(dbKey(userId, entryId))
     req.onsuccess = () => {
       const row = req.result as StoredRow | undefined
       resolve(row?.entry ? entryForLocalCache(row.entry) : null)
@@ -85,25 +147,26 @@ export async function loadDiaryEntriesForMonthLocal(
   userId: string,
   year: number,
   month: number,
-): Promise<Record<string, DiaryEntry>> {
+): Promise<Record<string, DiaryEntry[]>> {
   const prefix = `${year}-${String(month + 1).padStart(2, '0')}-`
   const all = await loadAllDiaryEntriesLocal(userId)
-  const out: Record<string, DiaryEntry> = {}
-  for (const [dateKey, entry] of Object.entries(all)) {
-    if (dateKey.startsWith(prefix)) out[dateKey] = entry
+  const out: Record<string, DiaryEntry[]> = {}
+  for (const entry of all) {
+    if (!entry.dateKey.startsWith(prefix)) continue
+    const list = out[entry.dateKey] ?? []
+    list.push(entry)
+    out[entry.dateKey] = list
   }
   return out
 }
 
 /** All locally cached diary entries for a user (for cross-month search). */
-export async function loadAllDiaryEntriesLocal(
-  userId: string,
-): Promise<Record<string, DiaryEntry>> {
+export async function loadAllDiaryEntriesLocal(userId: string): Promise<DiaryEntry[]> {
   const db = await openDb()
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readonly')
     const req = tx.objectStore(STORE).openCursor()
-    const out: Record<string, DiaryEntry> = {}
+    const out: DiaryEntry[] = []
     req.onsuccess = () => {
       const cursor = req.result
       if (!cursor) {
@@ -112,7 +175,7 @@ export async function loadAllDiaryEntriesLocal(
       }
       const row = cursor.value as StoredRow
       if (row.userId === userId) {
-        out[row.dateKey] = entryForLocalCache(row.entry)
+        out.push(entryForLocalCache(row.entry))
       }
       cursor.continue()
     }
@@ -120,26 +183,32 @@ export async function loadAllDiaryEntriesLocal(
   })
 }
 
-async function saveDiaryEntryLocal(userId: string, entry: DiaryEntry): Promise<void> {
+async function deleteDiaryEntryLocal(userId: string, entryId: string): Promise<void> {
   const db = await openDb()
-  const id = dbKey(userId, entry.dateKey)
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite')
+    tx.objectStore(STORE).delete(dbKey(userId, entryId))
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+}
 
-  if (isDiaryEntryEmpty(entry) && !(entry.layers?.length > 0)) {
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE, 'readwrite')
-      tx.objectStore(STORE).delete(id)
-      tx.oncomplete = () => resolve()
-      tx.onerror = () => reject(tx.error)
-    })
+async function saveDiaryEntryLocal(userId: string, entry: DiaryEntry): Promise<void> {
+  const normalized = ensureDiaryEntryId(entry)
+  const db = await openDb()
+  const id = dbKey(userId, normalized.id)
+
+  if (isDiaryEntryEmpty(normalized) && !(normalized.layers?.length > 0)) {
+    return deleteDiaryEntryLocal(userId, normalized.id)
   }
 
   const row: StoredRow = {
     id,
     userId,
-    dateKey: entry.dateKey,
+    dateKey: normalized.dateKey,
     entry: entryForLocalCache({
-      ...entry,
-      updatedAt: entry.updatedAt || new Date().toISOString(),
+      ...normalized,
+      updatedAt: normalized.updatedAt || new Date().toISOString(),
     }),
   }
 
@@ -192,38 +261,52 @@ function preferLocalImages(cloud: DiaryEntry, local?: DiaryEntry): DiaryEntry {
   }
 }
 
-/** One-time push of local-only diary days up to Supabase. */
+function cloudEntryIds(cloud: Record<string, DiaryEntry[]>): Set<string> {
+  const ids = new Set<string>()
+  for (const list of Object.values(cloud)) {
+    for (const entry of list) ids.add(entry.id)
+  }
+  return ids
+}
+
+/** One-time push of local-only diary notes up to Supabase. */
 async function migrateLocalMonthToCloud(
   userId: string,
-  local: Record<string, DiaryEntry>,
-  cloud: Record<string, DiaryEntry>,
+  local: Record<string, DiaryEntry[]>,
+  cloud: Record<string, DiaryEntry[]>,
 ): Promise<void> {
-  for (const [dateKey, entry] of Object.entries(local)) {
-    if (cloud[dateKey]) continue
-    if (!hasRealImageBytes(entry) && isDiaryEntryEmpty(entry)) continue
-    if (needsLayerHydration(entry) && entry.layers.length > 0) continue
-    if ((entry.bodyImages ?? []).some((i) => i.src.startsWith('data:')) && needsBodyImageHydration(entry)) {
-      continue
-    }
-    if (!hasRealImageBytes(entry) && !entry.title && !entry.body) continue
-    try {
-      await upsertDiaryEntryCloud(userId, entry)
-    } catch (e) {
-      console.warn('[diary] migrate local→cloud failed', dateKey, e)
+  const cloudIds = cloudEntryIds(cloud)
+  for (const list of Object.values(local)) {
+    for (const entry of list) {
+      if (cloudIds.has(entry.id)) continue
+      if (!hasRealImageBytes(entry) && isDiaryEntryEmpty(entry)) continue
+      if (needsLayerHydration(entry) && entry.layers.length > 0) continue
+      if (
+        (entry.bodyImages ?? []).some((i) => i.src.startsWith('data:')) &&
+        needsBodyImageHydration(entry)
+      ) {
+        continue
+      }
+      if (!hasRealImageBytes(entry) && !entry.title && !entry.body) continue
+      try {
+        await upsertDiaryEntryCloud(userId, ensureDiaryEntryId(entry))
+      } catch (e) {
+        console.warn('[diary] migrate local→cloud failed', entry.dateKey, e)
+      }
     }
   }
 }
 
-export async function loadDiaryEntry(
+export async function loadDiaryEntryById(
   userId: string,
-  dateKey: string,
+  entryId: string,
 ): Promise<DiaryEntry | null> {
-  const local = await loadDiaryEntryLocal(userId, dateKey)
+  const local = await loadDiaryEntryLocalById(userId, entryId)
 
   if (!isSupabaseConfigured) return local
 
   try {
-    const cloud = await fetchDiaryEntryCloud(userId, dateKey)
+    const cloud = await fetchDiaryEntryCloud(userId, entryId)
     if (cloud) {
       const merged = preferLocalImages(cloud, local ?? undefined)
       await saveDiaryEntryLocal(userId, merged)
@@ -243,7 +326,7 @@ export async function loadDiaryEntriesForMonth(
   userId: string,
   year: number,
   month: number,
-): Promise<Record<string, DiaryEntry>> {
+): Promise<Record<string, DiaryEntry[]>> {
   const local = await loadDiaryEntriesForMonthLocal(userId, year, month)
 
   if (!isSupabaseConfigured) return local
@@ -258,20 +341,18 @@ export async function loadDiaryEntriesForMonth(
     })
     await migrateLocalMonthToCloud(userId, local, cloud)
 
-    // Online: cloud is source of truth. Only keep local-only days not yet uploaded.
-    const merged: Record<string, DiaryEntry> = { ...cloud }
-    for (const [dateKey, entry] of Object.entries(local)) {
-      if (merged[dateKey]) continue
-      if (hasRealImageBytes(entry) || entry.title || entry.body || (entry.bodyImages?.length ?? 0) > 0) {
-        merged[dateKey] = entry
-      }
-    }
+    const merged = mergeEntryLists(cloud, local)
 
-    // Cache metadata locally; keep data URLs, never persist expiring signed HTTP links.
-    for (const [dateKey, entry] of Object.entries(merged)) {
-      const displayEntry = preferLocalImages(entry, local[dateKey])
-      await saveDiaryEntryLocal(userId, displayEntry)
-      merged[dateKey] = displayEntry
+    for (const [dateKey, list] of Object.entries(merged)) {
+      const localList = local[dateKey] ?? []
+      const localById = new Map(localList.map((e) => [e.id, e]))
+      const nextList = list.map((entry) =>
+        preferLocalImages(entry, localById.get(entry.id)),
+      )
+      merged[dateKey] = nextList
+      for (const entry of nextList) {
+        await saveDiaryEntryLocal(userId, entry)
+      }
     }
 
     return merged
@@ -281,8 +362,8 @@ export async function loadDiaryEntriesForMonth(
   }
 }
 
-async function uploadThumbOnly(userId: string, dateKey: string, thumbDataUrl: string) {
-  const path = `${userId}/${dateKey}/thumb.jpg`
+async function uploadThumbOnly(userId: string, entryId: string, thumbDataUrl: string) {
+  const path = `${userId}/${entryId}/thumb.jpg`
   const res = await fetch(thumbDataUrl)
   const blob = await res.blob()
   const { error } = await supabase.storage.from(THUMB_BUCKET).upload(path, blob, {
@@ -290,7 +371,7 @@ async function uploadThumbOnly(userId: string, dateKey: string, thumbDataUrl: st
     contentType: 'image/jpeg',
     cacheControl: '86400',
   })
-  if (error) console.warn('[diary] thumb upload failed', dateKey, error.message)
+  if (error) console.warn('[diary] thumb upload failed', entryId, error.message)
 }
 
 /**
@@ -299,13 +380,15 @@ async function uploadThumbOnly(userId: string, dateKey: string, thumbDataUrl: st
  */
 export async function backfillDiaryThumbs(
   userId: string,
-  entries: Record<string, DiaryEntry>,
-  onEntry?: (dateKey: string, entry: DiaryEntry) => void,
+  entriesByDate: Record<string, DiaryEntry[]>,
+  onEntry?: (entry: DiaryEntry) => void,
 ): Promise<void> {
-  const jobs = Object.values(entries).filter((entry) => {
-    if (entry.thumbDataUrl?.startsWith('data:')) return false
-    return Boolean(entry.thumbDataUrl || entry.coverDataUrl)
-  })
+  const jobs = Object.values(entriesByDate)
+    .flat()
+    .filter((entry) => {
+      if (entry.thumbDataUrl?.startsWith('data:')) return false
+      return Boolean(entry.thumbDataUrl || entry.coverDataUrl)
+    })
 
   const concurrency = 3
   let i = 0
@@ -320,9 +403,9 @@ export async function backfillDiaryThumbs(
         const next: DiaryEntry = { ...entry, thumbDataUrl: thumb }
         await saveDiaryEntryLocal(userId, next)
         if (isSupabaseConfigured) {
-          void uploadThumbOnly(userId, entry.dateKey, thumb)
+          void uploadThumbOnly(userId, entry.id, thumb)
         }
-        onEntry?.(entry.dateKey, next)
+        onEntry?.(next)
       } catch (e) {
         console.warn('[diary] thumb backfill failed', entry.dateKey, e)
       }
@@ -333,23 +416,28 @@ export async function backfillDiaryThumbs(
 }
 
 export async function saveDiaryEntry(userId: string, entry: DiaryEntry): Promise<void> {
-  // Avoid overwriting good local photos with empty-src placeholders.
-  if (needsDiaryHydration(entry) && (entry.layers.length > 0 || (entry.bodyImages?.length ?? 0) > 0)) {
-    const existing = await loadDiaryEntryLocal(userId, entry.dateKey)
+  const normalized = ensureDiaryEntryId(entry)
+  let toSave = normalized
+
+  if (
+    needsDiaryHydration(normalized) &&
+    (normalized.layers.length > 0 || (normalized.bodyImages?.length ?? 0) > 0)
+  ) {
+    const existing = await loadDiaryEntryLocalById(userId, normalized.id)
     if (existing && hasRealImageBytes(existing)) {
-      entry = {
-        ...entry,
-        layers: needsLayerHydration(entry) ? existing.layers : entry.layers,
-        bodyImages: needsBodyImageHydration(entry)
+      toSave = {
+        ...normalized,
+        layers: needsLayerHydration(normalized) ? existing.layers : normalized.layers,
+        bodyImages: needsBodyImageHydration(normalized)
           ? (existing.bodyImages ?? [])
-          : (entry.bodyImages ?? []),
-        coverDataUrl: isDataImageUrl(entry.coverDataUrl)
-          ? entry.coverDataUrl
+          : (normalized.bodyImages ?? []),
+        coverDataUrl: isDataImageUrl(normalized.coverDataUrl)
+          ? normalized.coverDataUrl
           : isDataImageUrl(existing.coverDataUrl)
             ? existing.coverDataUrl
             : null,
-        thumbDataUrl: isDataImageUrl(entry.thumbDataUrl)
-          ? entry.thumbDataUrl
+        thumbDataUrl: isDataImageUrl(normalized.thumbDataUrl)
+          ? normalized.thumbDataUrl
           : isDataImageUrl(existing.thumbDataUrl)
             ? existing.thumbDataUrl
             : null,
@@ -357,19 +445,26 @@ export async function saveDiaryEntry(userId: string, entry: DiaryEntry): Promise
     }
   }
 
-  await saveDiaryEntryLocal(userId, entry)
+  await saveDiaryEntryLocal(userId, toSave)
 
   if (!isSupabaseConfigured) return
 
   try {
-    if (isDiaryEntryEmpty(entry) && entry.layers.length === 0) {
-      await deleteDiaryEntryCloud(userId, entry.dateKey)
+    if (isDiaryEntryEmpty(toSave) && toSave.layers.length === 0) {
+      await deleteDiaryEntryCloud(userId, toSave.id)
     } else {
-      await upsertDiaryEntryCloud(userId, entry)
+      await upsertDiaryEntryCloud(userId, toSave)
     }
   } catch (e) {
     console.error('[diary] cloud save failed', e)
     throw e
+  }
+}
+
+export async function deleteDiaryEntry(userId: string, entry: DiaryEntry): Promise<void> {
+  await deleteDiaryEntryLocal(userId, entry.id)
+  if (isSupabaseConfigured) {
+    await deleteDiaryEntryCloud(userId, entry.id)
   }
 }
 
@@ -382,7 +477,7 @@ export async function clearDiaryTagsForFolder(
   let updated = 0
 
   const all = await loadAllDiaryEntriesLocal(userId)
-  for (const entry of Object.values(all)) {
+  for (const entry of all) {
     const remaining = removeTagFolderFromEntry(entry, mainTag, subTag)
     if (remaining.length === getEntryTagFolders(entry).length) continue
     const tagPatch = applyTagFoldersToEntry(remaining)
@@ -411,16 +506,14 @@ export async function hydrateDiaryEntry(
   userId: string,
   entry: DiaryEntry,
 ): Promise<DiaryEntry> {
-  if (
-    !needsDiaryHydration(entry) &&
-    entry.coverDataUrl?.startsWith('data:')
-  ) {
-    return entry
+  const normalized = ensureDiaryEntryId(entry)
+  if (!needsDiaryHydration(normalized) && normalized.coverDataUrl?.startsWith('data:')) {
+    return normalized
   }
-  if (!isSupabaseConfigured) return entry
-  const cloud = await fetchDiaryEntryCloud(userId, entry.dateKey)
-  if (!cloud) return entry
-  const merged = preferLocalImages(cloud, entry)
+  if (!isSupabaseConfigured) return normalized
+  const cloud = await fetchDiaryEntryCloud(userId, normalized.id)
+  if (!cloud) return normalized
+  const merged = preferLocalImages(cloud, normalized)
   await saveDiaryEntryLocal(userId, merged)
   return merged
 }

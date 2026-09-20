@@ -141,6 +141,7 @@ create table if not exists planner.sidebar_notes (
 -- Photo diary (images in storage bucket diary-media; layers[].path)
 create table if not exists planner.diary_entries (
   user_id uuid not null references auth.users(id) on delete cascade,
+  entry_id uuid not null default gen_random_uuid(),
   date_key date not null,
   title text not null default '',
   body text not null default '',
@@ -153,10 +154,10 @@ create table if not exists planner.diary_entries (
   layers jsonb not null default '[]'::jsonb,
   cover_path text,
   updated_at timestamptz not null default now(),
-  primary key (user_id, date_key)
+  primary key (user_id, entry_id)
 );
 
-create index if not exists diary_entries_user_month_idx
+create index if not exists diary_entries_user_date_idx
   on planner.diary_entries (user_id, date_key);
 
 create index if not exists diary_entries_user_tags_idx

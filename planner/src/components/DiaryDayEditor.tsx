@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronDown, ChevronUp, ImagePlus, Pencil, Trash2, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, ImagePlus, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { formatDiaryTagLabel, getEntryTagFolders } from '../lib/diaryTags'
+import { isDiaryEntryEmpty } from '../types/diary'
 import type {
   DiaryBodyImage,
   DiaryEntry,
@@ -14,11 +16,27 @@ import { handleClipboardImagePaste } from '../lib/clipboardImage'
 import { DiaryPhotoEditor } from './DiaryPhotoEditor'
 import { DiaryTagFields } from './DiaryTagFields'
 
+function noteTabLabel(entry: DiaryEntry, index: number): string {
+  const title = entry.title.trim()
+  if (title) return title.length > 22 ? `${title.slice(0, 22)}…` : title
+  const tags = getEntryTagFolders(entry)
+  if (tags[0]?.mainTag) {
+    const label = formatDiaryTagLabel(tags[0].mainTag)
+    return label.length > 22 ? `${label.slice(0, 22)}…` : label
+  }
+  if (!isDiaryEntryEmpty(entry)) return `Note ${index + 1}`
+  return `New note ${index + 1}`
+}
+
 interface DiaryDayEditorProps {
   dateKey: string
   entry: DiaryEntry
+  dayEntries: DiaryEntry[]
   tagTree: DiaryTagTreeNode[]
   getEntry: (dateKey: string) => DiaryEntry
+  onSelectEntry: (entryId: string) => void
+  onAddEntry: () => void | Promise<void>
+  onDeleteEntry: (entryId: string) => void | Promise<void>
   onChange: (
     patch: Partial<
       Pick<
@@ -95,8 +113,12 @@ function DayPreviewCard({
 export function DiaryDayEditor({
   dateKey,
   entry,
+  dayEntries,
   tagTree,
   getEntry,
+  onSelectEntry,
+  onAddEntry,
+  onDeleteEntry,
   onChange,
   onTagsChange,
   onNavigateDate,
@@ -141,7 +163,7 @@ export function DiaryDayEditor({
     setBodyImages(entry.bodyImages ?? [])
     pendingTitle.current = entry.title
     pendingBody.current = entry.body
-  }, [entry.dateKey, entry.title, entry.body, entry.bodyImages])
+  }, [entry.id, entry.dateKey, entry.title, entry.body, entry.bodyImages])
 
   useEffect(() => {
     const el = scrollerRef.current
@@ -295,6 +317,55 @@ export function DiaryDayEditor({
                 Scroll for other days
                 <ChevronDown size={12} />
               </p>
+              {dayEntries.length > 0 && (
+                <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                  {dayEntries.map((dayEntry, index) => {
+                    const active = dayEntry.id === entry.id
+                    return (
+                      <button
+                        key={dayEntry.id}
+                        type="button"
+                        onClick={() => {
+                          if (active) return
+                          flushPending()
+                          onSelectEntry(dayEntry.id)
+                        }}
+                        className={`max-w-[160px] truncate rounded-full px-3 py-1 text-[11px] font-medium ${
+                          active
+                            ? 'bg-[#FF2D55] text-white'
+                            : 'bg-[#F2F2F7] text-[#636366] hover:bg-[#E8E8ED]'
+                        }`}
+                      >
+                        {noteTabLabel(dayEntry, index)}
+                      </button>
+                    )
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      flushPending()
+                      void onAddEntry()
+                    }}
+                    className="inline-flex items-center gap-0.5 rounded-full bg-[#F2F2F7] px-2.5 py-1 text-[11px] font-medium text-[#007AFF] hover:bg-[#E8E8ED]"
+                  >
+                    <Plus size={12} />
+                    Another note
+                  </button>
+                  {dayEntries.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        flushPending()
+                        void onDeleteEntry(entry.id)
+                      }}
+                      className="inline-flex items-center gap-0.5 rounded-full px-2.5 py-1 text-[11px] font-medium text-[#FF3B30] hover:bg-[#FF3B30]/10"
+                    >
+                      <Trash2 size={12} />
+                      Delete note
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
             <button
               type="button"

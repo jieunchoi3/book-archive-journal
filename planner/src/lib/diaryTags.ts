@@ -88,9 +88,12 @@ export function entryMatchesTagFilter(entry: DiaryEntry, filter: DiaryTagFilter)
 }
 
 export function buildDiaryTagTree(
-  entries: Record<string, DiaryEntry>,
+  entries: DiaryEntry[] | Record<string, DiaryEntry | DiaryEntry[]>,
   savedFolders: DiaryTagFolder[],
 ): DiaryTagTreeNode[] {
+  const entryList: DiaryEntry[] = Array.isArray(entries)
+    ? entries
+    : Object.values(entries).flatMap((value) => (Array.isArray(value) ? value : [value]))
   const mains = new Map<
     string,
     { entryCount: number; subs: Map<string, number> }
@@ -112,7 +115,7 @@ export function buildDiaryTagTree(
     if (sub && !main.subs.has(sub)) main.subs.set(sub, 0)
   }
 
-  for (const entry of Object.values(entries)) {
+  for (const entry of entryList) {
     if (!entryHasDiaryContent(entry)) continue
     const folders = getEntryTagFolders(entry)
     if (!folders.length) continue

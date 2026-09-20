@@ -11,9 +11,9 @@ import { parseDateKey } from '../lib/weekUtils'
 type Props = {
   year: number
   month: number
-  entriesByDate: Record<string, DiaryEntry>
-  ensureHydrated: (dateKey: string) => Promise<DiaryEntry>
-  onOpenDay: (dateKey: string) => void
+  entriesByDate: Record<string, DiaryEntry[]>
+  ensureHydrated: (entryId: string) => Promise<DiaryEntry>
+  onOpenDay: (dateKey: string, entryId: string) => void
 }
 
 function pageImageUrl(entry: DiaryEntry | null | undefined): string | null {
@@ -24,16 +24,17 @@ function pageImageUrl(entry: DiaryEntry | null | undefined): string | null {
 function buildMonthPages(
   year: number,
   month: number,
-  entriesByDate: Record<string, DiaryEntry>,
+  entriesByDate: Record<string, DiaryEntry[]>,
 ): DiaryEntry[] {
   const daysInMonth = new Date(year, month + 1, 0).getDate()
   const pages: DiaryEntry[] = []
   for (let day = 1; day <= daysInMonth; day++) {
     const dateKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-    const entry = entriesByDate[dateKey]
-    if (!entry) continue
-    if (isDiaryEntryEmpty(entry) && !diaryEntryHasPhoto(entry)) continue
-    pages.push(entry)
+    const list = entriesByDate[dateKey] ?? []
+    for (const entry of list) {
+      if (isDiaryEntryEmpty(entry) && !diaryEntryHasPhoto(entry)) continue
+      pages.push(entry)
+    }
   }
   return pages
 }
@@ -68,15 +69,15 @@ export function DiaryFlipBook({
   const right = pages[spreadIndex * 2 + 1] ?? null
 
   useEffect(() => {
-    const keys = [left?.dateKey, right?.dateKey].filter(Boolean) as string[]
-    const neighborLeft = pages[spreadIndex * 2 - 1]?.dateKey
-    const neighborRight = pages[spreadIndex * 2 + 2]?.dateKey
-    if (neighborLeft) keys.push(neighborLeft)
-    if (neighborRight) keys.push(neighborRight)
-    for (const key of keys) {
-      void ensureHydrated(key)
+    const ids = [left?.id, right?.id].filter(Boolean) as string[]
+    const neighborLeft = pages[spreadIndex * 2 - 1]?.id
+    const neighborRight = pages[spreadIndex * 2 + 2]?.id
+    if (neighborLeft) ids.push(neighborLeft)
+    if (neighborRight) ids.push(neighborRight)
+    for (const id of ids) {
+      void ensureHydrated(id)
     }
-  }, [left?.dateKey, right?.dateKey, pages, spreadIndex, ensureHydrated])
+  }, [left?.id, right?.id, pages, spreadIndex, ensureHydrated])
 
   const go = useCallback(
     (dir: 'next' | 'prev') => {
@@ -169,12 +170,12 @@ export function DiaryFlipBook({
           <FlipPage
             entry={left}
             side="left"
-            onOpen={left ? () => onOpenDay(left.dateKey) : undefined}
+            onOpen={left ? () => onOpenDay(left.dateKey, left.id) : undefined}
           />
           <FlipPage
             entry={right}
             side="right"
-            onOpen={right ? () => onOpenDay(right.dateKey) : undefined}
+            onOpen={right ? () => onOpenDay(right.dateKey, right.id) : undefined}
           />
         </div>
       </div>

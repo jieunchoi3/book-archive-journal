@@ -10,7 +10,7 @@ import {
 interface DiaryTaggedEntriesListProps {
   label: string
   entries: DiaryEntry[]
-  onOpenDay: (dateKey: string) => void
+  onOpenDay: (entry: DiaryEntry) => void
 }
 
 export function DiaryTaggedEntriesList({
@@ -49,9 +49,9 @@ export function DiaryTaggedEntriesList({
 
           return (
             <button
-              key={entry.dateKey}
+              key={entry.id}
               type="button"
-              onClick={() => onOpenDay(entry.dateKey)}
+              onClick={() => onOpenDay(entry)}
               className="overflow-hidden rounded-2xl border border-hairline bg-white text-left shadow-sm transition hover:shadow-md"
             >
               <div className="relative aspect-[4/3] bg-[#F2F2F7]">
