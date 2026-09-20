@@ -6,7 +6,6 @@ import {
   Camera,
   Compass,
   Mail,
-  Home,
   Sticker,
   Wallet,
 } from 'lucide-react'
@@ -20,7 +19,6 @@ export type AppView =
   | 'monthly'
   | 'weekly'
   | 'compass'
-  | 'relations'
 
 interface BottomNavProps {
   active: AppView
@@ -30,7 +28,7 @@ interface BottomNavProps {
 }
 
 export function BottomNav({ active, onChange, badges }: BottomNavProps) {
-  const transparent = active === 'taste' || active === 'relations'
+  const transparent = active === 'taste'
 
   return (
     <nav
@@ -95,14 +93,6 @@ export function BottomNav({ active, onChange, badges }: BottomNavProps) {
           active={active === 'weekly'}
           badge={badges?.weekly}
           onClick={() => onChange('weekly')}
-          light={transparent}
-        />
-        <NavButton
-          label="Room"
-          icon={<Home size={20} />}
-          active={active === 'relations'}
-          badge={badges?.relations}
-          onClick={() => onChange('relations')}
           light={transparent}
         />
         <NavButton
