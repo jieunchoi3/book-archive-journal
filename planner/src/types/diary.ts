@@ -1,3 +1,5 @@
+import { generateId } from '../lib/weekUtils'
+
 export interface DiaryPoint {
   x: number
   y: number
@@ -38,6 +40,8 @@ export interface DiaryTagFolder {
 }
 
 export interface DiaryEntry {
+  /** Stable id per note (multiple notes can share the same dateKey). */
+  id: string
   dateKey: string
   title: string
   body: string
@@ -89,8 +93,30 @@ export interface DiaryTagTreeNode {
   subTags: { name: string; count: number }[]
 }
 
-export function emptyDiaryEntry(dateKey: string): DiaryEntry {
+export function ensureDiaryEntryId(entry: DiaryEntry): DiaryEntry {
+  if (entry.id?.trim()) return entry
+  return { ...entry, id: generateId() }
+}
+
+/** Grid / month preview: prefer photo, then latest update. */
+export function pickPrimaryDiaryEntry(
+  entries: DiaryEntry[] | undefined,
+): DiaryEntry | undefined {
+  if (!entries?.length) return undefined
+  const withContent = entries.filter((e) => !isDiaryEntryEmpty(e) || diaryEntryHasPhoto(e))
+  const pool = withContent.length ? withContent : entries
+  const withPhoto = pool.filter((e) => diaryEntryHasPhoto(e))
+  const ranked = (withPhoto.length ? withPhoto : pool).slice().sort((a, b) => {
+    const ta = Date.parse(a.updatedAt) || 0
+    const tb = Date.parse(b.updatedAt) || 0
+    return tb - ta
+  })
+  return ranked[0]
+}
+
+export function emptyDiaryEntry(dateKey: string, id?: string): DiaryEntry {
   return {
+    id: id ?? generateId(),
     dateKey,
     title: '',
     body: '',

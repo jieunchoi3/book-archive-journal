@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { BookHeart, BookOpen, ChevronLeft, ChevronRight, Hash, LayoutGrid, Wallet, X } from 'lucide-react'
 import { useDiary } from '../hooks/useDiary'
 import type { ExpenseActions } from '../hooks/useExpenses'
@@ -23,6 +23,7 @@ import {
   diaryEntryHasPhoto,
   diaryGridImageUrl,
   isDiaryEntryEmpty,
+  pickPrimaryDiaryEntry,
   type DiaryEntry,
   type DiaryTagFilter,
   type DiaryTagFolder,
@@ -51,16 +52,21 @@ export function DiaryView({ expenses }: DiaryViewProps) {
     month,
     setViewMonth,
     entriesByDate,
+    getEntriesForDay,
     getEntry,
+    getEntryById,
     ensureHydrated,
     upsertEntry,
+    createEntry,
+    deleteEntry,
     loading,
     syncError,
     refreshMonth,
   } = diary
   const { user } = useAuth()
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null)
-  const [searchIndex, setSearchIndex] = useState<Record<string, DiaryEntry>>({})
+  const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null)
+  const [searchIndex, setSearchIndex] = useState<DiaryEntry[]>([])
   const [tagFolders, setTagFolders] = useState<DiaryTagFolder[]>([])
   const [tagFilter, setTagFilter] = useState<DiaryTagFilter>({ type: 'all' })
   const [viewMode, setViewMode] = useState<DiaryViewMode>(() => {
@@ -95,10 +101,14 @@ export function DiaryView({ expenses }: DiaryViewProps) {
     }
   }, [user.id, entriesByDate])
 
-  const allEntries = useMemo(
-    () => ({ ...searchIndex, ...entriesByDate }),
-    [searchIndex, entriesByDate],
-  )
+  const allEntries = useMemo(() => {
+    const byId = new Map<string, DiaryEntry>()
+    for (const entry of searchIndex) byId.set(entry.id, entry)
+    for (const list of Object.values(entriesByDate)) {
+      for (const entry of list) byId.set(entry.id, entry)
+    }
+    return [...byId.values()]
+  }, [searchIndex, entriesByDate])
 
   const tagTree = useMemo(
     () => buildDiaryTagTree(allEntries, tagFolders),
@@ -107,10 +117,29 @@ export function DiaryView({ expenses }: DiaryViewProps) {
 
   const filteredEntries = useMemo(() => {
     if (tagFilter.type === 'all') return []
-    return Object.values(allEntries).filter(
+    return allEntries.filter(
       (entry) => entryHasDiaryContent(entry) && entryMatchesTagFilter(entry, tagFilter),
     )
   }, [allEntries, tagFilter])
+
+  const openDay = useCallback(
+    async (dateKey: string, entryId?: string) => {
+      setSelectedDateKey(dateKey)
+      if (entryId) {
+        setSelectedEntryId(entryId)
+        return
+      }
+      const existing = getEntriesForDay(dateKey)
+      if (existing.length === 0) {
+        const created = await createEntry(dateKey)
+        setSelectedEntryId(created.id)
+        return
+      }
+      const primary = pickPrimaryDiaryEntry(existing) ?? existing[0]
+      setSelectedEntryId(primary.id)
+    },
+    [createEntry, getEntriesForDay],
+  )
 
   const handleCreateFolder = (folder: DiaryTagFolder) => {
     void saveDiaryTagFolder(user.id, folder).then(setTagFolders)
@@ -179,7 +208,7 @@ export function DiaryView({ expenses }: DiaryViewProps) {
         })
         const snippet = e.body.trim().replace(/\s+/g, ' ').slice(0, 80)
         return {
-          id: e.dateKey,
+          id: e.id,
           title: e.title.trim() || (diaryEntryHasPhoto(e) ? 'Photo diary' : 'Diary entry'),
           subtitle: snippet || label,
           meta: label,
@@ -211,9 +240,9 @@ export function DiaryView({ expenses }: DiaryViewProps) {
   }, [viewMode])
 
   useEffect(() => {
-    if (!selectedDateKey) return
-    void ensureHydrated(selectedDateKey)
-  }, [selectedDateKey, ensureHydrated])
+    if (!selectedEntryId) return
+    void ensureHydrated(selectedEntryId)
+  }, [selectedEntryId, ensureHydrated])
 
   const weeks = useMemo(() => getMonthGrid(year, month), [year, month])
   const todayKey = getTodayKey()
@@ -238,10 +267,15 @@ export function DiaryView({ expenses }: DiaryViewProps) {
   const goToday = () => {
     const now = new Date()
     setViewMonth(now.getFullYear(), now.getMonth())
-    setSelectedDateKey(getTodayKey())
+    void openDay(getTodayKey())
   }
 
-  const selectedEntry = selectedDateKey ? getEntry(selectedDateKey) : null
+  const selectedEntry =
+    selectedEntryId != null
+      ? getEntryById(selectedEntryId) ??
+        (selectedDateKey ? pickPrimaryDiaryEntry(getEntriesForDay(selectedDateKey)) : null)
+      : null
+  const dayEntries = selectedDateKey ? getEntriesForDay(selectedDateKey) : []
 
   return (
     <div className="min-h-screen px-3 py-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:px-4 sm:py-6 sm:pb-24 lg:px-5">
@@ -337,9 +371,11 @@ export function DiaryView({ expenses }: DiaryViewProps) {
             suggestions={searchSuggestions}
             accentClassName="text-[#FF2D55]"
             onSelect={(s) => {
-              const d = parseDateKey(s.id)
+              const entry = allEntries.find((e) => e.id === s.id)
+              if (!entry) return
+              const d = parseDateKey(entry.dateKey)
               setViewMonth(d.getFullYear(), d.getMonth())
-              setSelectedDateKey(s.id)
+              void openDay(entry.dateKey, entry.id)
               setTagFilter({ type: 'all' })
             }}
           />
@@ -396,10 +432,10 @@ export function DiaryView({ expenses }: DiaryViewProps) {
           <DiaryTaggedEntriesList
             label={filterLabel(tagFilter)}
             entries={filteredEntries}
-            onOpenDay={(dateKey) => {
-              const d = parseDateKey(dateKey)
+            onOpenDay={(entry) => {
+              const d = parseDateKey(entry.dateKey)
               setViewMonth(d.getFullYear(), d.getMonth())
-              setSelectedDateKey(dateKey)
+              void openDay(entry.dateKey, entry.id)
             }}
           />
         ) : (
@@ -423,7 +459,7 @@ export function DiaryView({ expenses }: DiaryViewProps) {
             month={month}
             entriesByDate={entriesByDate}
             ensureHydrated={ensureHydrated}
-            onOpenDay={setSelectedDateKey}
+            onOpenDay={(dateKey, entryId) => void openDay(dateKey, entryId)}
           />
         ) : (
         <div className="overflow-hidden rounded-2xl border border-hairline bg-white shadow-sm">
@@ -442,8 +478,11 @@ export function DiaryView({ expenses }: DiaryViewProps) {
             {weeks.map((week) => (
               <div key={week[0].dateKey} className="grid grid-cols-7 divide-x divide-hairline">
                 {week.map(({ dateKey, inMonth }) => {
-                  const entry = entriesByDate[dateKey]
-                  const hasContent = entry && !isDiaryEntryEmpty(entry)
+                  const dayList = entriesByDate[dateKey]
+                  const entry = pickPrimaryDiaryEntry(dayList)
+                  const noteCount = dayList?.length ?? 0
+                  const hasContent =
+                    dayList?.some((e) => !isDiaryEntryEmpty(e) || diaryEntryHasPhoto(e)) ?? false
                   const isToday = dateKey === todayKey
                   const dayNum = parseDateKey(dateKey).getDate()
                   const spent = expenses.spentByDate[dateKey] ?? 0
@@ -462,7 +501,7 @@ export function DiaryView({ expenses }: DiaryViewProps) {
                     <button
                       key={dateKey}
                       type="button"
-                      onClick={() => setSelectedDateKey(dateKey)}
+                      onClick={() => void openDay(dateKey)}
                       className={`group relative flex aspect-square flex-col overflow-hidden text-left transition-colors ${
                         !inMonth ? 'bg-[#FAFAFA]/70' : 'bg-white hover:bg-[#FAFAFA]'
                       } ${selectedDateKey === dateKey ? 'ring-2 ring-inset ring-[#FF2D55]/45' : ''}`}
@@ -541,7 +580,12 @@ export function DiaryView({ expenses }: DiaryViewProps) {
                         {dayNum}
                       </span>
 
-                      {hasContent && !showPhoto && !showHeat && (
+                      {noteCount > 1 && (
+                        <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#FF2D55] px-1 text-[9px] font-bold tabular-nums text-white">
+                          {noteCount}
+                        </span>
+                      )}
+                      {hasContent && noteCount <= 1 && !showPhoto && !showHeat && (
                         <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[#FF2D55]" />
                       )}
                       {heatMode && hasPhoto && (
@@ -579,22 +623,42 @@ export function DiaryView({ expenses }: DiaryViewProps) {
         </div>
       </div>
 
-      {selectedDateKey && selectedEntry && (
+      {selectedDateKey && selectedEntry && selectedEntryId && (
         <DiaryDayEditor
           dateKey={selectedDateKey}
           entry={selectedEntry}
+          dayEntries={dayEntries}
           tagTree={tagTree}
           getEntry={getEntry}
+          onSelectEntry={(entryId) => setSelectedEntryId(entryId)}
+          onAddEntry={async () => {
+            const created = await createEntry(selectedDateKey)
+            setSelectedEntryId(created.id)
+          }}
+          onDeleteEntry={async (entryId) => {
+            if (!window.confirm('Delete this note? This cannot be undone.')) return
+            const remaining = dayEntries.filter((e) => e.id !== entryId)
+            await deleteEntry(entryId)
+            if (remaining.length) {
+              setSelectedEntryId(remaining[0].id)
+            } else {
+              setSelectedDateKey(null)
+              setSelectedEntryId(null)
+            }
+          }}
           onChange={(patch) => {
-            void upsertEntry(selectedDateKey, patch)
+            void upsertEntry(selectedEntryId, patch)
           }}
           onTagsChange={handleTagsChange}
           onNavigateDate={(nextKey) => {
             const d = parseDateKey(nextKey)
             setViewMonth(d.getFullYear(), d.getMonth())
-            setSelectedDateKey(nextKey)
+            void openDay(nextKey)
           }}
-          onClose={() => setSelectedDateKey(null)}
+          onClose={() => {
+            setSelectedDateKey(null)
+            setSelectedEntryId(null)
+          }}
         />
       )}
     </div>

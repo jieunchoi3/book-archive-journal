@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronDown, ChevronUp, ImagePlus, Pencil, Trash2, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronDown, ChevronUp, ImagePlus, Pencil, Plus, Trash2, X } from 'lucide-react'
+import { formatDiaryTagLabel, getEntryTagFolders } from '../lib/diaryTags'
+import { isDiaryEntryEmpty } from '../types/diary'
 import type {
   DiaryBodyImage,
   DiaryEntry,
@@ -14,11 +16,27 @@ import { handleClipboardImagePaste } from '../lib/clipboardImage'
 import { DiaryPhotoEditor } from './DiaryPhotoEditor'
 import { DiaryTagFields } from './DiaryTagFields'
 
+function noteTabLabel(entry: DiaryEntry, index: number): string {
+  const title = entry.title.trim()
+  if (title) return title.length > 22 ? `${title.slice(0, 22)}…` : title
+  const tags = getEntryTagFolders(entry)
+  if (tags[0]?.mainTag) {
+    const label = formatDiaryTagLabel(tags[0].mainTag)
+    return label.length > 22 ? `${label.slice(0, 22)}…` : label
+  }
+  if (!isDiaryEntryEmpty(entry)) return `Note ${index + 1}`
+  return `New note ${index + 1}`
+}
+
 interface DiaryDayEditorProps {
   dateKey: string
   entry: DiaryEntry
+  dayEntries: DiaryEntry[]
   tagTree: DiaryTagTreeNode[]
   getEntry: (dateKey: string) => DiaryEntry
+  onSelectEntry: (entryId: string) => void
+  onAddEntry: () => void | Promise<void>
+  onDeleteEntry: (entryId: string) => void | Promise<void>
   onChange: (
     patch: Partial<
       Pick<
@@ -95,8 +113,12 @@ function DayPreviewCard({
 export function DiaryDayEditor({
   dateKey,
   entry,
+  dayEntries,
   tagTree,
   getEntry,
+  onSelectEntry,
+  onAddEntry,
+  onDeleteEntry,
   onChange,
   onTagsChange,
   onNavigateDate,
@@ -114,6 +136,11 @@ export function DiaryDayEditor({
   const navigatingRef = useRef(false)
   const pendingTitle = useRef(entry.title)
   const pendingBody = useRef(entry.body)
+
+  const notesForDay = useMemo(() => {
+    if (dayEntries.length > 0) return dayEntries
+    return [entry]
+  }, [dayEntries, entry])
 
   const prevKey = shiftDateKey(dateKey, -1)
   const nextKey = shiftDateKey(dateKey, 1)
@@ -141,7 +168,7 @@ export function DiaryDayEditor({
     setBodyImages(entry.bodyImages ?? [])
     pendingTitle.current = entry.title
     pendingBody.current = entry.body
-  }, [entry.dateKey, entry.title, entry.body, entry.bodyImages])
+  }, [entry.id, entry.dateKey, entry.title, entry.body, entry.bodyImages])
 
   useEffect(() => {
     const el = scrollerRef.current
@@ -281,8 +308,8 @@ export function DiaryDayEditor({
           aria-modal="true"
           aria-labelledby="diary-day-title"
         >
-          <header className="flex shrink-0 items-start justify-between border-b border-hairline px-5 py-4 sm:px-6">
-            <div>
+          <header className="flex shrink-0 items-start justify-between gap-3 border-b border-hairline px-5 py-4 sm:px-6">
+            <div className="min-w-0 flex-1">
               <p className="text-[11px] font-medium uppercase tracking-wide text-muted">Diary</p>
               <h2
                 id="diary-day-title"
@@ -295,18 +322,72 @@ export function DiaryDayEditor({
                 Scroll for other days
                 <ChevronDown size={12} />
               </p>
+              <p className="mt-2 text-[12px] text-muted">
+                {notesForDay.length === 1
+                  ? 'One note for this day — add another for reflections, travel, etc.'
+                  : `${notesForDay.length} notes for this day — switch tabs or add another.`}
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  {notesForDay.map((dayEntry, index) => {
+                    const active = dayEntry.id === entry.id
+                    return (
+                      <button
+                        key={dayEntry.id}
+                        type="button"
+                        onClick={() => {
+                          if (active) return
+                          flushPending()
+                          onSelectEntry(dayEntry.id)
+                        }}
+                        className={`max-w-[160px] truncate rounded-full px-3 py-1 text-[11px] font-medium ${
+                          active
+                            ? 'bg-[#FF2D55] text-white'
+                            : 'bg-[#F2F2F7] text-[#636366] hover:bg-[#E8E8ED]'
+                        }`}
+                      >
+                        {noteTabLabel(dayEntry, index)}
+                      </button>
+                    )
+                  })}
+                  {notesForDay.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        flushPending()
+                        void onDeleteEntry(entry.id)
+                      }}
+                      className="inline-flex items-center gap-0.5 rounded-full px-2.5 py-1 text-[11px] font-medium text-[#FF3B30] hover:bg-[#FF3B30]/10"
+                    >
+                      <Trash2 size={12} />
+                      Delete note
+                    </button>
+                  )}
+                </div>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                flushPending()
-                onClose()
-              }}
-              className="rounded-lg p-1.5 text-muted hover:bg-[#F2F2F7]"
-              aria-label="Close"
-            >
-              <X size={18} />
-            </button>
+            <div className="flex shrink-0 flex-col items-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  flushPending()
+                  void onAddEntry()
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-[#FF2D55] px-3.5 py-2 text-[12px] font-semibold text-white shadow-sm hover:bg-[#E0264A]"
+              >
+                <Plus size={15} strokeWidth={2.5} />
+                Add another note
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  flushPending()
+                  onClose()
+                }}
+                className="rounded-lg p-1.5 text-muted hover:bg-[#F2F2F7]"
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
           </header>
 
           <div

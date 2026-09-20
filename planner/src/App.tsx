@@ -17,6 +17,9 @@ import { ExpenseView } from './components/ExpenseView'
 import { SnapView } from './components/SnapView'
 import { TasteStickerView } from './components/TasteStickerView'
 import { CompassView } from './components/CompassView'
+import { MailboxView } from './components/MailboxView'
+import { useMailbox } from './hooks/useMailbox'
+import { useRoom } from './hooks/useRoom'
 import { BottomNav, type AppView } from './components/BottomNav'
 import type { CompassRoute } from './types/compass'
 import { DAY_KEYS, type DayKey } from './types/planner'
@@ -48,6 +51,8 @@ function AppContent() {
   const snap = useSnapBookings(snapExpenseBridge)
   const linkedApps = useLinkedApps()
   const compass = useCompass()
+  const mailbox = useMailbox()
+  const room = useRoom()
 
   const openCompassAsk = (questionId?: string) => {
     setCompassRoute(
@@ -78,9 +83,11 @@ function AppContent() {
     <>
       <ImportLocalDataBanner />
       {view === 'relations' ? (
-        <RelationsView />
+        <RelationsView room={room} />
       ) : view === 'diary' ? (
         <DiaryView expenses={expenses} />
+      ) : view === 'mailbox' ? (
+        <MailboxView mailbox={mailbox} />
       ) : view === 'expenses' ? (
         <ExpenseView expenses={expenses} />
       ) : view === 'snap' ? (
@@ -122,6 +129,7 @@ function AppContent() {
           expenses: expenses.missingLogDays.length,
           snap: snap.unpaidCount,
           compass: compass.badgeCount,
+          mailbox: mailbox.unreadCount,
         }}
       />
     </>

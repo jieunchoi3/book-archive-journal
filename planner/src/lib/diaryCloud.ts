@@ -28,6 +28,7 @@ type CloudBodyImage = {
 
 type DiaryRow = {
   user_id: string
+  entry_id: string
   date_key: string | Date
   title: string
   body: string
@@ -42,20 +43,29 @@ type DiaryRow = {
   updated_at: string
 }
 
-function layerPath(userId: string, dateKey: string, layerId: string) {
-  return `${userId}/${dateKey}/layer-${layerId}.jpg`
+function mediaDir(userId: string, entryId: string) {
+  return `${userId}/${entryId}`
 }
 
-function bodyImagePath(userId: string, dateKey: string, imageId: string) {
-  return `${userId}/${dateKey}/body-${imageId}.jpg`
+function layerPath(userId: string, entryId: string, layerId: string) {
+  return `${mediaDir(userId, entryId)}/layer-${layerId}.jpg`
 }
 
-function coverPath(userId: string, dateKey: string) {
-  return `${userId}/${dateKey}/cover.jpg`
+function bodyImagePath(userId: string, entryId: string, imageId: string) {
+  return `${mediaDir(userId, entryId)}/body-${imageId}.jpg`
 }
 
-function thumbPath(userId: string, dateKey: string) {
-  return `${userId}/${dateKey}/thumb.jpg`
+function coverPath(userId: string, entryId: string) {
+  return `${mediaDir(userId, entryId)}/cover.jpg`
+}
+
+function thumbPath(userId: string, entryId: string) {
+  return `${mediaDir(userId, entryId)}/thumb.jpg`
+}
+
+/** Legacy rows store media under date_key; keep using that folder when paths already exist. */
+function legacyMediaDir(userId: string, dateKey: string) {
+  return `${userId}/${dateKey}`
 }
 
 /** Derive thumb.jpg path next to an existing cover.jpg path. */
@@ -267,6 +277,7 @@ async function rowToEntry(
   const tagPatch = applyTagFoldersToEntry(legacyTags)
 
   return {
+    id: row.entry_id,
     dateKey,
     title: row.title ?? '',
     body: row.body ?? '',
@@ -287,7 +298,7 @@ export async function fetchDiaryEntriesForMonthCloud(
   userId: string,
   year: number,
   month: number,
-): Promise<Record<string, DiaryEntry>> {
+): Promise<Record<string, DiaryEntry[]>> {
   const start = `${year}-${String(month + 1).padStart(2, '0')}-01`
   const endDate = new Date(Date.UTC(year, month + 1, 0))
   const end = `${year}-${String(month + 1).padStart(2, '0')}-${String(endDate.getUTCDate()).padStart(2, '0')}`
@@ -314,7 +325,7 @@ export async function fetchDiaryEntriesForMonthCloud(
   }
   const urlMap = await signedUrls(paths)
 
-  const out: Record<string, DiaryEntry> = {}
+  const out: Record<string, DiaryEntry[]> = {}
   await Promise.all(
     rows.map(async (row) => {
       const entry = await rowToEntry(row, {
@@ -334,22 +345,27 @@ export async function fetchDiaryEntriesForMonthCloud(
         hasLayers ||
         hasBodyImages
       ) {
-        out[entry.dateKey] = entry
+        const list = out[entry.dateKey] ?? []
+        list.push(entry)
+        out[entry.dateKey] = list
       }
     }),
   )
+  for (const key of Object.keys(out)) {
+    out[key].sort((a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0))
+  }
   return out
 }
 
 export async function fetchDiaryEntryCloud(
   userId: string,
-  dateKey: string,
+  entryId: string,
 ): Promise<DiaryEntry | null> {
   const { data, error } = await supabase
     .from('diary_entries')
     .select('*')
     .eq('user_id', userId)
-    .eq('date_key', dateKey)
+    .eq('entry_id', entryId)
     .maybeSingle()
 
   if (error) throw error
@@ -362,13 +378,34 @@ export async function fetchDiaryEntryCloud(
 
 export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): Promise<void> {
   if (isDiaryEntryEmpty(entry)) {
-    await deleteDiaryEntryCloud(userId, entry.dateKey)
+    await deleteDiaryEntryCloud(userId, entry.id)
     return
   }
 
+  const { data: existingRow } = await supabase
+    .from('diary_entries')
+    .select('layers, body_images, cover_path')
+    .eq('user_id', userId)
+    .eq('entry_id', entry.id)
+    .maybeSingle()
+  const prevRow = existingRow as {
+    layers?: CloudLayer[]
+    body_images?: CloudBodyImage[]
+    cover_path?: string | null
+  } | null
+  const prevLayers = prevRow?.layers ?? []
+  const prevBodyImages = prevRow?.body_images ?? []
+  const prevLayerById = new Map(prevLayers.map((l) => [l.id, l]))
+  const prevBodyById = new Map(prevBodyImages.map((i) => [i.id, i]))
+  const usesLegacyDir =
+    Boolean(prevRow?.cover_path?.includes(`/${entry.dateKey}/`)) ||
+    prevLayers.some((l) => l.path?.includes(`/${entry.dateKey}/`))
+  const storageKey = usesLegacyDir ? entry.dateKey : entry.id
+
   const cloudLayers: CloudLayer[] = []
   for (const layer of entry.layers) {
-    const path = layerPath(userId, entry.dateKey, layer.id)
+    const path =
+      prevLayerById.get(layer.id)?.path ?? layerPath(userId, storageKey, layer.id)
     if (layer.src.startsWith('data:')) {
       await uploadDataUrl(path, layer.src)
     } else if (layer.src.startsWith('http')) {
@@ -392,7 +429,8 @@ export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): 
 
   const cloudBodyImages: CloudBodyImage[] = []
   for (const image of entry.bodyImages ?? []) {
-    const path = bodyImagePath(userId, entry.dateKey, image.id)
+    const path =
+      prevBodyById.get(image.id)?.path ?? bodyImagePath(userId, storageKey, image.id)
     if (image.src.startsWith('data:')) {
       await uploadDataUrl(path, image.src)
     } else if (image.src.startsWith('http')) {
@@ -411,14 +449,16 @@ export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): 
     cloudBodyImages.push({ id: image.id, path })
   }
 
-  let cover: string | null = null
-  const thumb = thumbPath(userId, entry.dateKey)
+  let cover: string | null = prevRow?.cover_path ?? null
+  const thumb = cover
+    ? thumbPathFromCover(cover)
+    : thumbPath(userId, storageKey)
 
   if (entry.coverDataUrl?.startsWith('data:')) {
-    cover = coverPath(userId, entry.dateKey)
+    cover = cover ?? coverPath(userId, storageKey)
     await uploadDataUrl(cover, entry.coverDataUrl)
   } else if (entry.layers.length > 0 || (entry.canvasStrokes?.length ?? 0) > 0) {
-    cover = coverPath(userId, entry.dateKey)
+    cover = cover ?? coverPath(userId, storageKey)
     if (entry.coverDataUrl?.startsWith('http')) {
       try {
         const blob = await (await fetch(entry.coverDataUrl)).blob()
@@ -437,15 +477,6 @@ export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): 
     // Cover data URL is already small enough to re-encode client-side in useDiary.
   }
 
-  const { data: existing } = await supabase
-    .from('diary_entries')
-    .select('layers, body_images')
-    .eq('user_id', userId)
-    .eq('date_key', entry.dateKey)
-    .maybeSingle()
-  const prevRow = existing as { layers?: CloudLayer[]; body_images?: CloudBodyImage[] } | null
-  const prevLayers = prevRow?.layers ?? []
-  const prevBodyImages = prevRow?.body_images ?? []
   const nextLayerIds = new Set(cloudLayers.map((l) => l.id))
   const nextBodyImageIds = new Set(cloudBodyImages.map((i) => i.id))
   const orphanPaths = [
@@ -460,6 +491,7 @@ export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): 
   const { error } = await supabase.from('diary_entries').upsert(
     {
       user_id: userId,
+      entry_id: entry.id,
       date_key: entry.dateKey,
       title: entry.title,
       body: entry.body,
@@ -473,29 +505,32 @@ export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): 
       cover_path: cover,
       updated_at: entry.updatedAt || new Date().toISOString(),
     },
-    { onConflict: 'user_id,date_key' },
+    { onConflict: 'user_id,entry_id' },
   )
   if (error) throw error
 }
 
-export async function deleteDiaryEntryCloud(userId: string, dateKey: string): Promise<void> {
+export async function deleteDiaryEntryCloud(userId: string, entryId: string): Promise<void> {
   const { data: existing } = await supabase
     .from('diary_entries')
-    .select('layers, cover_path, body_images')
+    .select('layers, cover_path, body_images, date_key')
     .eq('user_id', userId)
-    .eq('date_key', dateKey)
+    .eq('entry_id', entryId)
     .maybeSingle()
 
   const row = existing as {
     layers?: CloudLayer[]
     cover_path?: string | null
     body_images?: CloudBodyImage[]
+    date_key?: string
   } | null
+  const dateKey = row?.date_key ? normalizeDateKey(row.date_key) : entryId
   const paths = [
     ...(row?.layers ?? []).map((l) => l.path),
     ...(row?.body_images ?? []).map((i) => i.path),
     ...(row?.cover_path ? [row.cover_path, thumbPathFromCover(row.cover_path)] : []),
-    thumbPath(userId, dateKey),
+    thumbPath(userId, entryId),
+    `${legacyMediaDir(userId, dateKey)}/thumb.jpg`,
   ]
   await removePaths(paths)
 
@@ -503,6 +538,6 @@ export async function deleteDiaryEntryCloud(userId: string, dateKey: string): Pr
     .from('diary_entries')
     .delete()
     .eq('user_id', userId)
-    .eq('date_key', dateKey)
+    .eq('entry_id', entryId)
   if (error) throw error
 }

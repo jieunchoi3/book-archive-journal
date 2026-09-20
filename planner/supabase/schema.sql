@@ -141,6 +141,7 @@ create table if not exists planner.sidebar_notes (
 -- Photo diary (images in storage bucket diary-media; layers[].path)
 create table if not exists planner.diary_entries (
   user_id uuid not null references auth.users(id) on delete cascade,
+  entry_id uuid not null default gen_random_uuid(),
   date_key date not null,
   title text not null default '',
   body text not null default '',
@@ -153,10 +154,10 @@ create table if not exists planner.diary_entries (
   layers jsonb not null default '[]'::jsonb,
   cover_path text,
   updated_at timestamptz not null default now(),
-  primary key (user_id, date_key)
+  primary key (user_id, entry_id)
 );
 
-create index if not exists diary_entries_user_month_idx
+create index if not exists diary_entries_user_date_idx
   on planner.diary_entries (user_id, date_key);
 
 create index if not exists diary_entries_user_tags_idx
@@ -310,6 +311,122 @@ create policy "ld_answer_own" on planner.ld_answer
 grant all on planner.ld_snapshot to anon, authenticated, service_role;
 grant all on planner.ld_question to anon, authenticated, service_role;
 grant all on planner.ld_answer to anon, authenticated, service_role;
+
+-- Future Self Mailbox
+create table if not exists planner.mailbox_prompts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  body text not null,
+  cadence_days int not null check (cadence_days >= 1),
+  next_due_on date not null,
+  is_active boolean not null default true,
+  envelope_color text not null default '#E8D5C4',
+  created_at timestamptz not null default now()
+);
+
+create index if not exists mailbox_prompts_user_due_idx
+  on planner.mailbox_prompts (user_id, next_due_on);
+
+create table if not exists planner.mailbox_letters (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  kind text not null check (kind in ('scheduled_letter', 'prompt_answer')),
+  prompt_id uuid references planner.mailbox_prompts(id) on delete cascade,
+  body text not null,
+  written_on date not null,
+  deliver_on date not null,
+  opened_at timestamptz,
+  feeling smallint check (feeling is null or (feeling >= 1 and feeling <= 5)),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists mailbox_letters_user_deliver_idx
+  on planner.mailbox_letters (user_id, deliver_on);
+
+create index if not exists mailbox_letters_user_opened_idx
+  on planner.mailbox_letters (user_id, opened_at);
+
+create index if not exists mailbox_letters_prompt_written_idx
+  on planner.mailbox_letters (prompt_id, written_on desc);
+
+alter table planner.mailbox_prompts enable row level security;
+alter table planner.mailbox_letters enable row level security;
+
+create policy "mailbox_prompts_own" on planner.mailbox_prompts
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+create policy "mailbox_letters_own" on planner.mailbox_letters
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+grant all on planner.mailbox_prompts to anon, authenticated, service_role;
+grant all on planner.mailbox_letters to anon, authenticated, service_role;
+
+-- My Room
+create table if not exists planner.room_people (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  import_key text,
+  name text not null,
+  field_industry text not null default '',
+  how_we_met text not null default '',
+  mbti text not null default '',
+  location text not null default '',
+  note text not null default '',
+  met_on date,
+  last_contact_on date,
+  notion_compatibility text,
+  created_at timestamptz not null default now()
+);
+
+create unique index if not exists room_people_user_import_key_idx
+  on planner.room_people (user_id, import_key)
+  where import_key is not null;
+
+create table if not exists planner.room_events (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  person_id uuid not null references planner.room_people(id) on delete cascade,
+  effective_on date not null,
+  kind text not null,
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists planner.room_reflections (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  prompt_key text not null,
+  body text not null,
+  person_id uuid references planner.room_people(id) on delete set null,
+  written_on date not null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists planner.room_reminder_dismissals (
+  person_id uuid primary key references planner.room_people(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  snooze_until date,
+  dismissed_at timestamptz
+);
+
+alter table planner.room_people enable row level security;
+alter table planner.room_events enable row level security;
+alter table planner.room_reflections enable row level security;
+alter table planner.room_reminder_dismissals enable row level security;
+
+create policy "room_people_own" on planner.room_people
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "room_events_own" on planner.room_events
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "room_reflections_own" on planner.room_reflections
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "room_reminder_dismissals_own" on planner.room_reminder_dismissals
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+grant all on planner.room_people to anon, authenticated, service_role;
+grant all on planner.room_events to anon, authenticated, service_role;
+grant all on planner.room_reflections to anon, authenticated, service_role;
+grant all on planner.room_reminder_dismissals to anon, authenticated, service_role;
 
 -- ─── Compass Phase 2/3 ───────────────────────────────────────────────────────
 
