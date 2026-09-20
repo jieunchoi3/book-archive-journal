@@ -174,6 +174,11 @@ export function MailboxView({ mailbox }: MailboxViewProps) {
                     tilt={((i % 5) - 2) * 0.9}
                     dimmed
                     onClick={() => {}}
+                    onDelete={() => {
+                      if (window.confirm('Delete this sealed letter everywhere?')) {
+                        void mailbox.deleteLetter(letter.id)
+                      }
+                    }}
                   />
                 </li>
               ))}
@@ -187,6 +192,11 @@ export function MailboxView({ mailbox }: MailboxViewProps) {
                     tilt={((i % 4) - 1.5) * 1.1}
                     dimmed
                     onClick={() => setModal({ type: 'history', prompt })}
+                    onDelete={() => {
+                      if (window.confirm('Delete this question and all its answers everywhere?')) {
+                        void mailbox.deletePrompt(prompt.id)
+                      }
+                    }}
                   />
                 </li>
               ))}
@@ -242,6 +252,17 @@ export function MailboxView({ mailbox }: MailboxViewProps) {
           answers={mailbox.answersForPrompt(modal.prompt.id)}
           onClose={() => setModal({ type: 'none' })}
           onOpenAnswer={(letter) => setModal({ type: 'read_answer', letter })}
+          onDeletePrompt={() => {
+            if (window.confirm('Delete this question and all answers on all devices?')) {
+              void mailbox.deletePrompt(modal.prompt.id)
+              setModal({ type: 'none' })
+            }
+          }}
+          onDeleteAnswer={(letterId) => {
+            if (window.confirm('Delete this answer everywhere?')) {
+              void mailbox.deleteLetter(letterId)
+            }
+          }}
         />
       )}
     </div>
@@ -283,6 +304,7 @@ function MailPin({
   dimmed,
   onClick,
   onHistory,
+  onDelete,
 }: {
   title: string
   subtitle: string
@@ -292,6 +314,7 @@ function MailPin({
   dimmed?: boolean
   onClick: () => void
   onHistory?: () => void
+  onDelete?: () => void
 }) {
   const stamp =
     variant === 'letter' ? '✉' : variant === 'question' ? '?' : '🔒'
@@ -326,15 +349,26 @@ function MailPin({
                 {subtitle}
               </p>
             </button>
-            {onHistory && (
-              <button
-                type="button"
-                onClick={onHistory}
-                className="mt-2 text-[11px] font-medium tracking-wide text-[#A67C52] underline-offset-2 hover:underline"
-              >
-                Past answers
-              </button>
-            )}
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              {onHistory && (
+                <button
+                  type="button"
+                  onClick={onHistory}
+                  className="text-[11px] font-medium tracking-wide text-[#A67C52] underline-offset-2 hover:underline"
+                >
+                  Past answers
+                </button>
+              )}
+              {onDelete && (
+                <button
+                  type="button"
+                  onClick={onDelete}
+                  className="text-[11px] font-medium text-[#B42318] underline-offset-2 hover:underline"
+                >
+                  Delete
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>

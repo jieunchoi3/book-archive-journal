@@ -122,3 +122,18 @@ export async function deleteMailboxPromptCloud(promptId: string): Promise<void> 
   const { error } = await supabase.from('mailbox_prompts').delete().eq('id', promptId)
   if (error) throw error
 }
+
+export async function deleteMailboxLetterCloud(letterId: string): Promise<void> {
+  const { error } = await supabase.from('mailbox_letters').delete().eq('id', letterId)
+  if (error) throw error
+}
+
+/** Prompts before letters — letters reference prompt_id. */
+export async function syncMailboxToCloud(store: MailboxStore): Promise<void> {
+  for (const prompt of store.prompts) {
+    await upsertMailboxPromptCloud(prompt)
+  }
+  for (const letter of store.letters) {
+    await upsertMailboxLetterCloud(letter)
+  }
+}

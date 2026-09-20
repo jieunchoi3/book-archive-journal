@@ -8,6 +8,8 @@ interface MailboxThreadHistoryProps {
   answers: MailboxLetter[]
   onClose: () => void
   onOpenAnswer: (letter: MailboxLetter) => void
+  onDeletePrompt?: () => void
+  onDeleteAnswer?: (letterId: string) => void
 }
 
 export function MailboxThreadHistory({
@@ -15,6 +17,8 @@ export function MailboxThreadHistory({
   answers,
   onClose,
   onOpenAnswer,
+  onDeletePrompt,
+  onDeleteAnswer,
 }: MailboxThreadHistoryProps) {
   const [compareA, setCompareA] = useState<string | null>(null)
   const [compareB, setCompareB] = useState<string | null>(null)
@@ -56,9 +60,20 @@ export function MailboxThreadHistory({
               Select two to compare · {answers.length} {answers.length === 1 ? 'entry' : 'entries'}
             </p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-muted hover:bg-white">
-            <X size={18} />
-          </button>
+          <div className="flex flex-col items-end gap-1">
+            {onDeletePrompt && (
+              <button
+                type="button"
+                onClick={onDeletePrompt}
+                className="text-[11px] font-medium text-[#FF3B30]"
+              >
+                Delete question
+              </button>
+            )}
+            <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-muted hover:bg-white">
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {comparing ? (
@@ -94,12 +109,12 @@ export function MailboxThreadHistory({
             {answers.map((answer) => {
               const selected = compareA === answer.id || compareB === answer.id
               return (
-                <li key={answer.id}>
+                <li key={answer.id} className="flex gap-2">
                   <button
                     type="button"
                     onClick={() => toggleSelect(answer.id)}
                     onDoubleClick={() => onOpenAnswer(answer)}
-                    className={`w-full rounded-2xl px-4 py-3 text-left ring-1 transition ${
+                    className={`min-w-0 flex-1 rounded-2xl px-4 py-3 text-left ring-1 transition ${
                       selected
                         ? 'bg-[#007AFF]/10 ring-[#007AFF]/40'
                         : 'bg-white ring-hairline hover:shadow-sm'
@@ -115,6 +130,15 @@ export function MailboxThreadHistory({
                     </p>
                     <p className="mt-1 line-clamp-3 text-[14px] text-[#1C1C1E]">{answer.body}</p>
                   </button>
+                  {onDeleteAnswer && (
+                    <button
+                      type="button"
+                      onClick={() => onDeleteAnswer(answer.id)}
+                      className="shrink-0 self-center px-2 text-[11px] font-medium text-[#FF3B30]"
+                    >
+                      Delete
+                    </button>
+                  )}
                 </li>
               )
             })}
