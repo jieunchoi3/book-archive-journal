@@ -17,7 +17,9 @@ import { SnapView } from './components/SnapView'
 import { TasteStickerView } from './components/TasteStickerView'
 import { CompassView } from './components/CompassView'
 import { MailboxView } from './components/MailboxView'
+import { MyRoomView } from './components/myRoom/MyRoomView'
 import { useMailbox } from './hooks/useMailbox'
+import { useMyRoom } from './hooks/useMyRoom'
 import { BottomNav, type AppView } from './components/BottomNav'
 import type { CompassRoute } from './types/compass'
 import { DAY_KEYS, type DayKey } from './types/planner'
@@ -50,6 +52,7 @@ function AppContent() {
   const linkedApps = useLinkedApps()
   const compass = useCompass()
   const mailbox = useMailbox()
+  const myRoom = useMyRoom()
 
   const openCompassAsk = (questionId?: string) => {
     setCompassRoute(
@@ -89,6 +92,8 @@ function AppContent() {
         <SnapView snap={snap} />
       ) : view === 'taste' ? (
         <TasteStickerView />
+      ) : view === 'relations' ? (
+        <MyRoomView room={myRoom} />
       ) : view === 'compass' ? (
         <CompassView
           compass={compass}
