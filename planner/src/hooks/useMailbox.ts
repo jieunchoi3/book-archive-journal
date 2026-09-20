@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MailboxLetter, MailboxPrompt, MailboxStore } from '../types/mailbox'
 import { MAILBOX_ENVELOPE_COLORS } from '../types/mailbox'
-import { loadMailbox, loadMailboxLocal, persistMailbox, saveMailboxLocal } from '../lib/mailboxStorage'
+import {
+  deleteMailboxLetter,
+  deleteMailboxPrompt,
+  loadMailbox,
+  loadMailboxLocal,
+  markMailboxPendingUpload,
+  persistMailbox,
+  saveMailboxLocal,
+} from '../lib/mailboxStorage'
 import { addDays, todayKey } from '../types/compass'
 import { generateId } from '../lib/weekUtils'
 import { useAuth } from './useAuth'
@@ -34,6 +42,8 @@ export interface MailboxActions {
   submitPromptAnswer: (promptId: string, body: string, feeling?: number | null) => Promise<void>
   openScheduledLetter: (letterId: string) => Promise<void>
   deactivatePrompt: (promptId: string) => Promise<void>
+  deletePrompt: (promptId: string) => Promise<void>
+  deleteLetter: (letterId: string) => Promise<void>
   randomSurpriseLetter: () => MailboxLetter | null
 }
 
@@ -82,16 +92,25 @@ export function useMailbox(): MailboxActions {
   }, [refresh])
 
   useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') void refresh()
+    const flush = () => {
+      void persistMailbox(userId, storeRef.current).catch((e) =>
+        console.error('[mailbox] flush failed', e),
+      )
     }
-    document.addEventListener('visibilitychange', onVisible)
-    window.addEventListener('online', onVisible)
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flush()
+      else void refresh()
+    }
+    const onOnline = () => void refresh()
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('online', onOnline)
+    window.addEventListener('pagehide', flush)
     return () => {
-      document.removeEventListener('visibilitychange', onVisible)
-      window.removeEventListener('online', onVisible)
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('pagehide', flush)
     }
-  }, [refresh])
+  }, [refresh, userId])
 
   const today = todayKey()
 
@@ -160,8 +179,9 @@ export function useMailbox(): MailboxActions {
       const writtenOn = todayKey()
       const deliverOn = addDays(writtenOn, Math.max(1, input.deliverInDays))
       const now = new Date().toISOString()
+      const letterId = generateId()
       const letter: MailboxLetter = {
-        id: generateId(),
+        id: letterId,
         userId,
         kind: 'scheduled_letter',
         promptId: null,
@@ -172,6 +192,7 @@ export function useMailbox(): MailboxActions {
         feeling: null,
         createdAt: now,
       }
+      markMailboxPendingUpload(userId, [letterId])
       applyStore({ ...storeRef.current, letters: [...storeRef.current.letters, letter] })
     },
     [applyStore, userId],
@@ -191,6 +212,7 @@ export function useMailbox(): MailboxActions {
       const now = new Date().toISOString()
       const writtenOn = todayKey()
       const promptId = generateId()
+      const letterId = generateId()
       const cadence = Math.max(1, input.cadenceDays)
       const prompt: MailboxPrompt = {
         id: promptId,
@@ -203,7 +225,7 @@ export function useMailbox(): MailboxActions {
         createdAt: now,
       }
       const letter: MailboxLetter = {
-        id: generateId(),
+        id: letterId,
         userId,
         kind: 'prompt_answer',
         promptId,
@@ -214,6 +236,7 @@ export function useMailbox(): MailboxActions {
         feeling: input.feeling ?? null,
         createdAt: now,
       }
+      markMailboxPendingUpload(userId, [promptId, letterId])
       applyStore({
         prompts: [...storeRef.current.prompts, prompt],
         letters: [...storeRef.current.letters, letter],
@@ -230,8 +253,9 @@ export function useMailbox(): MailboxActions {
       if (!prompt) return
       const now = new Date().toISOString()
       const writtenOn = todayKey()
+      const letterId = generateId()
       const letter: MailboxLetter = {
-        id: generateId(),
+        id: letterId,
         userId,
         kind: 'prompt_answer',
         promptId,
@@ -242,6 +266,7 @@ export function useMailbox(): MailboxActions {
         feeling: feeling ?? null,
         createdAt: now,
       }
+      markMailboxPendingUpload(userId, [letterId])
       const nextPrompt: MailboxPrompt = {
         ...prompt,
         nextDueOn: addDays(writtenOn, prompt.cadenceDays),
@@ -282,6 +307,38 @@ export function useMailbox(): MailboxActions {
     [applyStore],
   )
 
+  const deletePrompt = useCallback(
+    async (promptId: string) => {
+      try {
+        await deleteMailboxPrompt(userId, promptId)
+        const next = loadMailboxLocal(userId)
+        storeRef.current = next
+        setStore(next)
+        setSyncError(null)
+      } catch (e) {
+        setSyncError(e instanceof Error ? e.message : 'Delete failed')
+        throw e
+      }
+    },
+    [userId],
+  )
+
+  const deleteLetter = useCallback(
+    async (letterId: string) => {
+      try {
+        await deleteMailboxLetter(userId, letterId)
+        const next = loadMailboxLocal(userId)
+        storeRef.current = next
+        setStore(next)
+        setSyncError(null)
+      } catch (e) {
+        setSyncError(e instanceof Error ? e.message : 'Delete failed')
+        throw e
+      }
+    },
+    [userId],
+  )
+
   const randomSurpriseLetter = useCallback((): MailboxLetter | null => {
     const pool = storeRef.current.letters.filter(
       (l) => l.openedAt || l.kind === 'prompt_answer',
@@ -308,6 +365,8 @@ export function useMailbox(): MailboxActions {
     submitPromptAnswer,
     openScheduledLetter,
     deactivatePrompt,
+    deletePrompt,
+    deleteLetter,
     randomSurpriseLetter,
   }
 }
