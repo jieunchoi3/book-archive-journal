@@ -19,6 +19,7 @@ import { TasteStickerView } from './components/TasteStickerView'
 import { CompassView } from './components/CompassView'
 import { MailboxView } from './components/MailboxView'
 import { useMailbox } from './hooks/useMailbox'
+import { useRoom } from './hooks/useRoom'
 import { BottomNav, type AppView } from './components/BottomNav'
 import type { CompassRoute } from './types/compass'
 import { DAY_KEYS, type DayKey } from './types/planner'
@@ -51,6 +52,7 @@ function AppContent() {
   const linkedApps = useLinkedApps()
   const compass = useCompass()
   const mailbox = useMailbox()
+  const room = useRoom()
 
   const openCompassAsk = (questionId?: string) => {
     setCompassRoute(
@@ -81,7 +83,7 @@ function AppContent() {
     <>
       <ImportLocalDataBanner />
       {view === 'relations' ? (
-        <RelationsView />
+        <RelationsView room={room} />
       ) : view === 'diary' ? (
         <DiaryView expenses={expenses} />
       ) : view === 'mailbox' ? (
