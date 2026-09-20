@@ -6,13 +6,12 @@ import {
   Camera,
   Compass,
   Mail,
+  Home,
   Sticker,
-  User,
   Wallet,
 } from 'lucide-react'
 
 export type AppView =
-  | 'relations'
   | 'diary'
   | 'mailbox'
   | 'expenses'
@@ -21,6 +20,7 @@ export type AppView =
   | 'monthly'
   | 'weekly'
   | 'compass'
+  | 'relations'
 
 interface BottomNavProps {
   active: AppView
@@ -30,7 +30,7 @@ interface BottomNavProps {
 }
 
 export function BottomNav({ active, onChange, badges }: BottomNavProps) {
-  const transparent = active === 'taste'
+  const transparent = active === 'taste' || active === 'relations'
 
   return (
     <nav
@@ -41,14 +41,6 @@ export function BottomNav({ active, onChange, badges }: BottomNavProps) {
       }`}
     >
       <div className="mx-auto flex max-w-xl justify-between gap-0.5 px-0.5 py-1.5 sm:justify-around sm:gap-0 sm:px-3 sm:py-2">
-        <NavButton
-          label="Relations"
-          icon={<User size={20} />}
-          active={active === 'relations'}
-          badge={badges?.relations}
-          onClick={() => onChange('relations')}
-          light={transparent}
-        />
         <NavButton
           label="Diary"
           icon={<BookHeart size={20} />}
@@ -103,6 +95,14 @@ export function BottomNav({ active, onChange, badges }: BottomNavProps) {
           active={active === 'weekly'}
           badge={badges?.weekly}
           onClick={() => onChange('weekly')}
+          light={transparent}
+        />
+        <NavButton
+          label="Room"
+          icon={<Home size={20} />}
+          active={active === 'relations'}
+          badge={badges?.relations}
+          onClick={() => onChange('relations')}
           light={transparent}
         />
         <NavButton
