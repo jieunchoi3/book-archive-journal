@@ -5,7 +5,7 @@ import type {
   DiaryStroke,
   DiaryTagFolder,
 } from '../types/diary'
-import { isDiaryEntryEmpty } from '../types/diary'
+import { diaryEntryHasPhoto, isDiaryEntryEmpty } from '../types/diary'
 import { applyTagFoldersToEntry, getEntryTagFolders, normalizeTagFolders } from './diaryTags'
 import { supabase } from './supabase'
 
@@ -376,23 +376,36 @@ export async function fetchDiaryEntryCloud(
   })
 }
 
-export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): Promise<void> {
-  if (isDiaryEntryEmpty(entry)) {
-    await deleteDiaryEntryCloud(userId, entry.id)
-    return
-  }
+type ExistingDiaryRow = {
+  layers?: CloudLayer[]
+  body_images?: CloudBodyImage[]
+  cover_path?: string | null
+}
 
+function cloudRowHasStoredMedia(row: ExistingDiaryRow | null | undefined): boolean {
+  if (!row) return false
+  if (row.cover_path) return true
+  return (row.layers?.length ?? 0) > 0 || (row.body_images?.length ?? 0) > 0
+}
+
+/** Cloud deletes only via explicit deleteDiaryEntry — never from an “empty-looking” autosave. */
+export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): Promise<void> {
   const { data: existingRow } = await supabase
     .from('diary_entries')
     .select('layers, body_images, cover_path')
     .eq('user_id', userId)
     .eq('entry_id', entry.id)
     .maybeSingle()
-  const prevRow = existingRow as {
-    layers?: CloudLayer[]
-    body_images?: CloudBodyImage[]
-    cover_path?: string | null
-  } | null
+  const prevRow = existingRow as ExistingDiaryRow | null
+
+  if (isDiaryEntryEmpty(entry) && !diaryEntryHasPhoto(entry)) {
+    if (cloudRowHasStoredMedia(prevRow)) {
+      console.warn('[diary] skipped cloud upsert: local entry looks empty but cloud still has media', entry.dateKey)
+      return
+    }
+    return
+  }
+
   const prevLayers = prevRow?.layers ?? []
   const prevBodyImages = prevRow?.body_images ?? []
   const prevLayerById = new Map(prevLayers.map((l) => [l.id, l]))

@@ -1,5 +1,5 @@
 import type { DiaryEntry } from '../types/diary'
-import { ensureDiaryEntryId, isDiaryEntryEmpty } from '../types/diary'
+import { diaryEntryHasPhoto, ensureDiaryEntryId, isDiaryEntryEmpty } from '../types/diary'
 import { downscaleToThumb } from './diaryImage'
 import {
   applyTagFoldersToEntry,
@@ -450,11 +450,17 @@ export async function saveDiaryEntry(userId: string, entry: DiaryEntry): Promise
   if (!isSupabaseConfigured) return
 
   try {
-    if (isDiaryEntryEmpty(toSave) && toSave.layers.length === 0) {
-      await deleteDiaryEntryCloud(userId, toSave.id)
-    } else {
-      await upsertDiaryEntryCloud(userId, toSave)
+    const looksEmpty = isDiaryEntryEmpty(toSave) && !diaryEntryHasPhoto(toSave)
+    if (looksEmpty) {
+      // Never delete cloud rows from debounced autosave. Re-hydrate local cache if cloud still has data.
+      const cloud = await fetchDiaryEntryCloud(userId, toSave.id)
+      if (cloud && (diaryEntryHasPhoto(cloud) || !isDiaryEntryEmpty(cloud))) {
+        const merged = preferLocalImages(cloud, toSave)
+        await saveDiaryEntryLocal(userId, merged)
+      }
+      return
     }
+    await upsertDiaryEntryCloud(userId, toSave)
   } catch (e) {
     console.error('[diary] cloud save failed', e)
     throw e
