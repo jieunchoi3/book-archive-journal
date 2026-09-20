@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp, ImagePlus, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { formatDiaryTagLabel, getEntryTagFolders } from '../lib/diaryTags'
 import { isDiaryEntryEmpty } from '../types/diary'
@@ -136,6 +136,11 @@ export function DiaryDayEditor({
   const navigatingRef = useRef(false)
   const pendingTitle = useRef(entry.title)
   const pendingBody = useRef(entry.body)
+
+  const notesForDay = useMemo(() => {
+    if (dayEntries.length > 0) return dayEntries
+    return [entry]
+  }, [dayEntries, entry])
 
   const prevKey = shiftDateKey(dateKey, -1)
   const nextKey = shiftDateKey(dateKey, 1)
@@ -317,9 +322,8 @@ export function DiaryDayEditor({
                 Scroll for other days
                 <ChevronDown size={12} />
               </p>
-              {dayEntries.length > 0 && (
-                <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                  {dayEntries.map((dayEntry, index) => {
+              <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                  {notesForDay.map((dayEntry, index) => {
                     const active = dayEntry.id === entry.id
                     return (
                       <button
@@ -351,7 +355,7 @@ export function DiaryDayEditor({
                     <Plus size={12} />
                     Another note
                   </button>
-                  {dayEntries.length > 1 && (
+                  {notesForDay.length > 1 && (
                     <button
                       type="button"
                       onClick={() => {
@@ -365,7 +369,6 @@ export function DiaryDayEditor({
                     </button>
                   )}
                 </div>
-              )}
             </div>
             <button
               type="button"
