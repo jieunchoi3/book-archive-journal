@@ -1,4 +1,5 @@
 import type { DayKey, WeeklyLog } from '../types/planner'
+import { weeklyLogHasContent } from './plannerLocalCache'
 
 /** Merge two week logs; `done` and one-off tasks union with OR on completion. */
 export function mergeWeeklyLogs(base: WeeklyLog, incoming: WeeklyLog): WeeklyLog {
@@ -60,4 +61,33 @@ export function mergeWeeklyLogs(base: WeeklyLog, incoming: WeeklyLog): WeeklyLog
   }
 
   return { weekStart: base.weekStart, days, oneOffByDate }
+}
+
+/**
+ * Pick the authoritative week log from cloud + local snapshots.
+ * Never prefer an empty cloud payload over local edits that failed to upload yet.
+ */
+export function resolveWeeklyLogSync(
+  cloud: WeeklyLog,
+  local: WeeklyLog | null | undefined,
+): { log: WeeklyLog; pushToCloud: boolean } {
+  if (!local || !weeklyLogHasContent(local)) {
+    return { log: cloud, pushToCloud: false }
+  }
+  if (!weeklyLogHasContent(cloud)) {
+    return { log: local, pushToCloud: true }
+  }
+  return { log: mergeWeeklyLogs(cloud, local), pushToCloud: true }
+}
+
+/** Combine persisted localStorage with the in-memory week (current tab). */
+export function mergeWeeklyLogSnapshots(
+  stored: WeeklyLog | null | undefined,
+  memory: WeeklyLog | null | undefined,
+): WeeklyLog | null {
+  if (!stored && !memory) return null
+  if (!stored || !weeklyLogHasContent(stored)) return memory ?? null
+  if (!memory || !weeklyLogHasContent(memory)) return stored
+  if (stored.weekStart !== memory.weekStart) return stored
+  return mergeWeeklyLogs(stored, memory)
 }
