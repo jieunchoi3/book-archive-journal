@@ -1,7 +1,19 @@
 import type { RoomStore } from '../types/room'
 import { emptyRoomStore } from '../types/room'
+import { stripLegacyAutoPlacementEvents } from './roomMembership'
 import { deleteRoomPersonCloud, fetchRoomCloud, syncRoomToCloud } from './roomCloud'
 import { isSupabaseConfigured } from './supabase'
+
+export function migrateRoomStoreV2(store: RoomStore): RoomStore {
+  if (store.v2MigratedAt) return { ...emptyRoomStore(), ...store, snapshots: store.snapshots ?? [] }
+  const stripped = stripLegacyAutoPlacementEvents(store.events)
+  return {
+    ...store,
+    events: stripped,
+    snapshots: store.snapshots ?? [],
+    v2MigratedAt: new Date().toISOString(),
+  }
+}
 
 const KEY_PREFIX = 'planner:room:'
 const PENDING_SUFFIX = ':pending'
@@ -48,7 +60,7 @@ export function loadRoomLocal(userId: string): RoomStore {
   try {
     const raw = localStorage.getItem(storageKey(userId))
     if (!raw) return emptyRoomStore()
-    return { ...emptyRoomStore(), ...(JSON.parse(raw) as RoomStore) }
+    return migrateRoomStoreV2({ ...emptyRoomStore(), ...(JSON.parse(raw) as RoomStore) })
   } catch {
     return emptyRoomStore()
   }
@@ -84,9 +96,11 @@ function mergeStores(cloud: RoomStore, local: RoomStore, pending: Set<string>): 
   return {
     people: [...peopleMap.values()],
     events: [...eventMap.values()].sort((a, b) => a.effectiveOn.localeCompare(b.effectiveOn)),
+    snapshots: local.snapshots?.length ? local.snapshots : cloud.snapshots ?? [],
     reflections: cloud.reflections.length ? cloud.reflections : local.reflections,
     dismissals: cloud.dismissals.length ? cloud.dismissals : local.dismissals,
     notionImportedAt: local.notionImportedAt ?? cloud.notionImportedAt,
+    v2MigratedAt: local.v2MigratedAt ?? cloud.v2MigratedAt,
   }
 }
 
@@ -105,7 +119,7 @@ export async function loadRoom(userId: string): Promise<RoomStore> {
     }
     savePending(userId, pending)
 
-    const merged = mergeStores(cloud, local, pending)
+    let merged = migrateRoomStoreV2(mergeStores(cloud, local, pending))
     merged.notionImportedAt = local.notionImportedAt ?? merged.notionImportedAt
     saveRoomLocal(userId, merged)
     await syncRoomToCloud(merged)

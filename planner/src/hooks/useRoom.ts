@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { RoomEvent, RoomPerson, RoomPlacementPayload, RoomStore, RoomZone } from '../types/room'
+import type {
+  RoomEvent,
+  RoomPerson,
+  RoomPlacementPayload,
+  RoomSnapshot,
+  RoomStore,
+} from '../types/room'
 import { doorPlacement, toEventPayload } from '../types/room'
 import { daysBetween, todayKey } from '../types/compass'
 import {
@@ -7,14 +13,16 @@ import {
   loadRoom,
   loadRoomLocal,
   markRoomPending,
+  migrateRoomStoreV2,
   persistRoom,
   saveRoomLocal,
 } from '../lib/roomStorage'
+import { buildStoreFromNotionCsv, mergeNotionImport } from '../lib/roomNotionImport'
 import {
-  buildStoreFromNotionCsv,
-  mergeNotionImport,
-} from '../lib/roomNotionImport'
-import { placementsForAll } from '../lib/roomReconstruct'
+  peopleInRoomAtDate,
+  peopleMetNotInRoom,
+  placementsInRoom,
+} from '../lib/roomMembership'
 import { generateId } from '../lib/weekUtils'
 import { useAuth } from './useAuth'
 import { normalizeTeamData } from '../types/compass'
@@ -28,21 +36,24 @@ export interface RoomActions {
   store: RoomStore
   asOf: string
   setAsOf: (date: string) => void
+  inRoomPeople: RoomPerson[]
+  metNotInRoom: RoomPerson[]
   placements: Map<string, RoomPlacementPayload>
   gentleNudges: RoomPerson[]
+  showOnboarding: boolean
+  dismissOnboarding: () => void
   refresh: () => Promise<void>
   importNotion: () => Promise<void>
   importFromCompassTeam: () => Promise<void>
-  invitePerson: (input: {
-    name: string
-    howWeMet: string
-    note: string
-  }) => Promise<void>
+  inviteIntoRoom: (personId: string) => Promise<void>
+  inviteNewPerson: (input: { name: string; howWeMet: string; note: string }) => Promise<void>
   movePerson: (personId: string, placement: RoomPlacementPayload) => Promise<void>
   logContact: (personId: string, on?: string) => Promise<void>
   updatePerson: (personId: string, patch: Partial<RoomPerson>) => Promise<void>
+  removeFromRoom: (personId: string) => Promise<void>
+  archivePerson: (personId: string) => Promise<void>
   deletePerson: (personId: string) => Promise<void>
-  markHistorical: (personId: string) => Promise<void>
+  saveSnapshot: (label: string, note?: string) => Promise<void>
   snoozeNudge: (personId: string, days: number) => Promise<void>
   dismissNudge: (personId: string) => Promise<void>
 }
@@ -50,10 +61,11 @@ export interface RoomActions {
 export function useRoom(): RoomActions {
   const { user } = useAuth()
   const userId = user.id
-  const [store, setStore] = useState<RoomStore>(() => loadRoomLocal(userId))
+  const [store, setStore] = useState<RoomStore>(() => migrateRoomStoreV2(loadRoomLocal(userId)))
   const [loading, setLoading] = useState(true)
   const [syncError, setSyncError] = useState<string | null>(null)
   const [asOf, setAsOf] = useState(() => todayKey())
+  const [onboardingDismissed, setOnboardingDismissed] = useState(false)
   const storeRef = useRef(store)
 
   useEffect(() => {
@@ -62,11 +74,12 @@ export function useRoom(): RoomActions {
 
   const applyStore = useCallback(
     (next: RoomStore, pushCloud = true) => {
-      storeRef.current = next
-      setStore(next)
-      saveRoomLocal(userId, next)
+      const migrated = migrateRoomStoreV2(next)
+      storeRef.current = migrated
+      setStore(migrated)
+      saveRoomLocal(userId, migrated)
       if (pushCloud) {
-        void persistRoom(userId, next).catch((e) => {
+        void persistRoom(userId, migrated).catch((e) => {
           setSyncError(e instanceof Error ? e.message : 'Room sync failed')
         })
       }
@@ -78,10 +91,7 @@ export function useRoom(): RoomActions {
     (base: RoomStore) => {
       if (base.people.length > 0 || base.notionImportedAt) return base
       const imported = buildStoreFromNotionCsv(userId)
-      markRoomPending(
-        userId,
-        imported.people.map((p) => p.id).concat(imported.events.map((e) => e.id)),
-      )
+      markRoomPending(userId, imported.people.map((p) => p.id))
       return imported
     },
     [userId],
@@ -99,9 +109,8 @@ export function useRoom(): RoomActions {
       applyStore(merged, false)
       setSyncError(null)
     } catch (e) {
-      const local = loadRoomLocal(userId)
-      const withImport = runInitialNotionImport(local)
-      applyStore(withImport, true)
+      const local = migrateRoomStoreV2(runInitialNotionImport(loadRoomLocal(userId)))
+      applyStore(local, true)
       setSyncError(e instanceof Error ? e.message : 'Could not sync room')
     } finally {
       setLoading(false)
@@ -122,16 +131,24 @@ export function useRoom(): RoomActions {
     return () => window.removeEventListener('visibilitychange', onVis)
   }, [refresh, userId])
 
+  const inRoomPeople = useMemo(
+    () => peopleInRoomAtDate(store.people, store.events, asOf),
+    [store.people, store.events, asOf],
+  )
+
+  const metNotInRoom = useMemo(
+    () => peopleMetNotInRoom(store.people, store.events, asOf),
+    [store.people, store.events, asOf],
+  )
+
   const placements = useMemo(
-    () => placementsForAll(store.people, store.events, asOf),
+    () => placementsInRoom(store.people, store.events, asOf),
     [store.people, store.events, asOf],
   )
 
   const gentleNudges = useMemo(() => {
     const today = todayKey()
-    return store.people.filter((p) => {
-      const placement = placements.get(p.id)
-      if (!placement?.isActiveInRoom || placement.zone === 'archive') return false
+    return inRoomPeople.filter((p) => {
       const dismiss = store.dismissals.find((d) => d.personId === p.id)
       if (dismiss?.dismissedAt) return false
       if (dismiss?.snoozeUntil && dismiss.snoozeUntil > today) return false
@@ -139,17 +156,23 @@ export function useRoom(): RoomActions {
       if (!last) return false
       return daysBetween(last, today) >= RECONNECT_DAYS
     })
-  }, [store.people, store.dismissals, placements])
+  }, [inRoomPeople, store.dismissals])
+
+  const showOnboarding =
+    !onboardingDismissed &&
+    store.people.length > 0 &&
+    inRoomPeople.length === 0 &&
+    asOf === todayKey()
 
   const appendEvent = useCallback(
-    (personId: string, kind: RoomEvent['kind'], payload: RoomPlacementPayload) => {
+    (personId: string, kind: RoomEvent['kind'], payload: Record<string, unknown>, on?: string) => {
       const ev: RoomEvent = {
         id: generateId(),
         userId,
         personId,
-        effectiveOn: todayKey(),
+        effectiveOn: on ?? todayKey(),
         kind,
-        payload: toEventPayload(payload),
+        payload,
         createdAt: new Date().toISOString(),
       }
       markRoomPending(userId, [ev.id])
@@ -158,71 +181,14 @@ export function useRoom(): RoomActions {
     [applyStore, userId],
   )
 
-  const importNotion = useCallback(async () => {
-    const imported = buildStoreFromNotionCsv(userId)
-    const merged = mergeNotionImport(storeRef.current, imported)
-    markRoomPending(
-      userId,
-      merged.people.map((p) => p.id).concat(merged.events.map((e) => e.id)),
-    )
-    applyStore(merged)
-  }, [applyStore, userId])
+  const inviteIntoRoom = useCallback(
+    async (personId: string) => {
+      appendEvent(personId, 'invited_to_room', toEventPayload(doorPlacement()))
+    },
+    [appendEvent],
+  )
 
-  const importFromCompassTeam = useCallback(async () => {
-    const compass = await loadCompassLocal(userId)
-    const teamSnap = [...compass.snapshots]
-      .filter((s) => s.exerciseKey === 'team' && s.status === 'complete')
-      .sort((a, b) => b.takenAt.localeCompare(a.takenAt))[0]
-    if (!teamSnap) return
-    const team = normalizeTeamData(teamSnap.data)
-    const now = new Date().toISOString()
-    const today = todayKey()
-    let next = { ...storeRef.current }
-    const names = new Set(next.people.map((p) => p.name.trim().toLowerCase()))
-
-    for (const [i, tp] of team.people.entries()) {
-      if (names.has(tp.name.trim().toLowerCase())) continue
-      const personId = generateId()
-      const person: RoomPerson = {
-        id: personId,
-        userId,
-        importKey: `compass:${tp.id}`,
-        name: tp.name,
-        fieldIndustry: tp.relation,
-        howWeMet: 'Compass team',
-        mbti: '',
-        location: '',
-        note: tp.note,
-        metOn: tp.lastContact ?? today,
-        lastContactOn: tp.lastContact,
-        notionCompatibility: null,
-        createdAt: now,
-      }
-      const placement = doorPlacement()
-      placement.x = 0.35 + (i % 6) * 0.05
-      next = {
-        ...next,
-        people: [...next.people, person],
-        events: [
-          ...next.events,
-          {
-            id: generateId(),
-            userId,
-            personId,
-            effectiveOn: today,
-            kind: 'entered_room',
-            payload: toEventPayload(placement),
-            createdAt: now,
-          },
-        ],
-      }
-      names.add(tp.name.trim().toLowerCase())
-    }
-    markRoomPending(userId, next.people.map((p) => p.id))
-    applyStore(next)
-  }, [applyStore, userId])
-
-  const invitePerson = useCallback(
+  const inviteNewPerson = useCallback(
     async (input: { name: string; howWeMet: string; note: string }) => {
       const name = input.name.trim()
       if (!name) return
@@ -244,31 +210,19 @@ export function useRoom(): RoomActions {
         notionCompatibility: null,
         createdAt: now,
       }
-      const placement = doorPlacement()
       markRoomPending(userId, [personId])
       applyStore({
         ...storeRef.current,
         people: [...storeRef.current.people, person],
-        events: [
-          ...storeRef.current.events,
-          {
-            id: generateId(),
-            userId,
-            personId,
-            effectiveOn: today,
-            kind: 'invited_at_door',
-            payload: toEventPayload(placement),
-            createdAt: now,
-          },
-        ],
       })
+      await inviteIntoRoom(personId)
     },
-    [applyStore, userId],
+    [applyStore, inviteIntoRoom, userId],
   )
 
   const movePerson = useCallback(
     async (personId: string, placement: RoomPlacementPayload) => {
-      appendEvent(personId, 'moved', placement)
+      appendEvent(personId, 'moved', toEventPayload(placement))
     },
     [appendEvent],
   )
@@ -276,14 +230,15 @@ export function useRoom(): RoomActions {
   const logContact = useCallback(
     async (personId: string, on?: string) => {
       const day = on ?? todayKey()
-      const people = storeRef.current.people.map((p) =>
-        p.id === personId ? { ...p, lastContactOn: day } : p,
-      )
-      applyStore({ ...storeRef.current, people })
-      const placement = placements.get(personId) ?? doorPlacement()
-      appendEvent(personId, 'contact_logged', placement)
+      applyStore({
+        ...storeRef.current,
+        people: storeRef.current.people.map((p) =>
+          p.id === personId ? { ...p, lastContactOn: day } : p,
+        ),
+      })
+      appendEvent(personId, 'contact_logged', {}, day)
     },
-    [applyStore, appendEvent, placements],
+    [appendEvent, applyStore],
   )
 
   const updatePerson = useCallback(
@@ -298,6 +253,15 @@ export function useRoom(): RoomActions {
     [applyStore],
   )
 
+  const removeFromRoom = useCallback(
+    async (personId: string) => {
+      appendEvent(personId, 'archived', {})
+    },
+    [appendEvent],
+  )
+
+  const archivePerson = removeFromRoom
+
   const deletePerson = useCallback(
     async (personId: string) => {
       const next = await deleteRoomPerson(userId, personId, storeRef.current)
@@ -307,18 +271,75 @@ export function useRoom(): RoomActions {
     [userId],
   )
 
-  const markHistorical = useCallback(
-    async (personId: string) => {
-      const cur = placements.get(personId) ?? doorPlacement()
-      appendEvent(personId, 'marked_historical', {
-        ...cur,
-        zone: 'archive' as RoomZone,
-        isActiveInRoom: false,
-        emotionalPresence: cur.emotionalPresence,
-      })
+  const saveSnapshot = useCallback(
+    async (label: string, note = '') => {
+      const today = todayKey()
+      const pl: Record<string, RoomPlacementPayload> = {}
+      for (const [id, placement] of placementsInRoom(storeRef.current.people, storeRef.current.events, today)) {
+        pl[id] = placement
+      }
+      const snap: RoomSnapshot = {
+        id: generateId(),
+        userId,
+        label: label.trim() || today,
+        savedOn: today,
+        note,
+        placements: pl,
+        createdAt: new Date().toISOString(),
+      }
+      applyStore({ ...storeRef.current, snapshots: [...storeRef.current.snapshots, snap] })
     },
-    [appendEvent, placements],
+    [applyStore, userId],
   )
+
+  const importNotion = useCallback(async () => {
+    const imported = buildStoreFromNotionCsv(userId)
+    const merged = mergeNotionImport(storeRef.current, imported)
+    markRoomPending(userId, merged.people.map((p) => p.id))
+    applyStore(merged)
+  }, [applyStore, userId])
+
+  const importFromCompassTeam = useCallback(async () => {
+    const compass = await loadCompassLocal(userId)
+    const teamSnap = [...compass.snapshots]
+      .filter((s) => s.exerciseKey === 'team' && s.status === 'complete')
+      .sort((a, b) => b.takenAt.localeCompare(a.takenAt))[0]
+    if (!teamSnap) return
+    const team = normalizeTeamData(teamSnap.data)
+    const now = new Date().toISOString()
+    const today = todayKey()
+    let next = { ...storeRef.current }
+    const names = new Set(next.people.map((p) => p.name.trim().toLowerCase()))
+
+    for (const tp of team.people) {
+      if (names.has(tp.name.trim().toLowerCase())) continue
+      const personId = generateId()
+      next = {
+        ...next,
+        people: [
+          ...next.people,
+          {
+            id: personId,
+            userId,
+            importKey: `compass:${tp.id}`,
+            name: tp.name,
+            fieldIndustry: tp.relation,
+            howWeMet: 'Compass team',
+            mbti: '',
+            location: '',
+            note: tp.note,
+            metOn: tp.lastContact ?? today,
+            lastContactOn: tp.lastContact,
+            notionCompatibility: null,
+            createdAt: now,
+          },
+        ],
+      }
+      names.add(tp.name.trim().toLowerCase())
+    }
+    markRoomPending(userId, next.people.map((p) => p.id))
+    applyStore(next)
+  }, [applyStore, userId])
 
   const snoozeNudge = useCallback(
     async (personId: string, days: number) => {
@@ -354,17 +375,24 @@ export function useRoom(): RoomActions {
     store,
     asOf,
     setAsOf,
+    inRoomPeople,
+    metNotInRoom,
     placements,
     gentleNudges,
+    showOnboarding,
+    dismissOnboarding: () => setOnboardingDismissed(true),
     refresh,
     importNotion,
     importFromCompassTeam,
-    invitePerson,
+    inviteIntoRoom,
+    inviteNewPerson,
     movePerson,
     logContact,
     updatePerson,
+    removeFromRoom,
+    archivePerson,
     deletePerson,
-    markHistorical,
+    saveSnapshot,
     snoozeNudge,
     dismissNudge,
   }

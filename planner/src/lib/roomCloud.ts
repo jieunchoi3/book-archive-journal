@@ -122,7 +122,9 @@ export async function fetchRoomCloud(userId: string): Promise<RoomStore> {
       snoozeUntil: r.snooze_until?.slice(0, 10) ?? null,
       dismissedAt: r.dismissed_at,
     })),
+    snapshots: [],
     notionImportedAt: null,
+    v2MigratedAt: null,
   }
 }
 

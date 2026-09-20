@@ -12,7 +12,7 @@ export function RoomInviteSheet({ room, onClose }: RoomInviteSheetProps) {
   const [note, setNote] = useState('')
 
   const submit = async () => {
-    await room.invitePerson({ name, howWeMet: how, note })
+    await room.inviteNewPerson({ name, howWeMet: how, note })
     onClose()
   }
 

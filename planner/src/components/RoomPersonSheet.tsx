@@ -1,17 +1,17 @@
 import { useState } from 'react'
 import type { RoomActions } from '../hooks/useRoom'
 import type { RoomPerson, RoomPlacementPayload } from '../types/room'
-import { placementSummary } from './RoomCanvas'
 import { zoneLabel } from '../lib/roomReconstruct'
 
 interface RoomPersonSheetProps {
   room: RoomActions
   person: RoomPerson
-  placement: RoomPlacementPayload
+  placement: RoomPlacementPayload | null
+  inRoom: boolean
   onClose: () => void
 }
 
-export function RoomPersonSheet({ room, person, placement, onClose }: RoomPersonSheetProps) {
+export function RoomPersonSheet({ room, person, placement, inRoom, onClose }: RoomPersonSheetProps) {
   const [note, setNote] = useState(person.note)
 
   return (
@@ -20,7 +20,9 @@ export function RoomPersonSheet({ room, person, placement, onClose }: RoomPerson
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
             <h2 className="text-[20px] font-semibold text-[#1C1C1E]">{person.name}</h2>
-            <p className="text-[13px] text-muted">{placementSummary(placement)}</p>
+            <p className="text-[13px] text-muted">
+              {inRoom && placement ? zoneLabel(placement.zone) : 'In your met list — not in the room yet'}
+            </p>
           </div>
           <button type="button" className="text-[13px] text-[#007AFF]" onClick={onClose}>
             Done
@@ -33,15 +35,8 @@ export function RoomPersonSheet({ room, person, placement, onClose }: RoomPerson
             {person.howWeMet}
           </p>
         )}
-        {person.fieldIndustry && (
-          <p className="mb-2 text-[13px] text-[#3C3C43]">{person.fieldIndustry}</p>
-        )}
-        {person.location && (
-          <p className="mb-2 text-[13px] text-muted">{person.location}</p>
-        )}
-        {person.mbti && (
-          <p className="mb-3 text-[12px] text-muted">MBTI · {person.mbti}</p>
-        )}
+        {person.fieldIndustry && <p className="mb-2 text-[13px] text-[#3C3C43]">{person.fieldIndustry}</p>}
+        {person.location && <p className="mb-2 text-[13px] text-muted">{person.location}</p>}
 
         <label className="mb-1 block text-[12px] font-medium uppercase tracking-wide text-[#C7A882]">
           Notes
@@ -55,35 +50,38 @@ export function RoomPersonSheet({ room, person, placement, onClose }: RoomPerson
         />
 
         <div className="flex flex-wrap gap-2">
-          <ActionBtn onClick={() => void room.logContact(person.id)} label="Log contact today" />
-          <ActionBtn
-            onClick={() =>
-              void room.movePerson(person.id, {
-                ...placement,
-                zone: 'inner',
-                x: 0.5,
-                y: 0.46,
-                emotionalPresence: 'close',
-              })
-            }
-            label="Move closer"
-          />
-          <ActionBtn onClick={() => void room.markHistorical(person.id)} label="Archive influence" />
+          {!inRoom && (
+            <ActionBtn
+              onClick={() => {
+                void room.inviteIntoRoom(person.id)
+                onClose()
+              }}
+              label="Invite into room"
+            />
+          )}
+          {inRoom && (
+            <>
+              <ActionBtn onClick={() => void room.logContact(person.id)} label="Log contact" />
+              <ActionBtn
+                onClick={() => void room.removeFromRoom(person.id)}
+                label="Move to archive"
+              />
+            </>
+          )}
           <ActionBtn
             variant="danger"
             onClick={() => {
-              if (confirm(`Remove ${person.name} from your room?`)) {
+              if (confirm(`Remove ${person.name} from your records?`)) {
                 void room.deletePerson(person.id)
                 onClose()
               }
             }}
-            label="Remove"
+            label="Delete record"
           />
         </div>
 
         <p className="mt-4 text-[11px] text-muted">
-          {zoneLabel(placement.zone)} — spatial, not a score. Contact frequency and closeness stay
-          separate.
+          Distance in the room is yours to mean — the app does not score or judge relationships.
         </p>
       </div>
     </div>

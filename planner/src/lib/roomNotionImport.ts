@@ -1,5 +1,5 @@
-import type { RoomEvent, RoomPerson, RoomStore } from '../types/room'
-import { defaultPlacementForIndex, emptyRoomStore, toEventPayload } from '../types/room'
+import type { RoomPerson, RoomStore } from '../types/room'
+import { emptyRoomStore } from '../types/room'
 import { generateId } from './weekUtils'
 import notionCsv from '../data/people-ive-met-notion.csv?raw'
 
@@ -115,7 +115,6 @@ export function buildStoreFromNotionCsv(userId: string, csvText = notionCsv): Ro
   const now = new Date().toISOString()
   const today = now.slice(0, 10)
   const people: RoomPerson[] = []
-  const events: RoomEvent[] = []
 
   rows.forEach((row, index) => {
     const importKey = importKeyForRow(row, index)
@@ -140,32 +139,11 @@ export function buildStoreFromNotionCsv(userId: string, csvText = notionCsv): Ro
       notionCompatibility: row.Compatability?.trim() || null,
       createdAt: now,
     })
-
-    const placement = defaultPlacementForIndex(index, rows.length)
-    events.push({
-      id: generateId(),
-      userId,
-      personId,
-      effectiveOn: metOn,
-      kind: 'imported',
-      payload: toEventPayload(placement),
-      createdAt: now,
-    })
-    events.push({
-      id: generateId(),
-      userId,
-      personId,
-      effectiveOn: metOn,
-      kind: 'entered_room',
-      payload: toEventPayload({ ...placement, zone: 'edge' }),
-      createdAt: now,
-    })
   })
 
   return {
     ...emptyRoomStore(),
     people,
-    events,
     notionImportedAt: now,
   }
 }
@@ -173,9 +151,6 @@ export function buildStoreFromNotionCsv(userId: string, csvText = notionCsv): Ro
 export function mergeNotionImport(existing: RoomStore, imported: RoomStore): RoomStore {
   const byKey = new Map(existing.people.filter((p) => p.importKey).map((p) => [p.importKey!, p]))
   const people: RoomPerson[] = [...existing.people]
-  const events: RoomEvent[] = [...existing.events]
-  const eventPersonIds = new Set(events.map((e) => e.personId))
-
   for (const p of imported.people) {
     if (!p.importKey) continue
     const prev = byKey.get(p.importKey)
@@ -196,24 +171,9 @@ export function mergeNotionImport(existing: RoomStore, imported: RoomStore): Roo
     }
   }
 
-  for (const ev of imported.events) {
-    const person = imported.people.find((p) => p.id === ev.personId)
-    if (!person?.importKey) continue
-    const target = byKey.get(person.importKey)
-    if (!target) continue
-    if (eventPersonIds.has(target.id)) {
-      const hasImport = events.some(
-        (e) => e.personId === target.id && e.kind === 'imported',
-      )
-      if (hasImport) continue
-    }
-    events.push({ ...ev, personId: target.id })
-  }
-
   return {
     ...existing,
     people,
-    events,
     notionImportedAt: imported.notionImportedAt,
   }
 }

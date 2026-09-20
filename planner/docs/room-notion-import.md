@@ -23,4 +23,4 @@ Each row gets a stable `importKey` (`notion:{rowIndex}:…`) so re-import update
 
 ## First open
 
-When your room is empty, the Relations tab auto-imports this CSV once and places everyone near the edge of the room (weak-ties starting layout). You can drag them closer, use **Re-import Notion list** to refresh fields from CSV, or **Import from Compass team** for optional overlap.
+When your room is empty, the Relations tab auto-imports this CSV once into **People you've met** — nobody is placed in the room automatically. Open **Met** and **Invite in** who belongs; then drag them in the room yourself.
