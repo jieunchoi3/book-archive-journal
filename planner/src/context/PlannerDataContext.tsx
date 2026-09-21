@@ -59,13 +59,15 @@ import {
   markLocalImportDone,
 } from '../lib/localStorageLegacy'
 import { emptyWeeklyLog } from '../lib/storageUtils'
-import { mergeWeeklyLogs } from '../lib/weeklyLogMerge'
+import {
+  mergeWeeklyLogSnapshots,
+  resolveWeeklyLogSync,
+} from '../lib/weeklyLogMerge'
 import {
   loadTemplateLocal,
   loadWeeklyLogLocal,
   saveTemplateLocal,
   saveWeeklyLogLocal,
-  weeklyLogHasContent,
 } from '../lib/plannerLocalCache'
 import { logError } from '../lib/formatError'
 import {
@@ -376,18 +378,12 @@ export function PlannerDataProvider({
       try {
         const cloud = await fetchWeeklyLog(userId, targetWeekStart)
         const local = loadWeeklyLogLocal(userId, targetWeekStart)
-        if (!local || !weeklyLogHasContent(local)) {
-          saveWeeklyLogLocal(userId, cloud)
-          return cloud
+        const { log, pushToCloud } = resolveWeeklyLogSync(cloud, local)
+        saveWeeklyLogLocal(userId, log)
+        if (pushToCloud) {
+          void syncWeeklyLog(userId, log).catch((e) => logError('syncWeeklyLog', e))
         }
-        if (!weeklyLogHasContent(cloud)) {
-          void syncWeeklyLog(userId, local).catch((e) => logError('syncWeeklyLog', e))
-          return local
-        }
-        const merged = mergeWeeklyLogs(cloud, local)
-        saveWeeklyLogLocal(userId, merged)
-        void syncWeeklyLog(userId, merged).catch((e) => logError('syncWeeklyLog', e))
-        return merged
+        return log
       } catch (e) {
         logError('fetchWeeklyLog', e)
         return loadWeeklyLogLocal(userId, targetWeekStart) ?? emptyWeeklyLog(targetWeekStart)
@@ -411,16 +407,20 @@ export function PlannerDataProvider({
         saveTemplateLocal(userId, tmpl)
       }
 
-      const local = loadWeeklyLogLocal(userId, week)
-      const merged =
-        local && weeklyLogHasContent(local) && weeklyLogHasContent(cloudLog)
-          ? mergeWeeklyLogs(cloudLog, local)
-          : cloudLog
+      const stored = loadWeeklyLogLocal(userId, week)
+      const local = mergeWeeklyLogSnapshots(
+        stored,
+        weekStartRef.current === week ? weeklyLogRef.current : null,
+      )
+      const { log, pushToCloud } = resolveWeeklyLogSync(cloudLog, local)
+      if (pushToCloud) {
+        void syncWeeklyLog(userId, log).catch((e) => logError('syncWeeklyLog', e))
+      }
 
-      weekCacheRef.current.set(week, merged)
-      saveWeeklyLogLocal(userId, merged)
-      weeklyLogRef.current = merged
-      setWeeklyLog(merged)
+      weekCacheRef.current.set(week, log)
+      saveWeeklyLogLocal(userId, log)
+      weeklyLogRef.current = log
+      setWeeklyLog(log)
     } catch (e) {
       logError('revalidateFromCloud', e)
     }
