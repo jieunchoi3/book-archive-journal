@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Globe, Minus, Plus, BookOpen } from 'lucide-react'
 import type { RelationPerson } from '../../types/relationTracker'
+import { applyPreset } from '../../lib/avatarPresets'
 import { MiiAvatar } from './MiiAvatar'
+
+const ME_AVATAR = applyPreset('me')
 import { AnchoredProfileCard } from './AnchoredProfileCard'
 
 interface RoomCanvasProps {
@@ -11,6 +14,7 @@ interface RoomCanvasProps {
   onOpenWorld: () => void
   onInvite: () => void
   onEditPerson: (id: string) => void
+  onDeletePerson: (id: string) => void
   onMovePerson: (id: string, roomX: number, roomY: number) => void
 }
 
@@ -48,6 +52,7 @@ export function RoomCanvas({
   onOpenWorld,
   onInvite,
   onEditPerson,
+  onDeletePerson,
   onMovePerson,
 }: RoomCanvasProps) {
   const boardRef = useRef<HTMLDivElement>(null)
@@ -159,19 +164,7 @@ export function RoomCanvas({
             />
           ))}
           <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-[42%]">
-            <MiiAvatar
-              avatar={{
-                skinTone: 2,
-                hairStyle: 1,
-                hairColor: 1,
-                eyeStyle: 0,
-                mouthStyle: 1,
-                outfitColor: 0,
-                outfitStyle: 0,
-              }}
-              size={88}
-              label="Me"
-            />
+            <MiiAvatar avatar={ME_AVATAR} size={88} label="Me" />
           </div>
 
           {people.map((person) => {
@@ -226,6 +219,10 @@ export function RoomCanvas({
           anchorEl={profileAnchor}
           person={selected}
           onEdit={() => onEditPerson(selected.id)}
+          onDelete={() => {
+            onDeletePerson(selected.id)
+            setSelectedId(null)
+          }}
         />
       )}
 

@@ -15,12 +15,14 @@ interface WorldMapViewProps {
   people: RelationPerson[]
   onBack: () => void
   onEditPerson: (id: string) => void
+  onDeletePerson: (id: string) => void
 }
 
 export function WorldMapView({
   people,
   onBack,
   onEditPerson,
+  onDeletePerson,
 }: WorldMapViewProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [listMode, setListMode] = useState(false)
@@ -116,6 +118,10 @@ export function WorldMapView({
                   person={selected}
                   compact
                   onEdit={() => onEditPerson(selected.id)}
+                  onDelete={() => {
+                    onDeletePerson(selected.id)
+                    setSelectedId(null)
+                  }}
                 />
               </div>
             )}

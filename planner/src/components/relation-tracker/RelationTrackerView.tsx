@@ -73,6 +73,7 @@ export function RelationTrackerView() {
             const person = tracker.people.find((p) => p.id === id)
             if (person) setSheet({ mode: 'edit', person })
           }}
+          onDeletePerson={(id) => tracker.removePerson(id)}
         />
       ) : (
         <WorldMapView
@@ -82,6 +83,7 @@ export function RelationTrackerView() {
             const person = tracker.people.find((p) => p.id === id)
             if (person) setSheet({ mode: 'edit', person })
           }}
+          onDeletePerson={(id) => tracker.removePerson(id)}
         />
       )}
 

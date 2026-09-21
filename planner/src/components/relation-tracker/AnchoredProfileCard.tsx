@@ -7,6 +7,7 @@ interface AnchoredProfileCardProps {
   anchorEl: HTMLElement | null
   person: RelationPerson
   onEdit?: () => void
+  onDelete?: () => void
 }
 
 /** Renders profile card in a top-layer portal, positioned near the avatar. */
@@ -14,6 +15,7 @@ export function AnchoredProfileCard({
   anchorEl,
   person,
   onEdit,
+  onDelete,
 }: AnchoredProfileCardProps) {
   const [pos, setPos] = useState<{
     left: number
@@ -66,7 +68,12 @@ export function AnchoredProfileCard({
           transform: pos.placeBelow ? undefined : 'translateY(-100%)',
         }}
       >
-        <PersonProfileCard person={person} anchor={pos.placeBelow ? 'below' : 'above'} onEdit={onEdit} />
+        <PersonProfileCard
+          person={person}
+          anchor={pos.placeBelow ? 'below' : 'above'}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
       </div>
     </div>,
     document.body,

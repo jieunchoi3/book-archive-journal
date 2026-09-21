@@ -3,6 +3,8 @@ export type ConnectFrequency = 'weekly' | 'monthly' | 'few_months'
 export type RelationTrackerTab = 'room' | 'world'
 
 export interface AvatarConfig {
+  /** Rendered Wii-style portrait from /public/avatars */
+  presetId?: string
   skinTone: number
   hairStyle: number
   hairColor: number

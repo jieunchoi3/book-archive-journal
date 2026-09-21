@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   Briefcase,
   Calendar,
@@ -7,6 +7,7 @@ import {
   MoreHorizontal,
   Pencil,
   BookOpen,
+  Trash2,
   Users,
 } from 'lucide-react'
 import type { RelationPerson } from '../../types/relationTracker'
@@ -31,6 +32,7 @@ interface PersonProfileCardProps {
   anchor?: 'above' | 'below'
   onClose?: () => void
   onEdit?: () => void
+  onDelete?: () => void
 }
 
 export function PersonProfileCard({
@@ -38,7 +40,30 @@ export function PersonProfileCard({
   compact,
   anchor,
   onEdit,
+  onDelete,
 }: PersonProfileCardProps) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const close = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [menuOpen])
+
+  const handleDelete = () => {
+    setMenuOpen(false)
+    const ok = window.confirm(
+      `Remove ${person.name} from your room? You can invite them again later.`,
+    )
+    if (ok) onDelete?.()
+  }
+
   const showTail = !compact && anchor
   return (
     <div
@@ -65,13 +90,29 @@ export function PersonProfileCard({
           </h3>
           <p className="text-[13px] text-muted">{person.relationshipType}</p>
         </div>
-        <button
-          type="button"
-          className="rounded-full p-1 text-muted hover:bg-surface"
-          aria-label="More options"
-        >
-          <MoreHorizontal size={18} />
-        </button>
+        <div className="relative" ref={menuRef}>
+          <button
+            type="button"
+            onClick={() => setMenuOpen((v) => !v)}
+            className="rounded-full p-1 text-muted hover:bg-surface"
+            aria-label="More options"
+            aria-expanded={menuOpen}
+          >
+            <MoreHorizontal size={18} />
+          </button>
+          {menuOpen && onDelete && (
+            <div className="absolute right-0 top-full z-50 mt-1 min-w-[10rem] overflow-hidden rounded-xl border border-hairline bg-white py-1 shadow-lg">
+              <button
+                type="button"
+                onClick={handleDelete}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-[#FF3B30] hover:bg-[#FF3B30]/5"
+              >
+                <Trash2 size={16} />
+                Remove from room
+              </button>
+            </div>
+          )}
+        </div>
       </div>
       <div className="mb-3 flex gap-3">
         <MiiAvatar avatar={person.avatar} size={56} />

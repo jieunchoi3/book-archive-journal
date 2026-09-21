@@ -1,11 +1,7 @@
 import { useState } from 'react'
 import type { AvatarConfig, RelationPerson } from '../../types/relationTracker'
-import {
-  DEFAULT_AVATAR,
-  HAIR_COLORS,
-  OUTFIT_COLORS,
-  SKIN_TONES,
-} from '../../types/relationTracker'
+import { DEFAULT_AVATAR } from '../../types/relationTracker'
+import { applyPreset, presetForTab } from '../../lib/avatarPresets'
 import { MiiAvatar } from './MiiAvatar'
 
 type Draft = Omit<RelationPerson, 'id'>
@@ -80,61 +76,19 @@ export function NewFriendSheet({ initial, onCancel, onSave }: NewFriendSheetProp
                 </button>
               ))}
             </div>
-            <div className="mt-4 w-full space-y-4 px-2">
-              {tab === 'Face' && (
-                <>
-                  <SwatchRow
-                    label="Skin tone"
-                    options={SKIN_TONES}
-                    value={draft.avatar.skinTone}
-                    onChange={(i) => setAvatar({ skinTone: i })}
-                  />
-                  <GridPick
-                    label="Eye shape"
-                    count={5}
-                    value={draft.avatar.eyeStyle}
-                    onChange={(i) => setAvatar({ eyeStyle: i })}
-                  />
-                  <GridPick
-                    label="Mouth"
-                    count={5}
-                    value={draft.avatar.mouthStyle}
-                    onChange={(i) => setAvatar({ mouthStyle: i })}
-                  />
-                </>
-              )}
-              {tab === 'Hair' && (
-                <>
-                  <GridPick
-                    label="Hair style"
-                    count={4}
-                    value={draft.avatar.hairStyle}
-                    onChange={(i) => setAvatar({ hairStyle: i })}
-                  />
-                  <SwatchRow
-                    label="Hair color"
-                    options={HAIR_COLORS}
-                    value={draft.avatar.hairColor}
-                    onChange={(i) => setAvatar({ hairColor: i })}
-                  />
-                </>
-              )}
-              {tab === 'Outfit' && (
-                <>
-                  <SwatchRow
-                    label="Outfit color"
-                    options={OUTFIT_COLORS}
-                    value={draft.avatar.outfitColor}
-                    onChange={(i) => setAvatar({ outfitColor: i })}
-                  />
-                  <GridPick
-                    label="Style"
-                    count={2}
-                    value={draft.avatar.outfitStyle}
-                    onChange={(i) => setAvatar({ outfitStyle: i })}
-                  />
-                </>
-              )}
+            <div className="mt-4 w-full px-2">
+              <PresetGrid
+                label={
+                  tab === 'Face'
+                    ? 'Pick a face & skin tone'
+                    : tab === 'Hair'
+                      ? 'Pick a hairstyle'
+                      : 'Pick an outfit look'
+                }
+                tabKey={tab.toLowerCase() as 'face' | 'hair' | 'outfit'}
+                selectedId={draft.avatar.presetId}
+                onSelect={(id) => setAvatar(applyPreset(id))}
+              />
             </div>
           </div>
         </aside>
@@ -345,62 +299,42 @@ function Field({
   )
 }
 
-function SwatchRow({
+function PresetGrid({
   label,
-  options,
-  value,
-  onChange,
+  tabKey,
+  selectedId,
+  onSelect,
 }: {
   label: string
-  options: string[]
-  value: number
-  onChange: (i: number) => void
+  tabKey: 'face' | 'hair' | 'outfit'
+  selectedId?: string
+  onSelect: (presetId: string) => void
 }) {
+  const presets = presetForTab(tabKey)
   return (
     <div>
       <span className="mb-2 block text-[11px] text-muted">{label}</span>
-      <div className="flex flex-wrap gap-2">
-        {options.map((c, i) => (
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+        {presets.map((p) => (
           <button
-            key={c}
+            key={p.id}
             type="button"
-            onClick={() => onChange(i)}
-            className={`h-8 w-8 rounded-full ring-2 ring-offset-2 ${
-              value === i ? 'ring-[#6B8F71]' : 'ring-transparent'
-            }`}
-            style={{ background: c }}
-          />
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function GridPick({
-  label,
-  count,
-  value,
-  onChange,
-}: {
-  label: string
-  count: number
-  value: number
-  onChange: (i: number) => void
-}) {
-  return (
-    <div>
-      <span className="mb-2 block text-[11px] text-muted">{label}</span>
-      <div className="grid grid-cols-5 gap-2">
-        {Array.from({ length: count }, (_, i) => (
-          <button
-            key={i}
-            type="button"
-            onClick={() => onChange(i)}
-            className={`aspect-square rounded-lg bg-white text-[12px] ring-1 ${
-              value === i ? 'ring-2 ring-[#6B8F71]' : 'ring-hairline'
+            onClick={() => onSelect(p.id)}
+            className={`flex flex-col items-center rounded-xl bg-white p-1.5 ring-2 transition ${
+              selectedId === p.id
+                ? 'ring-[#6B8F71]'
+                : 'ring-transparent hover:ring-hairline'
             }`}
           >
-            {i + 1}
+            <img
+              src={p.src}
+              alt=""
+              className="h-16 w-full object-contain object-bottom"
+              draggable={false}
+            />
+            <span className="mt-1 w-full truncate text-center text-[10px] text-muted">
+              {p.label}
+            </span>
           </button>
         ))}
       </div>
