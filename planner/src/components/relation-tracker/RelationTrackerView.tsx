@@ -29,9 +29,12 @@ export function RelationTrackerView() {
     <div className="flex min-h-dvh flex-col bg-[#F9F8F3] pb-[calc(4.5rem+env(safe-area-inset-bottom))]">
       <header className="sticky top-0 z-30 flex items-center gap-2 border-b border-hairline bg-[#F9F8F3]/95 px-4 py-2.5 backdrop-blur-md">
         <Home size={18} className="text-[#6B8F71]" />
-        <span className="font-serif text-[17px] font-semibold text-[#1C1C1E]">
-          My Room
-        </span>
+        <div>
+          <span className="font-serif text-[17px] font-semibold text-[#1C1C1E]">
+            My Room
+          </span>
+          <p className="text-[10px] text-muted">Relation tracker</p>
+        </div>
         <nav className="ml-auto flex gap-1 rounded-full bg-white/80 p-0.5 shadow-sm">
           {(['room', 'world'] as const).map((key) => (
             <button
