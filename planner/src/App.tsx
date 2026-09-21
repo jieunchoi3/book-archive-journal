@@ -17,6 +17,7 @@ import { SnapView } from './components/SnapView'
 import { TasteStickerView } from './components/TasteStickerView'
 import { CompassView } from './components/CompassView'
 import { MailboxView } from './components/MailboxView'
+import { RelationTrackerView } from './components/relation-tracker/RelationTrackerView'
 import { useMailbox } from './hooks/useMailbox'
 import { BottomNav, type AppView } from './components/BottomNav'
 import type { CompassRoute } from './types/compass'
@@ -89,6 +90,8 @@ function AppContent() {
         <SnapView snap={snap} />
       ) : view === 'taste' ? (
         <TasteStickerView />
+      ) : view === 'relations' ? (
+        <RelationTrackerView />
       ) : view === 'compass' ? (
         <CompassView
           compass={compass}
