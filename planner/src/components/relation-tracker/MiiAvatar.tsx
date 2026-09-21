@@ -123,5 +123,5 @@ export function MiiAvatar({
       </button>
     )
   }
-  return body
+  return <div className="select-none">{body}</div>
 }

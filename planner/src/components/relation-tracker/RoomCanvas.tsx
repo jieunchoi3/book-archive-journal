@@ -1,8 +1,8 @@
-import { useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Globe, Minus, Plus, BookOpen } from 'lucide-react'
 import type { RelationPerson } from '../../types/relationTracker'
 import { MiiAvatar } from './MiiAvatar'
-import { PersonProfileCard } from './PersonProfileCard'
+import { AnchoredProfileCard } from './AnchoredProfileCard'
 
 interface RoomCanvasProps {
   people: RelationPerson[]
@@ -11,6 +11,34 @@ interface RoomCanvasProps {
   onOpenWorld: () => void
   onInvite: () => void
   onEditPerson: (id: string) => void
+  onMovePerson: (id: string, roomX: number, roomY: number) => void
+}
+
+const CENTER = { x: 0.5, y: 0.5 }
+const MIN_DIST_FROM_ME = 0.12
+const PAD = 0.06
+
+function defaultPosition(person: RelationPerson, index: number, total: number) {
+  const angle = (index / Math.max(total, 1)) * Math.PI * 2 - Math.PI / 2
+  const r = 0.32
+  return {
+    x: person.roomX ?? CENTER.x + Math.cos(angle) * r,
+    y: person.roomY ?? CENTER.y + Math.sin(angle) * r * 0.85,
+  }
+}
+
+function clampPosition(x: number, y: number) {
+  let nx = Math.min(1 - PAD, Math.max(PAD, x))
+  let ny = Math.min(1 - PAD, Math.max(PAD, y))
+  const dx = nx - CENTER.x
+  const dy = ny - CENTER.y
+  const dist = Math.hypot(dx, dy)
+  if (dist < MIN_DIST_FROM_ME && dist > 0) {
+    const s = MIN_DIST_FROM_ME / dist
+    nx = CENTER.x + dx * s
+    ny = CENTER.y + dy * s
+  }
+  return { x: nx, y: ny }
 }
 
 export function RoomCanvas({
@@ -20,26 +48,84 @@ export function RoomCanvas({
   onOpenWorld,
   onInvite,
   onEditPerson,
+  onMovePerson,
 }: RoomCanvasProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
+  const boardRef = useRef<HTMLDivElement>(null)
+  const anchorRefs = useRef<Map<string, HTMLDivElement>>(new Map())
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dragOffset, setDragOffset] = useState<{ id: string; x: number; y: number } | null>(
+    null,
+  )
+  const dragMovedRef = useRef(false)
+  const [profileAnchor, setProfileAnchor] = useState<HTMLElement | null>(null)
   const selected = people.find((p) => p.id === selectedId)
 
+  useEffect(() => {
+    if (!selectedId || draggingId) {
+      setProfileAnchor(null)
+      return
+    }
+    setProfileAnchor(anchorRefs.current.get(selectedId) ?? null)
+  }, [selectedId, draggingId, people, dragOffset, zoom])
+
   const positions = useMemo(() => {
-    return people.map((p, i) => {
-      const angle = (i / Math.max(people.length, 1)) * Math.PI * 2 - Math.PI / 2
-      const r = 0.32
-      return {
-        id: p.id,
-        x: p.roomX ?? 0.5 + Math.cos(angle) * r,
-        y: p.roomY ?? 0.5 + Math.sin(angle) * r * 0.85,
-      }
-    })
+    return people.map((p, i) => ({
+      id: p.id,
+      ...defaultPosition(p, i, people.length),
+    }))
   }, [people])
+
+  const posById = useMemo(() => {
+    const m = new Map<string, { x: number; y: number }>()
+    for (const p of positions) m.set(p.id, { x: p.x, y: p.y })
+    return m
+  }, [positions])
+
+  const clientToNormalized = useCallback((clientX: number, clientY: number) => {
+    const board = boardRef.current
+    if (!board) return null
+    const rect = board.getBoundingClientRect()
+    const x = (clientX - rect.left) / rect.width
+    const y = (clientY - rect.top) / rect.height
+    return clampPosition(x, y)
+  }, [])
+
+  const startDrag = (personId: string, e: React.PointerEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragMovedRef.current = false
+    setDraggingId(personId)
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  }
+
+  const onDragMove = (e: React.PointerEvent) => {
+    if (!draggingId) return
+    dragMovedRef.current = true
+    const next = clientToNormalized(e.clientX, e.clientY)
+    if (!next) return
+    setDragOffset({ id: draggingId, x: next.x, y: next.y })
+  }
+
+  const endDrag = (personId: string, e: React.PointerEvent) => {
+    if (draggingId !== personId) return
+    ;(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId)
+    const next =
+      dragOffset?.id === personId
+        ? { x: dragOffset.x, y: dragOffset.y }
+        : posById.get(personId)
+    if (next && dragMovedRef.current) {
+      onMovePerson(personId, next.x, next.y)
+      setSelectedId(null)
+    } else if (!dragMovedRef.current) {
+      setSelectedId((cur) => (cur === personId ? null : personId))
+    }
+    setDraggingId(null)
+    setDragOffset(null)
+  }
 
   return (
     <div
-      ref={containerRef}
       className="relative flex min-h-[calc(100dvh-8rem)] flex-1 flex-col overflow-hidden bg-[#ececec]"
       style={{
         backgroundImage:
@@ -55,15 +141,24 @@ export function RoomCanvas({
         <Globe size={20} className="text-[#48484A]" />
       </button>
 
+      <p className="pointer-events-none absolute left-1/2 top-3 z-10 -translate-x-1/2 text-center text-[11px] text-muted">
+        Drag people closer or further from you
+      </p>
+
       <div className="flex flex-1 items-center justify-center overflow-hidden p-4 pb-24">
         <div
-          className="relative aspect-square w-full max-w-[min(520px,92vw)] transition-transform duration-200"
+          ref={boardRef}
+          className="relative aspect-square w-full max-w-[min(520px,92vw)] touch-none transition-transform duration-200"
           style={{ transform: `scale(${zoom})` }}
         >
-          <div
-            className="absolute left-1/2 top-1/2 h-[58%] w-[58%] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-dashed border-[#c7c7cc]"
-          />
-          <div className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-[42%]">
+          {[0.28, 0.42, 0.56].map((size) => (
+            <div
+              key={size}
+              className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed border-[#d1d1d6]/80"
+              style={{ width: `${size * 100}%`, height: `${size * 100}%` }}
+            />
+          ))}
+          <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-[42%]">
             <MiiAvatar
               avatar={{
                 skinTone: 2,
@@ -80,48 +175,61 @@ export function RoomCanvas({
           </div>
 
           {people.map((person) => {
-            const pos = positions.find((x) => x.id === person.id)
-            if (!pos) return null
+            const stored = posById.get(person.id)!
+            const live =
+              dragOffset?.id === person.id
+                ? { x: dragOffset.x, y: dragOffset.y }
+                : stored
             const isSelected = selectedId === person.id
+            const isDragging = draggingId === person.id
             return (
               <div
                 key={person.id}
-                className="absolute z-[5]"
+                ref={(el) => {
+                  if (el) anchorRefs.current.set(person.id, el)
+                  else anchorRefs.current.delete(person.id)
+                }}
+                className={`absolute z-[5] ${isDragging ? 'z-20 cursor-grabbing' : 'cursor-grab'}`}
                 style={{
-                  left: `${pos.x * 100}%`,
-                  top: `${pos.y * 100}%`,
+                  left: `${live.x * 100}%`,
+                  top: `${live.y * 100}%`,
                   transform: 'translate(-50%, -50%)',
                 }}
+                onPointerDown={(e) => startDrag(person.id, e)}
+                onPointerMove={onDragMove}
+                onPointerUp={(e) => endDrag(person.id, e)}
+                onPointerCancel={(e) => endDrag(person.id, e)}
               >
                 <div
-                  className={`absolute left-1/2 top-1/2 -z-10 h-[72px] w-[72px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed border-[#d1d1d6] ${
-                    isSelected ? 'border-[#6B8F71]' : ''
+                  className={`pointer-events-none absolute left-1/2 top-1/2 -z-10 h-[72px] w-[72px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed ${
+                    isSelected || isDragging
+                      ? 'border-[#6B8F71]'
+                      : 'border-[#d1d1d6]'
                   }`}
                 />
-                {isSelected && (
-                  <div className="absolute bottom-full left-1/2 z-30 mb-3 -translate-x-1/2">
-                    <PersonProfileCard
-                      person={person}
-                      onEdit={() => onEditPerson(person.id)}
-                    />
-                  </div>
-                )}
-                <MiiAvatar
-                  avatar={person.avatar}
-                  size={64}
-                  label={person.name}
-                  selected={isSelected}
-                  onClick={() =>
-                    setSelectedId(isSelected ? null : person.id)
-                  }
-                />
+                <div className={isDragging ? 'scale-105 opacity-95' : ''}>
+                  <MiiAvatar
+                    avatar={person.avatar}
+                    size={64}
+                    label={person.name}
+                    selected={isSelected || isDragging}
+                  />
+                </div>
               </div>
             )
           })}
         </div>
       </div>
 
-      {people.length > 0 && !selected && (
+      {selected && !draggingId && (
+        <AnchoredProfileCard
+          anchorEl={profileAnchor}
+          person={selected}
+          onEdit={() => onEditPerson(selected.id)}
+        />
+      )}
+
+      {people.length > 0 && !selected && !draggingId && (
         <p className="pointer-events-none absolute left-1/2 top-[4.5rem] -translate-x-1/2 text-center text-[13px] text-[#FF3B30]">
           {people.length} {people.length === 1 ? 'person has' : 'people have'}{' '}
           entered your room

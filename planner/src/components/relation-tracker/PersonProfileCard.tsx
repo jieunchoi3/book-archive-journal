@@ -27,6 +27,8 @@ function formatDate(iso: string) {
 interface PersonProfileCardProps {
   person: RelationPerson
   compact?: boolean
+  /** Speech-bubble tail when anchored to an avatar on the room canvas. */
+  anchor?: 'above' | 'below'
   onClose?: () => void
   onEdit?: () => void
 }
@@ -34,17 +36,25 @@ interface PersonProfileCardProps {
 export function PersonProfileCard({
   person,
   compact,
+  anchor,
   onEdit,
 }: PersonProfileCardProps) {
+  const showTail = !compact && anchor
   return (
     <div
-      className={`relative w-[min(280px,calc(100vw-2rem))] rounded-2xl bg-white shadow-[0_8px_32px_rgba(0,0,0,0.08)] ${
+      className={`relative w-[min(280px,calc(100vw-2rem))] rounded-2xl bg-white shadow-[0_8px_32px_rgba(0,0,0,0.12)] ${
         compact ? 'p-4' : 'p-5'
       }`}
     >
-      {!compact && (
+      {showTail && anchor === 'above' && (
         <div
           className="absolute -bottom-2 left-1/2 h-4 w-4 -translate-x-1/2 rotate-45 bg-white shadow-sm"
+          aria-hidden
+        />
+      )}
+      {showTail && anchor === 'below' && (
+        <div
+          className="absolute -top-2 left-1/2 h-4 w-4 -translate-x-1/2 rotate-45 bg-white shadow-sm"
           aria-hidden
         />
       )}

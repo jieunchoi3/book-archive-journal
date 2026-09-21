@@ -4,7 +4,7 @@ import type { RelationPerson } from '../../types/relationTracker'
 import { MiiAvatar } from './MiiAvatar'
 import { PersonProfileCard } from './PersonProfileCard'
 
-/** Simple equirectangular projection for minimal map pins */
+/** Equirectangular projection aligned with public/world-map.svg (950×620). */
 function project(lat: number, lng: number) {
   const x = ((lng + 180) / 360) * 100
   const y = ((90 - lat) / 180) * 100
@@ -70,40 +70,48 @@ export function WorldMapView({
 
       <div className="relative flex flex-1 flex-col p-4 pb-28">
         {!listMode ? (
-          <div className="relative mx-auto aspect-[2/1] w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-inner">
-            <svg
-              viewBox="0 0 1000 500"
-              className="h-full w-full text-[#d4e4d4]"
-              aria-label="World map"
+          <div className="relative mx-auto w-full max-w-4xl flex-1">
+            <div
+              className="relative aspect-[950/620] w-full overflow-hidden rounded-2xl border border-[#d8e4d8] bg-[#e8f2e8] shadow-[inset_0_2px_12px_rgba(0,0,0,0.04)]"
+              role="img"
+              aria-label="World map showing where your people live"
             >
-              <rect width="1000" height="500" fill="#f0f4ef" />
-              <path
-                fill="currentColor"
-                d="M158,120c20-8,45-5,62,8,18,14,28,38,24,60-6,32-38,48-68,42-28-6-48-32-44-58,3-22,18-42,26-52zm720,80c15-12,38-18,58-10,22,8,38,30,36,52-2,24-22,44-46,48-26,4-52-12-58-36-6-24,4-48,10-54zM420,180c-8-15-5-35,8-48,14-14,36-20,55-14,22,8,36,30,32,52-4,26-30,44-54,40-20-4-36-18-41-30zm-180,200c12-8,28-10,42-4,16,6,28,22,26,38-2,18-18,32-36,34-20,2-38-10-44-28-6-18,2-36,12-40zm520,20c10-6,24-8,36-2,14,6,24,20,22,34-2,16-16,28-32,28-16,0-30-12-32-28-2-14,4-28,6-32z"
+              <img
+                src="/world-map.svg"
+                alt=""
+                className="pointer-events-none absolute inset-0 h-full w-full object-contain"
+                draggable={false}
               />
-              <ellipse cx="500" cy="250" rx="480" ry="230" fill="none" stroke="#e5e5ea" strokeWidth="1" />
-            </svg>
-            {pins.map((p) => {
-              const { x, y } = project(p.lat!, p.lng!)
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  className="absolute -translate-x-1/2 -translate-y-full"
-                  style={{ left: `${x}%`, top: `${y}%` }}
-                  onClick={() => setSelectedId(p.id)}
-                >
-                  <div className="flex flex-col items-center">
-                    <MiiAvatar avatar={p.avatar} size={40} />
-                    <span className="mt-0.5 max-w-[80px] truncate rounded bg-white/90 px-1.5 py-0.5 text-[10px] shadow-sm">
-                      {p.city ?? p.name}
-                    </span>
-                  </div>
-                </button>
-              )
-            })}
+              {pins.map((p) => {
+                const { x, y } = project(p.lat!, p.lng!)
+                const active = selectedId === p.id
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={`absolute z-10 -translate-x-1/2 -translate-y-full transition-transform ${
+                      active ? 'scale-110' : 'hover:scale-105'
+                    }`}
+                    style={{ left: `${x}%`, top: `${y}%` }}
+                    onClick={() => setSelectedId(active ? null : p.id)}
+                  >
+                    <div className="flex flex-col items-center">
+                      <span
+                        className={`mb-0.5 block h-2 w-2 rounded-full ${
+                          active ? 'bg-[#6B8F71]' : 'bg-[#6B8F71]/70'
+                        }`}
+                      />
+                      <MiiAvatar avatar={p.avatar} size={44} />
+                      <span className="mt-1 max-w-[96px] truncate rounded-full bg-white/95 px-2 py-0.5 text-[11px] font-medium shadow-sm">
+                        {p.city ?? p.name}
+                      </span>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
             {selected && (
-              <div className="absolute right-3 top-3 z-10 max-w-[280px]">
+              <div className="absolute right-4 top-4 z-20 max-w-[min(280px,calc(100%-2rem))] sm:right-6 sm:top-6">
                 <PersonProfileCard
                   person={selected}
                   compact
