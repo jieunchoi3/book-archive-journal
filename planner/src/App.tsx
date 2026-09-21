@@ -12,14 +12,13 @@ import { ImportLocalDataBanner } from './components/ImportLocalDataBanner'
 import { WeekView } from './components/WeekView'
 import { MonthCalendarView } from './components/MonthCalendarView'
 import { DiaryView } from './components/DiaryView'
-import { RelationsView } from './components/RelationsView'
 import { ExpenseView } from './components/ExpenseView'
 import { SnapView } from './components/SnapView'
 import { TasteStickerView } from './components/TasteStickerView'
 import { CompassView } from './components/CompassView'
 import { MailboxView } from './components/MailboxView'
+import { RelationTrackerView } from './components/relation-tracker/RelationTrackerView'
 import { useMailbox } from './hooks/useMailbox'
-import { useRoom } from './hooks/useRoom'
 import { BottomNav, type AppView } from './components/BottomNav'
 import type { CompassRoute } from './types/compass'
 import { DAY_KEYS, type DayKey } from './types/planner'
@@ -52,7 +51,6 @@ function AppContent() {
   const linkedApps = useLinkedApps()
   const compass = useCompass()
   const mailbox = useMailbox()
-  const room = useRoom()
 
   const openCompassAsk = (questionId?: string) => {
     setCompassRoute(
@@ -82,9 +80,7 @@ function AppContent() {
   return (
     <>
       <ImportLocalDataBanner />
-      {view === 'relations' ? (
-        <RelationsView room={room} />
-      ) : view === 'diary' ? (
+      {view === 'diary' ? (
         <DiaryView expenses={expenses} />
       ) : view === 'mailbox' ? (
         <MailboxView mailbox={mailbox} />
@@ -94,6 +90,8 @@ function AppContent() {
         <SnapView snap={snap} />
       ) : view === 'taste' ? (
         <TasteStickerView />
+      ) : view === 'relations' ? (
+        <RelationTrackerView />
       ) : view === 'compass' ? (
         <CompassView
           compass={compass}

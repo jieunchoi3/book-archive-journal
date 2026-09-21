@@ -1,0 +1,135 @@
+import type { ReactNode } from 'react'
+import {
+  Briefcase,
+  Calendar,
+  MapPin,
+  MessageCircle,
+  MoreHorizontal,
+  Pencil,
+  BookOpen,
+  Users,
+} from 'lucide-react'
+import type { RelationPerson } from '../../types/relationTracker'
+import { MiiAvatar } from './MiiAvatar'
+
+function formatDate(iso: string) {
+  try {
+    return new Date(iso).toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    })
+  } catch {
+    return iso
+  }
+}
+
+interface PersonProfileCardProps {
+  person: RelationPerson
+  compact?: boolean
+  onClose?: () => void
+  onEdit?: () => void
+}
+
+export function PersonProfileCard({
+  person,
+  compact,
+  onEdit,
+}: PersonProfileCardProps) {
+  return (
+    <div
+      className={`relative w-[min(280px,calc(100vw-2rem))] rounded-2xl bg-white shadow-[0_8px_32px_rgba(0,0,0,0.08)] ${
+        compact ? 'p-4' : 'p-5'
+      }`}
+    >
+      {!compact && (
+        <div
+          className="absolute -bottom-2 left-1/2 h-4 w-4 -translate-x-1/2 rotate-45 bg-white shadow-sm"
+          aria-hidden
+        />
+      )}
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <div>
+          <h3 className="font-serif text-[20px] font-semibold leading-tight text-[#1C1C1E]">
+            {person.name}
+          </h3>
+          <p className="text-[13px] text-muted">{person.relationshipType}</p>
+        </div>
+        <button
+          type="button"
+          className="rounded-full p-1 text-muted hover:bg-surface"
+          aria-label="More options"
+        >
+          <MoreHorizontal size={18} />
+        </button>
+      </div>
+      <div className="mb-3 flex gap-3">
+        <MiiAvatar avatar={person.avatar} size={56} />
+        <ul className="flex min-w-0 flex-1 flex-col justify-center gap-1.5 text-[12px] text-[#48484A]">
+          {person.occupation && (
+            <li className="flex items-center gap-2">
+              <Briefcase size={14} className="shrink-0 text-muted" />
+              <span className="truncate">{person.occupation}</span>
+            </li>
+          )}
+          {person.location && (
+            <li className="flex items-center gap-2">
+              <MapPin size={14} className="shrink-0 text-muted" />
+              <span className="truncate">{person.location}</span>
+            </li>
+          )}
+          {person.metContext && (
+            <li className="flex items-center gap-2">
+              <Users size={14} className="shrink-0 text-muted" />
+              <span className="truncate">{person.metContext}</span>
+            </li>
+          )}
+          {person.metDate && (
+            <li className="flex items-center gap-2">
+              <Calendar size={14} className="shrink-0 text-muted" />
+              <span>{formatDate(person.metDate)}</span>
+            </li>
+          )}
+        </ul>
+      </div>
+      {person.quote && (
+        <>
+          <div className="mb-2 border-t border-hairline" />
+          <p className="font-serif text-[14px] italic leading-relaxed text-[#636366]">
+            &ldquo;{person.quote}&rdquo;
+          </p>
+        </>
+      )}
+      <div className="mt-4 flex flex-wrap gap-2">
+        <ActionChip icon={<MessageCircle size={14} />} label="View" />
+        <ActionChip
+          icon={<Pencil size={14} />}
+          label="Edit"
+          onClick={onEdit}
+        />
+        <ActionChip icon={<BookOpen size={14} />} label="Add memory" />
+      </div>
+    </div>
+  )
+}
+
+function ActionChip({
+  icon,
+  label,
+  onClick,
+}: {
+  icon: ReactNode
+  label: string
+  onClick?: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-white px-3 py-1.5 text-[12px] font-medium text-[#48484A] transition hover:bg-surface"
+    >
+      {icon}
+      {label}
+    </button>
+  )
+}
