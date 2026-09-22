@@ -1,4 +1,3 @@
-import { useId } from 'react'
 import type { AvatarConfig } from '../../../types/relationTracker'
 import {
   HAIR_COLORS,
@@ -14,7 +13,6 @@ interface WiiCharacterProps {
 }
 
 export function WiiCharacter({ avatar, preview, className }: WiiCharacterProps) {
-  const shadowId = useId()
   const cfg = { ...avatar, ...preview }
   const skin = SKIN_TONES[cfg.skinTone] ?? SKIN_TONES[2]
   const hair = HAIR_COLORS[cfg.hairColor] ?? HAIR_COLORS[0]
@@ -27,14 +25,9 @@ export function WiiCharacter({ avatar, preview, className }: WiiCharacterProps) 
       viewBox="0 0 120 200"
       className={className}
       aria-hidden
-      style={{ overflow: 'visible' }}
+      style={{ overflow: 'visible', background: 'none' }}
     >
-      <defs>
-        <filter id={shadowId} x="-20%" y="-10%" width="140%" height="130%">
-          <feDropShadow dx="0" dy="4" stdDeviation="3" floodOpacity="0.18" />
-        </filter>
-      </defs>
-      <g filter={`url(#${shadowId})`}>
+      <g>
         {/* Legs */}
         <rect x="42" y="148" width="14" height="42" rx="6" fill={pants} />
         <rect x="64" y="148" width="14" height="42" rx="6" fill={pants} />

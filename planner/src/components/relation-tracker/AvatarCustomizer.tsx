@@ -179,10 +179,10 @@ function OptionGrid({
             key={opt.id}
             type="button"
             onClick={() => onChange(opt.id)}
-            className={`flex flex-col items-center rounded-xl bg-white/80 p-1 ring-2 transition ${
+            className={`flex flex-col items-center rounded-xl bg-transparent p-1 ring-2 transition ${
               value === opt.id
                 ? 'ring-[#6B8F71]'
-                : 'ring-transparent hover:ring-hairline'
+                : 'ring-transparent hover:ring-hairline/80'
             }`}
           >
             <MiiAvatar
