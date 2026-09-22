@@ -105,10 +105,11 @@ export function loadRelationTracker(): RelationTrackerState {
     return {
       ...defaultState(),
       ...parsed,
-      people: parsed.people.map((p) => ({
-        ...p,
-        avatar: { ...DEFAULT_AVATAR, ...p.avatar },
-      })),
+      people: parsed.people.map((p) => {
+        const avatar = { ...DEFAULT_AVATAR, ...p.avatar }
+        delete avatar.presetId
+        return { ...p, avatar }
+      }),
     }
   } catch {
     return defaultState()

@@ -27,13 +27,15 @@ export function MiiAvatar({
       style={{ width: size }}
     >
       <div
-        className={`relative ${selected ? 'rounded-full ring-2 ring-[#6B8F71] ring-offset-2 ring-offset-transparent' : ''}`}
+        className={`relative overflow-visible bg-transparent transition-transform ${
+          selected ? 'scale-[1.06]' : ''
+        }`}
         style={{ width: size, height }}
       >
         <WiiCharacter
           avatar={avatar}
           preview={preview}
-          className="h-full w-full"
+          className="h-full w-full bg-transparent drop-shadow-[0_6px_10px_rgba(0,0,0,0.14)]"
         />
       </div>
       {label && (
