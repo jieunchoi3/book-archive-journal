@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import type { AvatarConfig, RelationPerson } from '../../types/relationTracker'
 import { DEFAULT_AVATAR } from '../../types/relationTracker'
-import { applyPreset, presetForTab } from '../../lib/avatarPresets'
 import { MiiAvatar } from './MiiAvatar'
+import { AvatarCustomizer } from './AvatarCustomizer'
 
 type Draft = Omit<RelationPerson, 'id'>
 
@@ -34,7 +34,10 @@ export function NewFriendSheet({ initial, onCancel, onSave }: NewFriendSheetProp
   }))
 
   const setAvatar = (patch: Partial<AvatarConfig>) => {
-    setDraft((d) => ({ ...d, avatar: { ...d.avatar, ...patch } }))
+    setDraft((d) => ({
+      ...d,
+      avatar: { ...d.avatar, ...patch },
+    }))
   }
 
   const canSave = draft.name.trim().length > 0
@@ -76,18 +79,11 @@ export function NewFriendSheet({ initial, onCancel, onSave }: NewFriendSheetProp
                 </button>
               ))}
             </div>
-            <div className="mt-4 w-full px-2">
-              <PresetGrid
-                label={
-                  tab === 'Face'
-                    ? 'Pick a face & skin tone'
-                    : tab === 'Hair'
-                      ? 'Pick a hairstyle'
-                      : 'Pick an outfit look'
-                }
-                tabKey={tab.toLowerCase() as 'face' | 'hair' | 'outfit'}
-                selectedId={draft.avatar.presetId}
-                onSelect={(id) => setAvatar(applyPreset(id))}
+            <div className="mt-4 max-h-[42vh] w-full overflow-y-auto px-2 pb-2">
+              <AvatarCustomizer
+                tab={tab}
+                avatar={draft.avatar}
+                onChange={setAvatar}
               />
             </div>
           </div>
@@ -296,49 +292,6 @@ function Field({
       <span className="mb-1 block text-[12px] text-muted">{label}</span>
       {children}
     </label>
-  )
-}
-
-function PresetGrid({
-  label,
-  tabKey,
-  selectedId,
-  onSelect,
-}: {
-  label: string
-  tabKey: 'face' | 'hair' | 'outfit'
-  selectedId?: string
-  onSelect: (presetId: string) => void
-}) {
-  const presets = presetForTab(tabKey)
-  return (
-    <div>
-      <span className="mb-2 block text-[11px] text-muted">{label}</span>
-      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-        {presets.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            onClick={() => onSelect(p.id)}
-            className={`flex flex-col items-center rounded-xl bg-white p-1.5 ring-2 transition ${
-              selectedId === p.id
-                ? 'ring-[#6B8F71]'
-                : 'ring-transparent hover:ring-hairline'
-            }`}
-          >
-            <img
-              src={p.src}
-              alt=""
-              className="h-16 w-full object-contain object-bottom"
-              draggable={false}
-            />
-            <span className="mt-1 w-full truncate text-center text-[10px] text-muted">
-              {p.label}
-            </span>
-          </button>
-        ))}
-      </div>
-    </div>
   )
 }
 

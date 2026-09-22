@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Globe, Minus, Plus, BookOpen } from 'lucide-react'
 import type { RelationPerson } from '../../types/relationTracker'
-import { applyPreset } from '../../lib/avatarPresets'
+import { DEFAULT_AVATAR } from '../../types/relationTracker'
 import { MiiAvatar } from './MiiAvatar'
 
-const ME_AVATAR = applyPreset('me')
+const ME_AVATAR = {
+  ...DEFAULT_AVATAR,
+  outfitColor: 0,
+  hairStyle: 1,
+  hairColor: 1,
+}
 import { AnchoredProfileCard } from './AnchoredProfileCard'
 
 interface RoomCanvasProps {

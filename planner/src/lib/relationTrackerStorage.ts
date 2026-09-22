@@ -18,7 +18,6 @@ const SAMPLE_PEOPLE: RelationPerson[] = [
     connectFrequency: 'monthly',
     lastInteraction: '2026-07-01',
     avatar: {
-      presetId: 'sophie',
       skinTone: 1,
       hairStyle: 2,
       hairColor: 1,
@@ -47,7 +46,6 @@ const SAMPLE_PEOPLE: RelationPerson[] = [
     connectFrequency: 'few_months',
     lastInteraction: '2026-06-20',
     avatar: {
-      presetId: 'minji',
       skinTone: 2,
       hairStyle: 1,
       hairColor: 0,
@@ -75,8 +73,7 @@ const SAMPLE_PEOPLE: RelationPerson[] = [
     connectFrequency: 'few_months',
     lastInteraction: '2026-04-10',
     avatar: {
-      presetId: 'daniel',
-      skinTone: 1,
+      skinTone: 3,
       hairStyle: 0,
       hairColor: 0,
       eyeStyle: 2,

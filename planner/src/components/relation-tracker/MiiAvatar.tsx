@@ -1,5 +1,5 @@
 import type { AvatarConfig } from '../../types/relationTracker'
-import { resolveAvatarSrc } from '../../lib/avatarPresets'
+import { WiiCharacter } from './wii/WiiCharacter'
 
 interface MiiAvatarProps {
   avatar: AvatarConfig
@@ -7,6 +7,8 @@ interface MiiAvatarProps {
   label?: string
   selected?: boolean
   onClick?: () => void
+  /** Highlight one trait in customizer grids */
+  preview?: Partial<AvatarConfig>
 }
 
 export function MiiAvatar({
@@ -15,9 +17,9 @@ export function MiiAvatar({
   label,
   selected,
   onClick,
+  preview,
 }: MiiAvatarProps) {
-  const src = resolveAvatarSrc(avatar)
-  const imgSize = size * 1.35
+  const height = size * 1.65
 
   const body = (
     <div
@@ -25,19 +27,13 @@ export function MiiAvatar({
       style={{ width: size }}
     >
       <div
-        className="relative flex items-end justify-center"
-        style={{ width: size, minHeight: imgSize }}
+        className={`relative ${selected ? 'rounded-full ring-2 ring-[#6B8F71] ring-offset-2 ring-offset-transparent' : ''}`}
+        style={{ width: size, height }}
       >
-        <img
-          src={src}
-          alt=""
-          draggable={false}
-          className={`h-auto w-auto max-w-none object-contain ${
-            selected
-              ? 'drop-shadow-[0_0_0_2px_#6B8F71] drop-shadow-[0_8px_16px_rgba(0,0,0,0.12)]'
-              : 'drop-shadow-[0_6px_12px_rgba(0,0,0,0.15)]'
-          }`}
-          style={{ height: imgSize, maxWidth: size * 1.35 }}
+        <WiiCharacter
+          avatar={avatar}
+          preview={preview}
+          className="h-full w-full"
         />
       </div>
       {label && (
