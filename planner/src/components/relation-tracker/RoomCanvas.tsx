@@ -193,13 +193,6 @@ export function RoomCanvas({
                 onPointerUp={(e) => endDrag(person.id, e)}
                 onPointerCancel={(e) => endDrag(person.id, e)}
               >
-                <div
-                  className={`pointer-events-none absolute left-1/2 top-1/2 -z-10 h-[72px] w-[72px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed ${
-                    isSelected || isDragging
-                      ? 'border-[#6B8F71]'
-                      : 'border-[#d1d1d6]'
-                  }`}
-                />
                 <div className={isDragging ? 'scale-105 opacity-95' : ''}>
                   <MiiAvatar
                     avatar={person.avatar}

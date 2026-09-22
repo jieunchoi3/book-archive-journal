@@ -25,17 +25,19 @@ export function MiiAvatar({
       style={{ width: size }}
     >
       <div
-        className={`relative flex items-end justify-center overflow-visible ${
-          selected ? 'ring-2 ring-[#6B8F71] ring-offset-2 rounded-2xl' : ''
-        }`}
-        style={{ width: size, height: imgSize }}
+        className="relative flex items-end justify-center"
+        style={{ width: size, minHeight: imgSize }}
       >
         <img
           src={src}
           alt=""
           draggable={false}
-          className="max-h-full w-auto object-contain drop-shadow-md"
-          style={{ height: imgSize, width: 'auto', maxWidth: size * 1.2 }}
+          className={`h-auto w-auto max-w-none object-contain ${
+            selected
+              ? 'drop-shadow-[0_0_0_2px_#6B8F71] drop-shadow-[0_8px_16px_rgba(0,0,0,0.12)]'
+              : 'drop-shadow-[0_6px_12px_rgba(0,0,0,0.15)]'
+          }`}
+          style={{ height: imgSize, maxWidth: size * 1.35 }}
         />
       </div>
       {label && (
@@ -48,7 +50,11 @@ export function MiiAvatar({
 
   if (onClick) {
     return (
-      <button type="button" onClick={onClick} className="cursor-pointer">
+      <button
+        type="button"
+        onClick={onClick}
+        className="cursor-pointer border-0 bg-transparent p-0"
+      >
         {body}
       </button>
     )
