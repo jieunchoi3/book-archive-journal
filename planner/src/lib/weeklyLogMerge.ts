@@ -12,9 +12,9 @@ export function mergeWeeklyLogs(base: WeeklyLog, incoming: WeeklyLog): WeeklyLog
     if (!days[dk]) days[dk] = {}
     for (const [blockId, blockLog] of Object.entries(blockMap)) {
       const existing = days[dk]![blockId] ?? { taskCompletion: {} }
-      const taskCompletion = { ...existing.taskCompletion }
-      for (const [taskId, done] of Object.entries(blockLog.taskCompletion ?? {})) {
-        taskCompletion[taskId] = Boolean(taskCompletion[taskId] || done)
+      const taskCompletion = {
+        ...existing.taskCompletion,
+        ...(blockLog.taskCompletion ?? {}),
       }
       days[dk]![blockId] = {
         ...existing,
@@ -50,7 +50,7 @@ export function mergeWeeklyLogs(base: WeeklyLog, incoming: WeeklyLog): WeeklyLog
             ...prev,
             ...task,
             label: task.label || prev.label,
-            done: prev.done || task.done,
+            done: task.done,
           })
         }
       }

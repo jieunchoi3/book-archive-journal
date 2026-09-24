@@ -1,4 +1,5 @@
 import type { WeekTemplate, WeeklyLog } from '../types/planner'
+import type { ItemsStore } from './itemStorageLegacy'
 
 function weekLogKey(userId: string, weekStart: string) {
   return `planner:weekLog:${userId}:${weekStart}`
@@ -6,6 +7,10 @@ function weekLogKey(userId: string, weekStart: string) {
 
 function templateKey(userId: string) {
   return `planner:template:${userId}`
+}
+
+function itemsStoreKey(userId: string) {
+  return `planner:itemsStore:${userId}`
 }
 
 export function saveWeeklyLogLocal(userId: string, log: WeeklyLog): void {
@@ -39,6 +44,24 @@ export function loadTemplateLocal(userId: string): WeekTemplate | null {
     const raw = localStorage.getItem(templateKey(userId))
     if (!raw) return null
     return JSON.parse(raw) as WeekTemplate
+  } catch {
+    return null
+  }
+}
+
+export function saveItemsStoreLocal(userId: string, store: ItemsStore): void {
+  try {
+    localStorage.setItem(itemsStoreKey(userId), JSON.stringify(store))
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+export function loadItemsStoreLocal(userId: string): ItemsStore | null {
+  try {
+    const raw = localStorage.getItem(itemsStoreKey(userId))
+    if (!raw) return null
+    return JSON.parse(raw) as ItemsStore
   } catch {
     return null
   }

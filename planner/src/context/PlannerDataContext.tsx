@@ -31,7 +31,6 @@ import {
 import type { LinkedApp } from '../types/linkedApp'
 import { dayKeyToRRuleDay, expandItemsForWeek, isTemplateWeeklyHabit } from '../lib/itemRecurrence'
 import {
-  fetchItemsStore,
   fetchLinkedApps,
   fetchSidebarNote,
   fetchTemplate,
@@ -60,9 +59,11 @@ import {
 } from '../lib/localStorageLegacy'
 import { emptyWeeklyLog } from '../lib/storageUtils'
 import { mergeWeeklyLogs } from '../lib/weeklyLogMerge'
+import { loadItemsStoreMerged } from '../lib/loadItemsStoreMerged'
 import {
   loadTemplateLocal,
   loadWeeklyLogLocal,
+  saveItemsStoreLocal,
   saveTemplateLocal,
   saveWeeklyLogLocal,
   weeklyLogHasContent,
@@ -353,6 +354,7 @@ export function PlannerDataProvider({
     }
     saveWeeklyLogLocal(userId, weeklyLogRef.current)
     saveTemplateLocal(userId, templateRef.current)
+    saveItemsStoreLocal(userId, itemsStoreRef.current)
 
     await templateSyncQueue.current
   }, [userId, flushBlockLogWrite, enqueueTemplateSync])
@@ -483,6 +485,7 @@ export function PlannerDataProvider({
 
   const persistItems = useCallback(
     (store: typeof itemsStore) => {
+      saveItemsStoreLocal(userId, store)
       if (itemsTimer.current) clearTimeout(itemsTimer.current)
       itemsTimer.current = setTimeout(() => {
         syncItemsStore(userId, store).catch((e) => logError('syncItemsStore', e))
@@ -528,7 +531,7 @@ export function PlannerDataProvider({
         const [tmpl, log, store, apps, remoteNote] = await Promise.all([
           fetchTemplate(userId),
           loadWeeklyLog(getCurrentWeekStart()),
-          fetchItemsStore(userId),
+          loadItemsStoreMerged(userId),
           fetchLinkedApps(userId),
           fetchSidebarNote(userId).catch(() => null),
         ])
@@ -544,6 +547,7 @@ export function PlannerDataProvider({
         setWeekStart(getCurrentWeekStart())
         const normalizedStore = withDefaultEventCategories(store)
         setItemsStore(normalizedStore)
+        saveItemsStoreLocal(userId, normalizedStore)
         if (normalizedStore.categories.length !== store.categories.length) {
           void syncItemsStore(userId, normalizedStore).catch((e) => logError('seedCategories', e))
         }
@@ -582,7 +586,7 @@ export function PlannerDataProvider({
       clearPlannerLocalData()
       const [tmpl, store, apps] = await Promise.all([
         fetchTemplate(userId),
-        fetchItemsStore(userId),
+        loadItemsStoreMerged(userId),
         fetchLinkedApps(userId),
       ])
       if (tmpl) setTemplate(tmpl)
@@ -1469,14 +1473,15 @@ export function PlannerDataProvider({
         ...prev,
         items: prev.items.map((item) => {
           if (item.id !== itemId) return item
-          if (isRecurringItem(item)) {
-            const key = dateKey ?? item.dueDate
+          const key = dateKey ?? item.dueDate ?? undefined
+          if (isRecurringItem(item) || (key && typeof item.done === 'object' && item.done !== null)) {
             if (!key) return item
-            const map = typeof item.done === 'object' ? { ...item.done } : {}
+            const map =
+              typeof item.done === 'object' && item.done !== null ? { ...item.done } : {}
             map[key] = !map[key]
             return { ...item, done: map }
           }
-          return { ...item, done: !(item.done as boolean) }
+          return { ...item, done: item.done !== true }
         }),
       }))
     },
