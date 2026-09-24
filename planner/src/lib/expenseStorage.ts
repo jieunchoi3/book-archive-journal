@@ -96,12 +96,16 @@ function mergeById<T extends { id: string }>(primary: T[], secondary: T[]): T[] 
   return [...map.values()]
 }
 
+function wishlistPhotoCount(item: WishlistItem): number {
+  const extra = item.imageDataUrls?.filter(Boolean).length ?? 0
+  if (extra > 0) return extra
+  return item.imageDataUrl?.trim() ? 1 : 0
+}
+
 function wishlistItemRichness(item: WishlistItem): number {
   let score = 0
   if (item.name?.trim()) score += 2
-  if (item.imageDataUrl?.trim()) score += 3
-  const extraPhotos = (item as WishlistItem & { imageDataUrls?: string[] }).imageDataUrls
-  if (extraPhotos?.length) score += 3
+  score += wishlistPhotoCount(item) * 4
   if (item.brand?.trim()) score += 1
   if (item.store?.trim()) score += 1
   if (item.link?.trim()) score += 1
@@ -226,10 +230,27 @@ export async function loadExpenseStore(userId: string): Promise<ExpenseStore | n
 
     const recovered = applyWishlistBackupRecovery(bestStore, userId)
 
-    // Persist merged result locally only — never push to cloud during load (avoids wipe races).
-    const localCount = local?.store.wishlistItems?.length ?? 0
+    const countPhotos = (items: WishlistItem[] | undefined) =>
+      (items ?? []).reduce((n, i) => n + wishlistPhotoCount(i), 0)
+
+    const recoveredPhotos = countPhotos(recovered.wishlistItems)
+    const localPhotos = countPhotos(local?.store.wishlistItems)
+    const bestPhotos = countPhotos(bestStore.wishlistItems)
     const recoveredCount = recovered.wishlistItems?.length ?? 0
-    if (recoveredCount > localCount || recoveredCount > (bestStore.wishlistItems?.length ?? 0)) {
+    const localCount = local?.store.wishlistItems?.length ?? 0
+
+    // Persist merged result locally only — never push to cloud during load (avoids wipe races).
+    if (
+      recoveredCount > localCount ||
+      recoveredCount > (bestStore.wishlistItems?.length ?? 0) ||
+      recoveredPhotos > localPhotos ||
+      recoveredPhotos > bestPhotos
+    ) {
+      if (recoveredPhotos > bestPhotos) {
+        console.info(
+          `[expenses] restored ${recoveredPhotos - bestPhotos} wishlist photo(s) from local backup`,
+        )
+      }
       await saveExpenseStoreLocal(userId, recovered, new Date().toISOString())
     }
 

@@ -65,6 +65,10 @@ function mergeWishlistById(primary: WishlistItem[], secondary: WishlistItem[]): 
   return [...map.values()]
 }
 
+function photoCount(item: WishlistItem): number {
+  return item.imageDataUrls?.length ?? (item.imageDataUrl?.trim() ? 1 : 0)
+}
+
 export function saveWishlistBackup(userId: string, items: WishlistItem[]): void {
   if (!items.length) return
   try {
@@ -72,13 +76,15 @@ export function saveWishlistBackup(userId: string, items: WishlistItem[]): void 
     const existing = loadWishlistBackupEntries(userId)
     const normalized = normalizeWishlistItems(items)
     const latest = existing[0]
-    if (
+    const sameIds =
       latest &&
       latest.items.length === normalized.length &&
       JSON.stringify(latest.items.map((i) => i.id).sort()) ===
         JSON.stringify(normalized.map((i) => i.id).sort())
-    ) {
-      return
+    if (sameIds) {
+      const latestPhotos = latest!.items.reduce((n, i) => n + photoCount(i), 0)
+      const nextPhotos = normalized.reduce((n, i) => n + photoCount(i), 0)
+      if (nextPhotos <= latestPhotos) return
     }
     const next: WishlistBackupEntry[] = [
       { savedAt: new Date().toISOString(), items: normalized },
@@ -133,17 +139,25 @@ export function loadLatestWishlistBackup(userId: string): WishlistItem[] {
   return entry ? normalizeWishlistItems(entry.items) : []
 }
 
+function mergeWishlistItemPreferPhotos(a: WishlistItem, b: WishlistItem): WishlistItem {
+  const photosA = photoCount(a)
+  const photosB = photoCount(b)
+  if (photosA !== photosB) return photosA > photosB ? a : b
+  return mergeWishlistById([a], [b])[0]!
+}
+
 export function restoreWishlistFromBackup(userId: string): WishlistItem[] {
   const meta = loadWishlistMetadataBackup(userId)
   const merged = new Map<string, WishlistItem>()
   for (const entry of [...loadWishlistBackupEntries(userId)].reverse()) {
     for (const item of normalizeWishlistItems(entry.items)) {
-      merged.set(item.id, item)
+      const existing = merged.get(item.id)
+      merged.set(item.id, existing ? mergeWishlistItemPreferPhotos(existing, item) : item)
     }
   }
   for (const item of meta) {
     const existing = merged.get(item.id)
-    merged.set(item.id, existing ? mergeWishlistById([item], [existing])[0]! : item)
+    merged.set(item.id, existing ? mergeWishlistItemPreferPhotos(existing, item) : item)
   }
   return [...merged.values()]
 }
