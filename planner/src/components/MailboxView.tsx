@@ -77,10 +77,17 @@ export function MailboxView({ mailbox }: MailboxViewProps) {
         </div>
       </header>
 
-      {mailbox.syncError && (
-        <p className="mb-4 rounded-xl bg-[#FF3B30]/10 px-3 py-2 text-[12px] text-[#FF3B30]">
-          Sync issue: {mailbox.syncError}
-        </p>
+        {mailbox.syncError && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#FF3B30]/10 px-3 py-2 text-[12px] text-[#FF3B30]">
+          <span>Sync issue: {mailbox.syncError}</span>
+          <button
+            type="button"
+            onClick={() => void mailbox.refresh()}
+            className="font-semibold underline"
+          >
+            Retry
+          </button>
+        </div>
       )}
 
       <section className="mb-6">
@@ -134,16 +141,26 @@ export function MailboxView({ mailbox }: MailboxViewProps) {
                 tint="#E8E8ED"
                 dimmed
                 onClick={() => {}}
+                onDelete={() => {
+                  if (window.confirm('Delete this sealed letter everywhere?')) {
+                    void mailbox.deleteLetter(letter.id)
+                  }
+                }}
               />
             ))}
             {mailbox.waitingPrompts.map((prompt) => (
               <MailCard
                 key={prompt.id}
                 title="Next question"
-                subtitle={`${prompt.body.slice(0, 60)}… · in ${daysBetween(today, prompt.nextDueOn)}d`}
+                subtitle={`${prompt.body.length > 60 ? `${prompt.body.slice(0, 60)}…` : prompt.body} · in ${daysBetween(today, prompt.nextDueOn)}d`}
                 tint={prompt.envelopeColor}
                 dimmed
                 onClick={() => setModal({ type: 'history', prompt })}
+                onDelete={() => {
+                  if (window.confirm('Delete this question and all its answers everywhere?')) {
+                    void mailbox.deletePrompt(prompt.id)
+                  }
+                }}
               />
             ))}
           </ul>
@@ -197,6 +214,17 @@ export function MailboxView({ mailbox }: MailboxViewProps) {
           answers={mailbox.answersForPrompt(modal.prompt.id)}
           onClose={() => setModal({ type: 'none' })}
           onOpenAnswer={(letter) => setModal({ type: 'read_answer', letter })}
+          onDeletePrompt={() => {
+            if (window.confirm('Delete this question and all answers on all devices?')) {
+              void mailbox.deletePrompt(modal.prompt.id)
+              setModal({ type: 'none' })
+            }
+          }}
+          onDeleteAnswer={(letterId) => {
+            if (window.confirm('Delete this answer everywhere?')) {
+              void mailbox.deleteLetter(letterId)
+            }
+          }}
         />
       )}
     </div>
@@ -217,6 +245,7 @@ function MailCard({
   dimmed,
   onClick,
   onHistory,
+  onDelete,
 }: {
   title: string
   subtitle: string
@@ -224,6 +253,7 @@ function MailCard({
   dimmed?: boolean
   onClick: () => void
   onHistory?: () => void
+  onDelete?: () => void
 }) {
   return (
     <li className={`flex gap-3 rounded-2xl bg-white p-3 ring-1 ring-hairline ${dimmed ? 'opacity-75' : ''}`}>
@@ -237,15 +267,26 @@ function MailCard({
           <p className="line-clamp-2 text-[12px] text-muted">{subtitle}</p>
         </div>
       </button>
-      {onHistory && (
-        <button
-          type="button"
-          onClick={onHistory}
-          className="shrink-0 self-center rounded-lg px-2 py-1 text-[11px] font-medium text-[#007AFF]"
-        >
-          History
-        </button>
-      )}
+      <div className="flex shrink-0 flex-col justify-center gap-1">
+        {onHistory && (
+          <button
+            type="button"
+            onClick={onHistory}
+            className="rounded-lg px-2 py-1 text-[11px] font-medium text-[#007AFF]"
+          >
+            History
+          </button>
+        )}
+        {onDelete && (
+          <button
+            type="button"
+            onClick={onDelete}
+            className="rounded-lg px-2 py-1 text-[11px] font-medium text-[#FF3B30]"
+          >
+            Delete
+          </button>
+        )}
+      </div>
     </li>
   )
 }
