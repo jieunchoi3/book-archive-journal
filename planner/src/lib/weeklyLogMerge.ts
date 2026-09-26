@@ -1,6 +1,7 @@
 import type { DayKey, WeeklyLog } from '../types/planner'
+import { weeklyLogHasContent } from './plannerLocalCache'
 
-/** Merge two week logs; `done` and one-off tasks union with OR on completion. */
+/** Merge two week logs; local (`incoming`) wins on overlapping completion keys. */
 export function mergeWeeklyLogs(base: WeeklyLog, incoming: WeeklyLog): WeeklyLog {
   if (base.weekStart !== incoming.weekStart) return base
 
@@ -60,4 +61,12 @@ export function mergeWeeklyLogs(base: WeeklyLog, incoming: WeeklyLog): WeeklyLog
   }
 
   return { weekStart: base.weekStart, days, oneOffByDate }
+}
+
+/** Same rules as initial load — never discard local-only tasks or completions. */
+export function resolveWeeklyLogMerge(cloud: WeeklyLog, local: WeeklyLog | null): WeeklyLog {
+  if (!local || local.weekStart !== cloud.weekStart) return cloud
+  if (!weeklyLogHasContent(local)) return cloud
+  if (!weeklyLogHasContent(cloud)) return local
+  return mergeWeeklyLogs(cloud, local)
 }
