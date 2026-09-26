@@ -63,15 +63,15 @@ export function MailboxComposeSheet({
 
   return (
     <div
-      className="fixed inset-0 z-[75] flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
+      className="fixed inset-0 z-[75] flex items-end justify-center bg-[#3D3429]/35 backdrop-blur-[2px] sm:items-center sm:p-4"
       onClick={onClose}
     >
       <div
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-[#FBF8F2] shadow-2xl sm:rounded-3xl"
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-[#FFFCF7] shadow-[0_24px_80px_rgba(61,52,41,0.2)] ring-1 ring-[#E8D5C4]/60 sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-hairline px-5 py-4">
-          <h2 className="text-[17px] font-semibold text-[#1C1C1E]">Write to future you</h2>
+          <h2 className="mailbox-serif text-[20px] text-[#3D3429]">Write to future you</h2>
           <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-muted hover:bg-white">
             <X size={18} />
           </button>
@@ -83,7 +83,7 @@ export function MailboxComposeSheet({
               type="button"
               onClick={() => setMode('letter')}
               className={`flex-1 rounded-lg py-2 text-[13px] font-medium ${
-                mode === 'letter' ? 'bg-[#007AFF] text-white' : 'text-muted'
+                mode === 'letter' ? 'bg-[#3D3429] text-[#FBF8F2]' : 'text-muted'
               }`}
             >
               Letter
@@ -92,7 +92,7 @@ export function MailboxComposeSheet({
               type="button"
               onClick={() => setMode('question')}
               className={`flex-1 rounded-lg py-2 text-[13px] font-medium ${
-                mode === 'question' ? 'bg-[#007AFF] text-white' : 'text-muted'
+                mode === 'question' ? 'bg-[#3D3429] text-[#FBF8F2]' : 'text-muted'
               }`}
             >
               Repeating question

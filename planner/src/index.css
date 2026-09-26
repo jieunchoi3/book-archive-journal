@@ -69,6 +69,27 @@ body {
   font-family: "Abril Fatface", Georgia, serif;
 }
 
+.mailbox-page {
+  background-color: #fbf8f2;
+}
+
+.mailbox-serif {
+  font-family: "Abril Fatface", "Noto Serif KR", Georgia, serif;
+  font-weight: 400;
+}
+
+.mailbox-empty-pin {
+  background: linear-gradient(145deg, #fffdf9 0%, #f5ebe0 100%);
+}
+
+.mailbox-pin {
+  background-image: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.92) 0%,
+    rgba(251, 248, 242, 0.98) 100%
+  );
+}
+
 @keyframes diary-flip-next {
   0% {
     opacity: 0.55;
