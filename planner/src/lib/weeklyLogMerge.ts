@@ -70,3 +70,16 @@ export function resolveWeeklyLogMerge(cloud: WeeklyLog, local: WeeklyLog | null)
   if (!weeklyLogHasContent(cloud)) return local
   return mergeWeeklyLogs(cloud, local)
 }
+
+/** Layer disk + in-memory (and any other) sources; later sources win on conflicts. */
+export function mergeWeeklyLogSources(
+  cloud: WeeklyLog,
+  ...sources: (WeeklyLog | null | undefined)[]
+): WeeklyLog {
+  let result = cloud
+  for (const source of sources) {
+    if (!source) continue
+    result = resolveWeeklyLogMerge(result, source)
+  }
+  return result
+}

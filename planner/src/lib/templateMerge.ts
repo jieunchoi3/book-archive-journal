@@ -60,3 +60,13 @@ export function mergeWeekTemplates(cloud: WeekTemplate, local: WeekTemplate): We
 export function templateTaskCount(template: WeekTemplate): number {
   return template.days.reduce((n, day) => n + day.blocks.reduce((m, b) => m + b.tasks.length, 0), 0)
 }
+
+export function resolveTemplateMerge(
+  cloud: WeekTemplate | null,
+  local: WeekTemplate | null,
+): WeekTemplate | null {
+  if (!cloud && !local) return null
+  if (!cloud) return local
+  if (!local) return cloud
+  return mergeWeekTemplates(cloud, local)
+}
