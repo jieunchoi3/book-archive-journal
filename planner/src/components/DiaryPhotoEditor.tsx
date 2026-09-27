@@ -586,19 +586,63 @@ export function DiaryPhotoEditor({
     dragRef.current = null
   }
 
-  const addPhotos = async (files: FileList | null) => {
-    if (!files?.length) return
-    const added: DiaryPhotoLayer[] = []
-    for (const file of Array.from(files)) {
-      if (!file.type.startsWith('image/')) continue
-      added.push(await createLayerFromSrc(file))
+  const addPhotos = useCallback(
+    async (files: FileList | null) => {
+      if (!files?.length) return
+      const added: DiaryPhotoLayer[] = []
+      for (const file of Array.from(files)) {
+        if (!file.type.startsWith('image/')) continue
+        added.push(await createLayerFromSrc(file))
+      }
+      if (!added.length) return
+      pushHistory()
+      setLayers((prev) => [...prev, ...added])
+      setActiveId(added[added.length - 1].id)
+      setTool('move')
+    },
+    [pushHistory],
+  )
+
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      const target = event.target
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT')
+      ) {
+        return
+      }
+
+      const clipboard = event.clipboardData
+      if (!clipboard) return
+
+      const imageFiles: File[] = []
+      if (clipboard.files?.length) {
+        for (const file of Array.from(clipboard.files)) {
+          if (file.type.startsWith('image/')) imageFiles.push(file)
+        }
+      }
+      if (!imageFiles.length) {
+        for (const item of Array.from(clipboard.items)) {
+          if (!item.type.startsWith('image/')) continue
+          const file = item.getAsFile()
+          if (file) imageFiles.push(file)
+        }
+      }
+      if (!imageFiles.length) return
+
+      event.preventDefault()
+      const transfer = new DataTransfer()
+      for (const file of imageFiles) transfer.items.add(file)
+      void addPhotos(transfer.files)
     }
-    if (!added.length) return
-    pushHistory()
-    setLayers((prev) => [...prev, ...added])
-    setActiveId(added[added.length - 1].id)
-    setTool('move')
-  }
+
+    document.addEventListener('paste', onPaste)
+    return () => document.removeEventListener('paste', onPaste)
+  }, [addPhotos])
 
   const clearCropSelection = () => {
     setCropRect(null)
@@ -710,7 +754,9 @@ export function DiaryPhotoEditor({
       <header className="flex shrink-0 items-center justify-between border-b border-hairline px-4 py-3">
         <div>
           <h2 className="text-[16px] font-semibold text-[#1C1C1E]">Photo diary</h2>
-          <p className="text-[12px] text-muted">Crop, resize, draw, and stack photos</p>
+          <p className="text-[12px] text-muted">
+            Crop, resize, draw, stack photos — paste from clipboard anytime
+          </p>
         </div>
         <button
           type="button"
@@ -761,7 +807,7 @@ export function DiaryPhotoEditor({
                   </span>
                   <span className="text-[13px] font-medium">Add a photo</span>
                   <span className="px-8 text-center text-[11px] text-muted">
-                    or choose Draw to sketch on the frame
+                    Paste (⌘V / Ctrl+V), tap here, or use Draw to sketch on the frame
                   </span>
                 </button>
               )}
