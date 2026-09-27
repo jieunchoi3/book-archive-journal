@@ -33,6 +33,10 @@ import { DiaryDayEditor } from './DiaryDayEditor'
 import { DiaryFlipBook } from './DiaryFlipBook'
 import { DiaryTagSidebar } from './DiaryTagSidebar'
 import { DiaryTaggedEntriesList } from './DiaryTaggedEntriesList'
+import {
+  notePlannerOrigin,
+  PLANNER_ORIGIN_HINT_DISMISS_KEY,
+} from '../lib/plannerOrigin'
 import { PageSearch, type SearchSuggestion } from './PageSearch'
 
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -82,6 +86,17 @@ export function DiaryView({ expenses }: DiaryViewProps) {
     } catch {
       return false
     }
+  })
+  const [originHint, setOriginHint] = useState<{
+    previousOrigin: string
+  } | null>(() => {
+    try {
+      if (localStorage.getItem(PLANNER_ORIGIN_HINT_DISMISS_KEY) === '1') return null
+    } catch {
+      /* ignore */
+    }
+    const { switched, previousOrigin } = notePlannerOrigin()
+    return switched && previousOrigin ? { previousOrigin } : null
   })
 
   useEffect(() => {
@@ -605,6 +620,46 @@ export function DiaryView({ expenses }: DiaryViewProps) {
 
         {loading && (
           <p className="mt-3 text-center text-[12px] text-muted">Loading diary…</p>
+        )}
+        {originHint && (
+          <div className="mt-3 rounded-xl bg-[#FFF8E8] px-3 py-3 text-[12px] leading-relaxed text-[#5C4A32] ring-1 ring-[#E8D5C4]">
+            <p className="font-medium text-[#3D3429]">Missing diary days after changing the app link?</p>
+            <p className="mt-1">
+              Notes are saved in this browser per website address. Open your previous bookmark once (
+              <a
+                href={originHint.previousOrigin}
+                className="font-medium text-[#007AFF] underline"
+                target="_blank"
+                rel="noreferrer"
+              >
+                {originHint.previousOrigin.replace(/^https:\/\//, '')}
+              </a>
+              ), stay on Diary for a minute so they upload, then return here and tap Retry below.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => void refreshMonth()}
+                className="font-medium text-[#007AFF] underline"
+              >
+                Retry sync
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    localStorage.setItem(PLANNER_ORIGIN_HINT_DISMISS_KEY, '1')
+                  } catch {
+                    /* ignore */
+                  }
+                  setOriginHint(null)
+                }}
+                className="text-muted underline"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
         )}
         {syncError && (
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#FF3B30]/10 px-3 py-2 text-[12px] text-[#FF3B30]">

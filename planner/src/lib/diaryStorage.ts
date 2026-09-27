@@ -1,5 +1,9 @@
 import type { DiaryEntry } from '../types/diary'
-import { diaryEntryHasPhoto, ensureDiaryEntryId, isDiaryEntryEmpty } from '../types/diary'
+import {
+  diaryEntryHasPhoto,
+  ensureDiaryEntryId,
+  isDiaryEntryEmpty,
+} from '../types/diary'
 import { downscaleToThumb } from './diaryImage'
 import {
   applyTagFoldersToEntry,
@@ -104,6 +108,31 @@ export function groupDiaryEntriesByDate(
   return out
 }
 
+function diaryEntryRichness(entry: DiaryEntry): number {
+  let score = 0
+  if (diaryEntryHasPhoto(entry)) score += 40
+  if (entry.title.trim()) score += 4
+  if (entry.body.trim()) score += 4
+  if ((entry.bodyImages?.length ?? 0) > 0) score += 8
+  if ((entry.canvasStrokes?.length ?? 0) > 0) score += 6
+  if (entry.thumbDataUrl?.startsWith('data:')) score += 12
+  if (entry.coverDataUrl?.startsWith('data:')) score += 8
+  return score
+}
+
+function mergeDiaryEntryById(cloud: DiaryEntry, local: DiaryEntry): DiaryEntry {
+  const c = ensureDiaryEntryId(cloud)
+  const l = ensureDiaryEntryId(local)
+  const cScore = diaryEntryRichness(c)
+  const lScore = diaryEntryRichness(l)
+  const cTime = Date.parse(c.updatedAt) || 0
+  const lTime = Date.parse(l.updatedAt) || 0
+  const base =
+    lScore > cScore + 2 || (Math.abs(lScore - cScore) <= 2 && lTime > cTime) ? l : c
+  const other = base === l ? c : l
+  return preferLocalImages(base, other)
+}
+
 function mergeEntryLists(
   cloud: Record<string, DiaryEntry[]>,
   local: Record<string, DiaryEntry[]>,
@@ -117,7 +146,9 @@ function mergeEntryLists(
     }
     for (const entry of local[dateKey] ?? []) {
       const normalized = ensureDiaryEntryId(entry)
-      if (!byId.has(normalized.id)) byId.set(normalized.id, normalized)
+      const existing = byId.get(normalized.id)
+      if (!existing) byId.set(normalized.id, normalized)
+      else byId.set(normalized.id, mergeDiaryEntryById(existing, normalized))
     }
     const list = [...byId.values()].sort(
       (a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0),
@@ -269,7 +300,21 @@ function cloudEntryIds(cloud: Record<string, DiaryEntry[]>): Set<string> {
   return ids
 }
 
-/** One-time push of local-only diary notes up to Supabase. */
+function shouldPushLocalEntryToCloud(entry: DiaryEntry, cloudIds: Set<string>): boolean {
+  if (cloudIds.has(entry.id)) return false
+  if (!hasRealImageBytes(entry) && isDiaryEntryEmpty(entry)) return false
+  if (needsLayerHydration(entry) && entry.layers.length > 0) return false
+  if (
+    (entry.bodyImages ?? []).some((i) => i.src.startsWith('data:')) &&
+    needsBodyImageHydration(entry)
+  ) {
+    return false
+  }
+  if (!hasRealImageBytes(entry) && !entry.title && !entry.body) return false
+  return true
+}
+
+/** Push local-only diary notes up to Supabase for one month view. */
 async function migrateLocalMonthToCloud(
   userId: string,
   local: Record<string, DiaryEntry[]>,
@@ -278,23 +323,37 @@ async function migrateLocalMonthToCloud(
   const cloudIds = cloudEntryIds(cloud)
   for (const list of Object.values(local)) {
     for (const entry of list) {
-      if (cloudIds.has(entry.id)) continue
-      if (!hasRealImageBytes(entry) && isDiaryEntryEmpty(entry)) continue
-      if (needsLayerHydration(entry) && entry.layers.length > 0) continue
-      if (
-        (entry.bodyImages ?? []).some((i) => i.src.startsWith('data:')) &&
-        needsBodyImageHydration(entry)
-      ) {
-        continue
-      }
-      if (!hasRealImageBytes(entry) && !entry.title && !entry.body) continue
+      if (!shouldPushLocalEntryToCloud(entry, cloudIds)) continue
       try {
         await upsertDiaryEntryCloud(userId, ensureDiaryEntryId(entry))
+        cloudIds.add(entry.id)
       } catch (e) {
         console.warn('[diary] migrate local→cloud failed', entry.dateKey, e)
       }
     }
   }
+}
+
+/** Upload every local diary note (all months) so a new URL/device can pull from Supabase. */
+export async function pushAllLocalDiaryEntriesToCloud(userId: string): Promise<number> {
+  if (!isSupabaseConfigured) return 0
+  const all = await loadAllDiaryEntriesLocal(userId)
+  const cloudIds = new Set<string>()
+  let pushed = 0
+  for (const entry of all) {
+    if (!shouldPushLocalEntryToCloud(entry, cloudIds)) continue
+    try {
+      await upsertDiaryEntryCloud(userId, ensureDiaryEntryId(entry))
+      cloudIds.add(entry.id)
+      pushed += 1
+    } catch (e) {
+      console.warn('[diary] push all local→cloud failed', entry.dateKey, e)
+    }
+  }
+  if (pushed > 0) {
+    console.info('[diary] pushed local entries to cloud', { pushed })
+  }
+  return pushed
 }
 
 export async function loadDiaryEntryById(

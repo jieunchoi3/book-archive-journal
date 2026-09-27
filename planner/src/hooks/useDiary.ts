@@ -15,6 +15,7 @@ import {
   loadDiaryEntriesForMonth,
   loadDiaryEntriesForMonthLocal,
   loadDiaryEntryById,
+  pushAllLocalDiaryEntriesToCloud,
   saveDiaryEntry,
 } from '../lib/diaryStorage'
 import { useAuth } from './useAuth'
@@ -158,8 +159,19 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
   }, [userId, viewMonth.year, viewMonth.month])
 
   useEffect(() => {
-    void refreshMonth()
-  }, [refreshMonth])
+    let cancelled = false
+    void (async () => {
+      try {
+        await pushAllLocalDiaryEntriesToCloud(userId)
+      } catch (e) {
+        console.warn('[diary] background cloud push failed', e)
+      }
+      if (!cancelled) void refreshMonth()
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [refreshMonth, userId])
 
   useEffect(() => {
     const flushAll = () => {

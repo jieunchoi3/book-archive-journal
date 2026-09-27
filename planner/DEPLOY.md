@@ -35,4 +35,6 @@ Install shortcuts from **https://book-archive-journal-8l2v.vercel.app** only. Af
 - **Wishlist photos:** Stored locally (IndexedDB); cloud holds metadata. Restores prefer snapshots that still have photos.
 - **Mailbox:** Creates, deletes, and edits sync bidirectionally when signed in; use the same account and production URL on each device.
 
-Your data stays in **this browser profile** on **this origin** plus your Supabase account when signed in. Switching URLs or clearing site data without sync can look like “missing” data — always use the production URL above.
+Your data stays in **this browser profile** on **this exact website address** (including the subdomain) plus your Supabase account when signed in.
+
+**If diary days disappear after opening a “new” link:** `weeklyplanner-jieun1108.vercel.app` and `book-archive-journal-8l2v.vercel.app` are different browser storage buckets. Open the **old bookmark once**, wait on the Diary tab so notes upload to Supabase, then use the single production URL above and tap **Retry sync** on Diary.
