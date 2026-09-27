@@ -144,10 +144,12 @@ export function isDiaryEntryEmpty(entry: DiaryEntry): boolean {
   )
 }
 
-/** True when the day has photo content (bytes, remote cover, or layer placeholders). */
+/** True when the day has displayable or cached photo bytes (not empty layer shells). */
 export function diaryEntryHasPhoto(entry: DiaryEntry | null | undefined): boolean {
   if (!entry) return false
-  return Boolean(entry.thumbDataUrl || entry.coverDataUrl) || entry.layers.length > 0
+  if (entry.thumbDataUrl || entry.coverDataUrl) return true
+  if (entry.layers.some((layer) => Boolean(layer.src))) return true
+  return (entry.bodyImages ?? []).some((image) => Boolean(image.src))
 }
 
 /** Prefer the small grid thumb; fall back to the full cover. */

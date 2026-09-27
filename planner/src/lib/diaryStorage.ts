@@ -110,7 +110,9 @@ export function groupDiaryEntriesByDate(
 
 function diaryEntryRichness(entry: DiaryEntry): number {
   let score = 0
-  if (diaryEntryHasPhoto(entry)) score += 40
+  if (entry.thumbDataUrl || entry.coverDataUrl) score += 40
+  else if (hasRealImageBytes(entry)) score += 36
+  else if (entry.layers.length > 0) score += 6
   if (entry.title.trim()) score += 4
   if (entry.body.trim()) score += 4
   if ((entry.bodyImages?.length ?? 0) > 0) score += 8
@@ -120,17 +122,29 @@ function diaryEntryRichness(entry: DiaryEntry): number {
   return score
 }
 
+/** Merge one cloud row with its local cache row (cloud first, local second). */
 function mergeDiaryEntryById(cloud: DiaryEntry, local: DiaryEntry): DiaryEntry {
   const c = ensureDiaryEntryId(cloud)
   const l = ensureDiaryEntryId(local)
+  const merged = preferLocalImages(c, l)
   const cScore = diaryEntryRichness(c)
   const lScore = diaryEntryRichness(l)
   const cTime = Date.parse(c.updatedAt) || 0
   const lTime = Date.parse(l.updatedAt) || 0
-  const base =
-    lScore > cScore + 2 || (Math.abs(lScore - cScore) <= 2 && lTime > cTime) ? l : c
-  const other = base === l ? c : l
-  return preferLocalImages(base, other)
+  const preferLocalText =
+    lScore > cScore + 2 || (Math.abs(lScore - cScore) <= 2 && lTime > cTime)
+  if (!preferLocalText) return merged
+  return {
+    ...merged,
+    title: l.title,
+    body: l.body,
+    tagFolders: l.tagFolders,
+    mainTag: l.mainTag,
+    subTag: l.subTag,
+    frameColor: l.frameColor,
+    canvasStrokes: l.canvasStrokes?.length ? l.canvasStrokes : merged.canvasStrokes,
+    updatedAt: lTime >= cTime ? l.updatedAt : merged.updatedAt,
+  }
 }
 
 function mergeEntryLists(
@@ -272,6 +286,7 @@ function needsDiaryHydration(entry: DiaryEntry): boolean {
   return needsLayerHydration(entry) || needsBodyImageHydration(entry)
 }
 
+/** First argument is always the cloud row; second is local cache (may be undefined). */
 function preferLocalImages(cloud: DiaryEntry, local?: DiaryEntry): DiaryEntry {
   if (!local) return cloud
   const keepLocalCover = Boolean(local.coverDataUrl?.startsWith('data:'))
@@ -281,14 +296,15 @@ function preferLocalImages(cloud: DiaryEntry, local?: DiaryEntry): DiaryEntry {
     (local.bodyImages ?? []).some((i) => i.src.startsWith('data:')) &&
     needsBodyImageHydration(cloud)
 
+  const cloudThumb = cloud.thumbDataUrl ?? cloud.coverDataUrl ?? null
+  const cloudCover = cloud.coverDataUrl ?? cloud.thumbDataUrl ?? null
+
   return {
     ...cloud,
     layers: keepLocalLayers ? local.layers : cloud.layers,
     bodyImages: keepLocalBodyImages ? (local.bodyImages ?? []) : (cloud.bodyImages ?? []),
-    coverDataUrl: keepLocalCover ? local.coverDataUrl : cloud.coverDataUrl ?? null,
-    thumbDataUrl: keepLocalThumb
-      ? local.thumbDataUrl
-      : cloud.thumbDataUrl ?? cloud.coverDataUrl ?? null,
+    coverDataUrl: keepLocalCover ? local.coverDataUrl : cloudCover,
+    thumbDataUrl: keepLocalThumb ? local.thumbDataUrl : cloudThumb,
   }
 }
 

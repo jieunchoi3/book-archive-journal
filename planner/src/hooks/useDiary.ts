@@ -70,6 +70,7 @@ export interface DiaryActions {
   createEntry: (dateKey: string) => Promise<DiaryEntry>
   deleteEntry: (entryId: string) => Promise<void>
   refreshMonth: () => Promise<void>
+  repairGridImage: (entryId: string) => Promise<void>
 }
 
 export function useDiary(initialYear?: number, initialMonth?: number): DiaryActions {
@@ -205,6 +206,35 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
   const getEntryById = useCallback(
     (entryId: string) => findEntryInState(entryId),
     [findEntryInState],
+  )
+
+  const repairGridImage = useCallback(
+    async (entryId: string) => {
+      try {
+        const loaded = await loadDiaryEntryById(userId, entryId)
+        if (!loaded) return
+        const normalized = normalizeEntry(loaded)
+        setEntriesByDate((prev) => {
+          const list = prev[normalized.dateKey] ?? []
+          return {
+            ...prev,
+            [normalized.dateKey]: upsertInDayList(list, normalized),
+          }
+        })
+        void backfillDiaryThumbs(userId, { [normalized.dateKey]: [normalized] }, (entry) => {
+          setEntriesByDate((prev) => {
+            const list = prev[entry.dateKey] ?? []
+            return {
+              ...prev,
+              [entry.dateKey]: upsertInDayList(list, normalizeEntry(entry)),
+            }
+          })
+        })
+      } catch (e) {
+        console.warn('[diary] grid image repair failed', e)
+      }
+    },
+    [userId],
   )
 
   const ensureHydrated = useCallback(
@@ -366,5 +396,6 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
     createEntry,
     deleteEntry,
     refreshMonth,
+    repairGridImage,
   }
 }

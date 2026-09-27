@@ -66,6 +66,7 @@ export function DiaryView({ expenses }: DiaryViewProps) {
     loading,
     syncError,
     refreshMonth,
+    repairGridImage,
   } = diary
   const { user } = useAuth()
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null)
@@ -535,6 +536,9 @@ export function DiaryView({ expenses }: DiaryViewProps) {
                           className={`absolute inset-0 h-full w-full object-cover transition-opacity ${
                             inMonth ? 'opacity-100' : 'opacity-40'
                           }`}
+                          onError={() => {
+                            if (entry?.id) void repairGridImage(entry.id)
+                          }}
                         />
                       ) : hasPhoto && !heatMode ? (
                         <div
