@@ -123,24 +123,21 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
     const year = viewMonth.year
     const month = viewMonth.month
     try {
-      const local = await loadDiaryEntriesForMonthLocal(userId, year, month)
+      const localRaw = await loadDiaryEntriesForMonthLocal(userId, year, month)
       const localNormalized: Record<string, DiaryEntry[]> = {}
-      for (const [key, list] of Object.entries(local)) {
+      for (const [key, list] of Object.entries(localRaw)) {
         localNormalized[key] = list.map(normalizeEntry)
       }
-      if (Object.keys(localNormalized).length > 0) {
-        setEntriesByDate(localNormalized)
-        setLoading(false)
-      }
+      setEntriesByDate(localNormalized)
+      setLoading(false)
 
-      const map = await loadDiaryEntriesForMonth(userId, year, month)
+      const map = await loadDiaryEntriesForMonth(userId, year, month, localRaw)
       const normalized: Record<string, DiaryEntry[]> = {}
       for (const [key, list] of Object.entries(map)) {
         normalized[key] = list.map(normalizeEntry)
       }
       setEntriesByDate(normalized)
       setSyncError(null)
-      setLoading(false)
 
       void backfillDiaryThumbs(userId, normalized, (entry) => {
         setEntriesByDate((prev) => {
@@ -159,19 +156,14 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
   }, [userId, viewMonth.year, viewMonth.month])
 
   useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      try {
-        await pushAllLocalDiaryEntriesToCloud(userId)
-      } catch (e) {
-        console.warn('[diary] background cloud push failed', e)
-      }
-      if (!cancelled) void refreshMonth()
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [refreshMonth, userId])
+    void refreshMonth()
+  }, [refreshMonth])
+
+  useEffect(() => {
+    void pushAllLocalDiaryEntriesToCloud(userId).catch((e) =>
+      console.warn('[diary] background cloud push failed', e),
+    )
+  }, [userId])
 
   useEffect(() => {
     const flushAll = () => {

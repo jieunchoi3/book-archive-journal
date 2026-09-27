@@ -385,34 +385,32 @@ export async function loadDiaryEntriesForMonth(
   userId: string,
   year: number,
   month: number,
+  preloadedLocal?: Record<string, DiaryEntry[]>,
 ): Promise<Record<string, DiaryEntry[]>> {
-  const local = await loadDiaryEntriesForMonthLocal(userId, year, month)
+  const local = preloadedLocal ?? (await loadDiaryEntriesForMonthLocal(userId, year, month))
 
   if (!isSupabaseConfigured) return local
 
   try {
     const cloud = await fetchDiaryEntriesForMonthCloud(userId, year, month)
-    console.info('[diary] cloud month loaded', {
-      year,
-      month: month + 1,
-      cloudDays: Object.keys(cloud),
-      localDays: Object.keys(local),
-    })
-    await migrateLocalMonthToCloud(userId, local, cloud)
-
     const merged = mergeEntryLists(cloud, local)
 
     for (const [dateKey, list] of Object.entries(merged)) {
       const localList = local[dateKey] ?? []
       const localById = new Map(localList.map((e) => [e.id, e]))
-      const nextList = list.map((entry) =>
+      merged[dateKey] = list.map((entry) =>
         preferLocalImages(entry, localById.get(entry.id)),
       )
-      merged[dateKey] = nextList
-      for (const entry of nextList) {
-        await saveDiaryEntryLocal(userId, entry)
-      }
     }
+
+    void migrateLocalMonthToCloud(userId, local, cloud).catch((e) =>
+      console.warn('[diary] background migrate local→cloud failed', e),
+    )
+    void Promise.all(
+      Object.values(merged)
+        .flat()
+        .map((entry) => saveDiaryEntryLocal(userId, entry)),
+    ).catch((e) => console.warn('[diary] background local cache write failed', e))
 
     return merged
   } catch (e) {
