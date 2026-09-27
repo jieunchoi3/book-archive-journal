@@ -83,3 +83,50 @@ export function mergeWeeklyLogSources(
   }
   return result
 }
+
+export function countWeeklyCompletions(log: WeeklyLog): number {
+  let n = 0
+  for (const blockMap of Object.values(log.days)) {
+    if (!blockMap) continue
+    for (const block of Object.values(blockMap)) {
+      for (const done of Object.values(block.taskCompletion ?? {})) {
+        if (done) n += 1
+      }
+    }
+  }
+  for (const blockMap of Object.values(log.oneOffByDate)) {
+    for (const tasks of Object.values(blockMap)) {
+      for (const task of tasks) {
+        if (task.done) n += 1
+      }
+    }
+  }
+  return n
+}
+
+export function countOneOffTasks(log: WeeklyLog): number {
+  let n = 0
+  for (const blockMap of Object.values(log.oneOffByDate)) {
+    for (const tasks of Object.values(blockMap)) {
+      n += tasks.length
+    }
+  }
+  return n
+}
+
+/** Merge cloud + locals and re-layer any source that would lose completions or one-offs. */
+export function coalesceWeeklyLog(
+  cloud: WeeklyLog,
+  ...sources: (WeeklyLog | null | undefined)[]
+): WeeklyLog {
+  let merged = mergeWeeklyLogSources(cloud, ...sources)
+  for (const source of sources) {
+    if (!source || source.weekStart !== merged.weekStart) continue
+    const loseCompletions = countWeeklyCompletions(merged) < countWeeklyCompletions(source)
+    const loseOneOffs = countOneOffTasks(merged) < countOneOffTasks(source)
+    if (loseCompletions || loseOneOffs) {
+      merged = mergeWeeklyLogs(merged, source)
+    }
+  }
+  return merged
+}

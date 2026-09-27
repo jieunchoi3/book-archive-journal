@@ -58,8 +58,8 @@ import {
   markLocalImportDone,
 } from '../lib/localStorageLegacy'
 import { emptyWeeklyLog } from '../lib/storageUtils'
-import { mergeWeeklyLogSources, resolveWeeklyLogMerge } from '../lib/weeklyLogMerge'
-import { resolveTemplateMerge, templateTaskCount } from '../lib/templateMerge'
+import { coalesceWeeklyLog } from '../lib/weeklyLogMerge'
+import { coalesceWeekTemplate, templateTaskCount } from '../lib/templateMerge'
 import { loadItemsStoreMerged } from '../lib/loadItemsStoreMerged'
 import {
   loadTemplateLocal,
@@ -245,6 +245,7 @@ export function PlannerDataProvider({
   const weeklyLogRef = useRef(weeklyLog)
   const weekStartRef = useRef(weekStart)
   const weekLoadGeneration = useRef(0)
+  const localEditGeneration = useRef(0)
   const weekCacheRef = useRef(new Map<string, WeeklyLog>())
   const itemsStoreRef = useRef(itemsStore)
   const linkedAppsRef = useRef(linkedApps)
@@ -252,7 +253,6 @@ export function PlannerDataProvider({
   const pendingBlockLogWrites = useRef(
     new Map<string, { dayKey: DayKey; blockId: string; blockLog: BlockDayLog }>(),
   )
-  const localCacheTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     templateRef.current = template
@@ -278,14 +278,9 @@ export function PlannerDataProvider({
     sidebarNoteRef.current = sidebarNote
   }, [sidebarNote])
 
-  const persistLocalCacheDebounced = useCallback(() => {
-    if (localCacheTimer.current) clearTimeout(localCacheTimer.current)
-    localCacheTimer.current = setTimeout(() => {
-      localCacheTimer.current = null
-      saveWeeklyLogLocal(userId, weeklyLogRef.current)
-      saveTemplateLocal(userId, templateRef.current)
-    }, 500)
-  }, [userId])
+  const bumpLocalEdit = useCallback(() => {
+    localEditGeneration.current += 1
+  }, [])
 
   /** Serialize template writes (recurring task adds, block edits). */
   const enqueueTemplateSync = useCallback(
@@ -371,10 +366,6 @@ export function PlannerDataProvider({
       )
     }
 
-    if (localCacheTimer.current) {
-      clearTimeout(localCacheTimer.current)
-      localCacheTimer.current = null
-    }
     saveWeeklyLogLocal(userId, weeklyLogRef.current)
     saveTemplateLocal(userId, templateRef.current)
     saveItemsStoreLocal(userId, itemsStoreRef.current)
@@ -401,17 +392,26 @@ export function PlannerDataProvider({
       try {
         const cloud = await fetchWeeklyLog(userId, targetWeekStart)
         const local = loadWeeklyLogLocal(userId, targetWeekStart)
-        const merged = resolveWeeklyLogMerge(cloud, local)
+        const memory =
+          weeklyLogRef.current.weekStart === targetWeekStart ? weeklyLogRef.current : null
+        const merged = coalesceWeeklyLog(cloud, local, memory)
         saveWeeklyLogLocal(userId, merged)
-        if (merged !== local && merged !== cloud) {
+        if (local || memory) {
           void syncWeeklyLog(userId, merged).catch((e) => logError('syncWeeklyLog', e))
-        } else if (local && !weeklyLogHasContent(cloud) && weeklyLogHasContent(local)) {
+        } else if (!weeklyLogHasContent(cloud) && weeklyLogHasContent(merged)) {
           void syncWeeklyLog(userId, merged).catch((e) => logError('syncWeeklyLog', e))
         }
         return merged
       } catch (e) {
         logError('fetchWeeklyLog', e)
-        return loadWeeklyLogLocal(userId, targetWeekStart) ?? emptyWeeklyLog(targetWeekStart)
+        const fallback =
+          loadWeeklyLogLocal(userId, targetWeekStart) ??
+          (weeklyLogRef.current.weekStart === targetWeekStart
+            ? weeklyLogRef.current
+            : null) ??
+          emptyWeeklyLog(targetWeekStart)
+        saveWeeklyLogLocal(userId, fallback)
+        return fallback
       }
     },
     [userId],
@@ -419,6 +419,7 @@ export function PlannerDataProvider({
 
   const revalidateFromCloud = useCallback(async () => {
     const week = weekStartRef.current
+    const editGenAtStart = localEditGeneration.current
     try {
       const [tmpl, cloudLog] = await Promise.all([
         fetchTemplate(userId),
@@ -427,7 +428,11 @@ export function PlannerDataProvider({
       if (weekStartRef.current !== week) return
 
       const localTmpl = loadTemplateLocal(userId)
-      const mergedTemplate = resolveTemplateMerge(tmpl, localTmpl)
+      const liveTmpl = templateRef.current
+      let mergedTemplate = coalesceWeekTemplate(tmpl, localTmpl, liveTmpl)
+      if (editGenAtStart !== localEditGeneration.current) {
+        mergedTemplate = coalesceWeekTemplate(mergedTemplate, templateRef.current)
+      }
       if (mergedTemplate) {
         if (tmpl && templateTaskCount(mergedTemplate) > templateTaskCount(tmpl)) {
           void enqueueTemplateSync(mergedTemplate)
@@ -438,17 +443,18 @@ export function PlannerDataProvider({
       }
 
       const diskLog = loadWeeklyLogLocal(userId, week)
-      const memoryLog =
+      let memoryLog =
         weeklyLogRef.current.weekStart === week ? weeklyLogRef.current : null
-      const merged = mergeWeeklyLogSources(cloudLog, diskLog, memoryLog)
+      if (editGenAtStart !== localEditGeneration.current) {
+        memoryLog = weeklyLogRef.current.weekStart === week ? weeklyLogRef.current : memoryLog
+      }
+      const merged = coalesceWeeklyLog(cloudLog, diskLog, memoryLog)
 
       weekCacheRef.current.set(week, merged)
       saveWeeklyLogLocal(userId, merged)
       weeklyLogRef.current = merged
       setWeeklyLog(merged)
-      if (diskLog || memoryLog) {
-        void syncWeeklyLog(userId, merged).catch((e) => logError('syncWeeklyLog', e))
-      }
+      void syncWeeklyLog(userId, merged).catch((e) => logError('syncWeeklyLog', e))
     } catch (e) {
       logError('revalidateFromCloud', e)
     }
@@ -490,24 +496,26 @@ export function PlannerDataProvider({
 
   const putWeekCache = useCallback(
     (log: WeeklyLog) => {
+      bumpLocalEdit()
       weekCacheRef.current.set(log.weekStart, log)
-      persistLocalCacheDebounced()
+      saveWeeklyLogLocal(userId, log)
       enqueueWeeklyLogSync()
     },
-    [persistLocalCacheDebounced, enqueueWeeklyLogSync],
+    [userId, bumpLocalEdit, enqueueWeeklyLogSync],
   )
 
   const persistTemplate = useCallback(
     (t: WeekTemplate) => {
+      bumpLocalEdit()
       templateRef.current = t
-      persistLocalCacheDebounced()
+      saveTemplateLocal(userId, t)
       if (templateTimer.current) clearTimeout(templateTimer.current)
       templateTimer.current = setTimeout(() => {
         templateTimer.current = null
         void enqueueTemplateSync(templateRef.current)
       }, 400)
     },
-    [enqueueTemplateSync, persistLocalCacheDebounced],
+    [userId, bumpLocalEdit, enqueueTemplateSync],
   )
 
   const persistItems = useCallback(
@@ -564,7 +572,7 @@ export function PlannerDataProvider({
         ])
         if (cancelled) return
         const localTmpl = loadTemplateLocal(userId)
-        let finalTemplate = resolveTemplateMerge(tmpl, localTmpl)
+        let finalTemplate = coalesceWeekTemplate(tmpl, localTmpl)
         if (!finalTemplate) {
           finalTemplate = await seedDefaultTemplate(userId)
         } else if (tmpl && templateTaskCount(finalTemplate) > templateTaskCount(tmpl)) {
@@ -914,6 +922,7 @@ export function PlannerDataProvider({
             ),
           }
           templateRef.current = next
+          bumpLocalEdit()
           saveTemplateLocal(userId, next)
           if (templateTimer.current) clearTimeout(templateTimer.current)
           templateTimer.current = null
@@ -948,7 +957,7 @@ export function PlannerDataProvider({
         return next
       })
     },
-    [userId, putWeekCache, enqueueTemplateSync, persistItems],
+    [userId, putWeekCache, enqueueTemplateSync, persistItems, bumpLocalEdit],
   )
 
   const deleteRecurringTask = useCallback(

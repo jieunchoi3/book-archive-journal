@@ -61,4 +61,31 @@ if (!merged.oneOffByDate['2026-09-22']?.b1?.length) {
   process.exit(1)
 }
 
+function countCompletions(log) {
+  let n = 0
+  for (const blockMap of Object.values(log.days ?? {})) {
+    for (const block of Object.values(blockMap ?? {})) {
+      for (const done of Object.values(block.taskCompletion ?? {})) if (done) n++
+    }
+  }
+  return n
+}
+
+function coalesce(cloud, local) {
+  const merged = mergeWeeklyLogs(cloud, local)
+  if (countCompletions(merged) < countCompletions(local)) {
+    return mergeWeeklyLogs(merged, local)
+  }
+  return merged
+}
+
+const guarded = coalesce(
+  { weekStart: week, days: { mon: { b1: { taskCompletion: { t1: false } } } }, oneOffByDate: {} },
+  { weekStart: week, days: { mon: { b1: { taskCompletion: { t1: true, t2: true } } } }, oneOffByDate: {} },
+)
+if (countCompletions(guarded) !== 2) {
+  console.error('FAIL: coalesce should preserve all local completions')
+  process.exit(1)
+}
+
 console.log('weeklyLogMerge selfcheck: OK')

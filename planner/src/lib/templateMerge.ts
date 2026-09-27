@@ -70,3 +70,36 @@ export function resolveTemplateMerge(
   if (!local) return cloud
   return mergeWeekTemplates(cloud, local)
 }
+
+/** Layer sources in order; later sources union tasks and win label conflicts. */
+export function mergeTemplateSources(
+  cloud: WeekTemplate | null,
+  ...locals: (WeekTemplate | null | undefined)[]
+): WeekTemplate | null {
+  let result = cloud
+  for (const local of locals) {
+    if (!local) continue
+    result = result ? mergeWeekTemplates(result, local) : local
+  }
+  return result
+}
+
+/** Never return a template with fewer tasks than any input source. */
+export function coalesceWeekTemplate(
+  cloud: WeekTemplate | null,
+  ...locals: (WeekTemplate | null | undefined)[]
+): WeekTemplate | null {
+  const merged = mergeTemplateSources(cloud, ...locals)
+  if (!merged) return null
+  let best = merged
+  let bestCount = templateTaskCount(best)
+  for (const local of locals) {
+    if (!local) continue
+    const count = templateTaskCount(local)
+    if (count > bestCount) {
+      best = mergeWeekTemplates(best, local)
+      bestCount = templateTaskCount(best)
+    }
+  }
+  return best
+}
