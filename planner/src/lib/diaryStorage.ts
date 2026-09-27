@@ -108,42 +108,67 @@ export function groupDiaryEntriesByDate(
   return out
 }
 
-function diaryEntryRichness(entry: DiaryEntry): number {
-  let score = 0
-  if (entry.thumbDataUrl || entry.coverDataUrl) score += 40
-  else if (hasRealImageBytes(entry)) score += 36
-  else if (entry.layers.length > 0) score += 6
-  if (entry.title.trim()) score += 4
-  if (entry.body.trim()) score += 4
-  if ((entry.bodyImages?.length ?? 0) > 0) score += 8
-  if ((entry.canvasStrokes?.length ?? 0) > 0) score += 6
-  if (entry.thumbDataUrl?.startsWith('data:')) score += 12
-  if (entry.coverDataUrl?.startsWith('data:')) score += 8
-  return score
+function coalesceDiaryString(cloudValue: string, localValue: string): string {
+  const cloudTrim = cloudValue.trim()
+  const localTrim = localValue.trim()
+  if (!cloudTrim) return localValue
+  if (!localTrim) return cloudValue
+  return localTrim.length >= cloudTrim.length ? localValue : cloudValue
+}
+
+function coalesceDiaryTags(
+  cloud: DiaryEntry,
+  local: DiaryEntry,
+): Pick<DiaryEntry, 'tagFolders' | 'mainTag' | 'subTag'> {
+  const cloudTags = getEntryTagFolders(cloud)
+  const localTags = getEntryTagFolders(local)
+  const folders = localTags.length >= cloudTags.length ? localTags : cloudTags
+  return applyTagFoldersToEntry(folders.length ? folders : cloudTags.length ? cloudTags : localTags)
+}
+
+function coalesceDiaryMeta(cloud: DiaryEntry, local: DiaryEntry): DiaryEntry {
+  const cTime = Date.parse(cloud.updatedAt) || 0
+  const lTime = Date.parse(local.updatedAt) || 0
+  const tagPatch = coalesceDiaryTags(cloud, local)
+  const cloudStrokes = cloud.canvasStrokes ?? []
+  const localStrokes = local.canvasStrokes ?? []
+  return {
+    ...cloud,
+    title: coalesceDiaryString(cloud.title, local.title),
+    body: coalesceDiaryString(cloud.body, local.body),
+    tagFolders: tagPatch.tagFolders,
+    mainTag: tagPatch.mainTag,
+    subTag: tagPatch.subTag,
+    frameColor: localStrokes.length > cloudStrokes.length ? local.frameColor : cloud.frameColor,
+    canvasStrokes: localStrokes.length >= cloudStrokes.length ? localStrokes : cloudStrokes,
+    updatedAt: lTime > cTime ? local.updatedAt : cloud.updatedAt,
+  }
+}
+
+function cloudEntryNeedsTextOrMetaUpdate(cloud: DiaryEntry, merged: DiaryEntry): boolean {
+  return (
+    cloud.title.trim() !== merged.title.trim() ||
+    cloud.body.trim() !== merged.body.trim() ||
+    JSON.stringify(getEntryTagFolders(cloud)) !== JSON.stringify(getEntryTagFolders(merged))
+  )
 }
 
 /** Merge one cloud row with its local cache row (cloud first, local second). */
 function mergeDiaryEntryById(cloud: DiaryEntry, local: DiaryEntry): DiaryEntry {
   const c = ensureDiaryEntryId(cloud)
   const l = ensureDiaryEntryId(local)
-  const merged = preferLocalImages(c, l)
-  const cScore = diaryEntryRichness(c)
-  const lScore = diaryEntryRichness(l)
-  const cTime = Date.parse(c.updatedAt) || 0
-  const lTime = Date.parse(l.updatedAt) || 0
-  const preferLocalText =
-    lScore > cScore + 2 || (Math.abs(lScore - cScore) <= 2 && lTime > cTime)
-  if (!preferLocalText) return merged
+  const images = preferLocalImages(c, l)
+  const meta = coalesceDiaryMeta(c, l)
   return {
-    ...merged,
-    title: l.title,
-    body: l.body,
-    tagFolders: l.tagFolders,
-    mainTag: l.mainTag,
-    subTag: l.subTag,
-    frameColor: l.frameColor,
-    canvasStrokes: l.canvasStrokes?.length ? l.canvasStrokes : merged.canvasStrokes,
-    updatedAt: lTime >= cTime ? l.updatedAt : merged.updatedAt,
+    ...images,
+    title: meta.title,
+    body: meta.body,
+    tagFolders: meta.tagFolders,
+    mainTag: meta.mainTag,
+    subTag: meta.subTag,
+    frameColor: meta.frameColor,
+    canvasStrokes: meta.canvasStrokes,
+    updatedAt: meta.updatedAt,
   }
 }
 
@@ -336,13 +361,26 @@ async function migrateLocalMonthToCloud(
   local: Record<string, DiaryEntry[]>,
   cloud: Record<string, DiaryEntry[]>,
 ): Promise<void> {
+  const cloudById = new Map<string, DiaryEntry>()
+  for (const list of Object.values(cloud)) {
+    for (const entry of list) cloudById.set(entry.id, entry)
+  }
   const cloudIds = cloudEntryIds(cloud)
   for (const list of Object.values(local)) {
     for (const entry of list) {
-      if (!shouldPushLocalEntryToCloud(entry, cloudIds)) continue
+      const normalized = ensureDiaryEntryId(entry)
+      const cloudRow = cloudById.get(normalized.id)
       try {
-        await upsertDiaryEntryCloud(userId, ensureDiaryEntryId(entry))
-        cloudIds.add(entry.id)
+        if (cloudRow) {
+          const merged = mergeDiaryEntryById(cloudRow, normalized)
+          const textChanged = cloudEntryNeedsTextOrMetaUpdate(cloudRow, merged)
+          if (!textChanged && !hasRealImageBytes(normalized)) continue
+          await upsertDiaryEntryCloud(userId, merged)
+          continue
+        }
+        if (!shouldPushLocalEntryToCloud(normalized, cloudIds)) continue
+        await upsertDiaryEntryCloud(userId, normalized)
+        cloudIds.add(normalized.id)
       } catch (e) {
         console.warn('[diary] migrate local→cloud failed', entry.dateKey, e)
       }
@@ -354,13 +392,22 @@ async function migrateLocalMonthToCloud(
 export async function pushAllLocalDiaryEntriesToCloud(userId: string): Promise<number> {
   if (!isSupabaseConfigured) return 0
   const all = await loadAllDiaryEntriesLocal(userId)
-  const cloudIds = new Set<string>()
   let pushed = 0
-  for (const entry of all) {
-    if (!shouldPushLocalEntryToCloud(entry, cloudIds)) continue
+  for (const raw of all) {
+    const entry = ensureDiaryEntryId(raw)
+    if (isDiaryEntryEmpty(entry) && !hasRealImageBytes(entry)) continue
     try {
-      await upsertDiaryEntryCloud(userId, ensureDiaryEntryId(entry))
-      cloudIds.add(entry.id)
+      const cloud = await fetchDiaryEntryCloud(userId, entry.id)
+      if (cloud) {
+        const merged = mergeDiaryEntryById(cloud, entry)
+        const textChanged = cloudEntryNeedsTextOrMetaUpdate(cloud, merged)
+        if (!textChanged && !hasRealImageBytes(entry)) continue
+        await upsertDiaryEntryCloud(userId, merged)
+      } else if (shouldPushLocalEntryToCloud(entry, new Set())) {
+        await upsertDiaryEntryCloud(userId, entry)
+      } else {
+        continue
+      }
       pushed += 1
     } catch (e) {
       console.warn('[diary] push all local→cloud failed', entry.dateKey, e)
@@ -383,7 +430,7 @@ export async function loadDiaryEntryById(
   try {
     const cloud = await fetchDiaryEntryCloud(userId, entryId)
     if (cloud) {
-      const merged = preferLocalImages(cloud, local ?? undefined)
+      const merged = local ? mergeDiaryEntryById(cloud, local) : cloud
       await saveDiaryEntryLocal(userId, merged)
       return merged
     }

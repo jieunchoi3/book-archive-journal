@@ -240,11 +240,20 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
   const ensureHydrated = useCallback(
     async (entryId: string) => {
       const fromState = findEntryInState(entryId)
-      const loaded = fromState ? null : await loadDiaryEntryById(userId, entryId)
-      if (!fromState && !loaded) {
+      const reloaded = await loadDiaryEntryById(userId, entryId)
+      if (!fromState && !reloaded) {
         throw new Error(`Unknown diary entry ${entryId}`)
       }
-      const current = normalizeEntry(fromState ?? loaded!)
+      let current = normalizeEntry(reloaded ?? fromState!)
+      if (reloaded) {
+        setEntriesByDate((prev) => {
+          const list = prev[current.dateKey] ?? []
+          return {
+            ...prev,
+            [current.dateKey]: upsertInDayList(list, current),
+          }
+        })
+      }
       if (
         !current.layers.some((l) => !l.src) &&
         !(current.bodyImages ?? []).some((i) => !i.src)
