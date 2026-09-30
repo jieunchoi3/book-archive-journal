@@ -343,7 +343,9 @@ function cloudEntryIds(cloud: Record<string, DiaryEntry[]>): Set<string> {
 
 function shouldPushLocalEntryToCloud(entry: DiaryEntry, cloudIds: Set<string>): boolean {
   if (cloudIds.has(entry.id)) return false
-  if (!hasRealImageBytes(entry) && isDiaryEntryEmpty(entry)) return false
+  const hasText = Boolean(entry.title?.trim() || entry.body?.trim())
+  if (hasRealImageBytes(entry) || hasText) return true
+  if (isDiaryEntryEmpty(entry) && !diaryEntryHasPhoto(entry)) return false
   if (needsLayerHydration(entry) && entry.layers.length > 0) return false
   if (
     (entry.bodyImages ?? []).some((i) => i.src.startsWith('data:')) &&
@@ -351,8 +353,7 @@ function shouldPushLocalEntryToCloud(entry: DiaryEntry, cloudIds: Set<string>): 
   ) {
     return false
   }
-  if (!hasRealImageBytes(entry) && !entry.title && !entry.body) return false
-  return true
+  return false
 }
 
 /** Push local-only diary notes up to Supabase for one month view. */

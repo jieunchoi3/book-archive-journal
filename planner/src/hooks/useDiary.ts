@@ -16,7 +16,6 @@ import {
   loadDiaryEntriesForMonthLocal,
   loadDiaryEntryById,
   pushAllLocalDiaryEntriesToCloud,
-  reloadDiaryMonthFromCloud,
   saveDiaryEntry,
 } from '../lib/diaryStorage'
 import { useAuth } from './useAuth'
@@ -73,7 +72,8 @@ export interface DiaryActions {
   createEntry: (dateKey: string) => Promise<DiaryEntry>
   deleteEntry: (entryId: string) => Promise<void>
   refreshMonth: () => Promise<void>
-  recoverDiarySync: () => Promise<{ pushed: number }>
+  /** Upload this device’s diary to Supabase without deleting local cache. */
+  uploadLocalDiaryToCloud: () => Promise<{ pushed: number }>
   repairGridImage: (entryId: string) => Promise<void>
 }
 
@@ -408,38 +408,25 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
     [findEntryInState, userId],
   )
 
-  const recoverDiarySync = useCallback(async () => {
+  const uploadLocalDiaryToCloud = useCallback(async () => {
     setLoading(true)
-    const year = viewMonth.year
-    const month = viewMonth.month
+    setCloudSaveStatus('pending')
     try {
       const pushed = await pushAllLocalDiaryEntriesToCloud(userId)
-      const map = await reloadDiaryMonthFromCloud(userId, year, month)
-      const normalized: Record<string, DiaryEntry[]> = {}
-      for (const [key, list] of Object.entries(map)) {
-        normalized[key] = list.map(normalizeEntry)
-      }
-      setEntriesByDate(normalized)
+      await refreshMonth()
       setSyncError(null)
-      void backfillDiaryThumbs(userId, normalized, (entry) => {
-        setEntriesByDate((prev) => {
-          const list = prev[entry.dateKey] ?? []
-          return {
-            ...prev,
-            [entry.dateKey]: upsertInDayList(list, normalizeEntry(entry)),
-          }
-        })
-      })
+      if (pushed > 0) markCloudSaved()
       return { pushed }
     } catch (e) {
-      console.error('[diary] recover sync failed', e)
-      const message = e instanceof Error ? e.message : 'Diary recovery failed'
+      console.error('[diary] upload local→cloud failed', e)
+      const message = e instanceof Error ? e.message : 'Diary upload failed'
       setSyncError(message)
+      setCloudSaveStatus('error')
       throw e
     } finally {
       setLoading(false)
     }
-  }, [userId, viewMonth.year, viewMonth.month])
+  }, [markCloudSaved, refreshMonth, userId])
 
   return {
     year: viewMonth.year,
@@ -457,7 +444,7 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
     createEntry,
     deleteEntry,
     refreshMonth,
-    recoverDiarySync,
+    uploadLocalDiaryToCloud,
     repairGridImage,
   }
 }
