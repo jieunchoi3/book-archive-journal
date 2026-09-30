@@ -482,6 +482,24 @@ export async function loadDiaryEntriesForMonth(
   }
 }
 
+/**
+ * Clear IndexedDB cache for one month and reload from Supabase (fixes stale empty local rows).
+ */
+export async function reloadDiaryMonthFromCloud(
+  userId: string,
+  year: number,
+  month: number,
+): Promise<Record<string, DiaryEntry[]>> {
+  const prefix = `${year}-${String(month + 1).padStart(2, '0')}-`
+  const cached = await loadAllDiaryEntriesLocal(userId)
+  await Promise.all(
+    cached
+      .filter((entry) => entry.dateKey.startsWith(prefix))
+      .map((entry) => deleteDiaryEntryLocal(userId, entry.id)),
+  )
+  return loadDiaryEntriesForMonth(userId, year, month)
+}
+
 async function uploadThumbOnly(userId: string, entryId: string, thumbDataUrl: string) {
   const path = `${userId}/${entryId}/thumb.jpg`
   const res = await fetch(thumbDataUrl)

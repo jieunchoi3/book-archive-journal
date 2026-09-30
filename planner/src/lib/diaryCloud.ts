@@ -377,9 +377,36 @@ export async function fetchDiaryEntryCloud(
 }
 
 type ExistingDiaryRow = {
+  title?: string | null
+  body?: string | null
+  main_tag?: string | null
+  sub_tag?: string | null
+  tag_folders?: DiaryTagFolder[] | null
   layers?: CloudLayer[]
   body_images?: CloudBodyImage[]
   cover_path?: string | null
+}
+
+function coalesceCloudText(existing: string | null | undefined, incoming: string): string {
+  const prev = (existing ?? '').trim()
+  const next = incoming.trim()
+  if (!next) return existing ?? ''
+  if (!prev) return incoming
+  return next.length >= prev.length ? incoming : (existing ?? '')
+}
+
+function coalesceCloudTags(
+  existing: ExistingDiaryRow | null,
+  incoming: DiaryEntry,
+): ReturnType<typeof applyTagFoldersToEntry> {
+  const incomingPatch = applyTagFoldersToEntry(getEntryTagFolders(incoming))
+  const existingFolders = normalizeTagFolders(existing?.tag_folders ?? [])
+  const incomingFolders = incomingPatch.tagFolders
+  if (!existingFolders.length) return incomingPatch
+  if (!incomingFolders.length) {
+    return applyTagFoldersToEntry(existingFolders)
+  }
+  return incomingFolders.length >= existingFolders.length ? incomingPatch : applyTagFoldersToEntry(existingFolders)
 }
 
 function cloudRowHasStoredMedia(row: ExistingDiaryRow | null | undefined): boolean {
@@ -392,7 +419,7 @@ function cloudRowHasStoredMedia(row: ExistingDiaryRow | null | undefined): boole
 export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): Promise<void> {
   const { data: existingRow } = await supabase
     .from('diary_entries')
-    .select('layers, body_images, cover_path')
+    .select('title, body, main_tag, sub_tag, tag_folders, layers, body_images, cover_path')
     .eq('user_id', userId)
     .eq('entry_id', entry.id)
     .maybeSingle()
@@ -403,11 +430,30 @@ export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): 
       console.warn('[diary] skipped cloud upsert: local entry looks empty but cloud still has media', entry.dateKey)
       return
     }
+    if ((prevRow?.title ?? '').trim() || (prevRow?.body ?? '').trim()) {
+      console.warn('[diary] skipped cloud upsert: would wipe stored text', entry.dateKey)
+      return
+    }
     return
   }
 
   const prevLayers = prevRow?.layers ?? []
   const prevBodyImages = prevRow?.body_images ?? []
+  const layerSource =
+    entry.layers.length > 0
+      ? entry.layers
+      : prevLayers.map((layer) => ({
+          id: layer.id,
+          x: layer.x,
+          y: layer.y,
+          scale: layer.scale,
+          strokes: layer.strokes ?? [],
+          src: '',
+        }))
+  const bodyImageSource =
+    (entry.bodyImages?.length ?? 0) > 0
+      ? (entry.bodyImages ?? [])
+      : prevBodyImages.map((image) => ({ id: image.id, src: '' }))
   const prevLayerById = new Map(prevLayers.map((l) => [l.id, l]))
   const prevBodyById = new Map(prevBodyImages.map((i) => [i.id, i]))
   const usesLegacyDir =
@@ -416,7 +462,7 @@ export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): 
   const storageKey = usesLegacyDir ? entry.dateKey : entry.id
 
   const cloudLayers: CloudLayer[] = []
-  for (const layer of entry.layers) {
+  for (const layer of layerSource) {
     const path =
       prevLayerById.get(layer.id)?.path ?? layerPath(userId, storageKey, layer.id)
     if (layer.src.startsWith('data:')) {
@@ -441,7 +487,7 @@ export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): 
   }
 
   const cloudBodyImages: CloudBodyImage[] = []
-  for (const image of entry.bodyImages ?? []) {
+  for (const image of bodyImageSource) {
     const path =
       prevBodyById.get(image.id)?.path ?? bodyImagePath(userId, storageKey, image.id)
     if (image.src.startsWith('data:')) {
@@ -470,7 +516,7 @@ export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): 
   if (entry.coverDataUrl?.startsWith('data:')) {
     cover = cover ?? coverPath(userId, storageKey)
     await uploadDataUrl(cover, entry.coverDataUrl)
-  } else if (entry.layers.length > 0 || (entry.canvasStrokes?.length ?? 0) > 0) {
+  } else if (layerSource.length > 0 || (entry.canvasStrokes?.length ?? 0) > 0) {
     cover = cover ?? coverPath(userId, storageKey)
     if (entry.coverDataUrl?.startsWith('http')) {
       try {
@@ -496,18 +542,21 @@ export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): 
     ...prevLayers.filter((l) => !nextLayerIds.has(l.id)).map((l) => l.path),
     ...prevBodyImages.filter((i) => !nextBodyImageIds.has(i.id)).map((i) => i.path),
   ]
-  await removePaths(orphanPaths)
+  if (entry.layers.length > 0 || (entry.bodyImages?.length ?? 0) > 0) {
+    await removePaths(orphanPaths)
+  }
 
-  const tagFolders = getEntryTagFolders(entry)
-  const tagPatch = applyTagFoldersToEntry(tagFolders)
+  const tagPatch = coalesceCloudTags(prevRow, entry)
+  const title = coalesceCloudText(prevRow?.title, entry.title)
+  const body = coalesceCloudText(prevRow?.body, entry.body)
 
   const { error } = await supabase.from('diary_entries').upsert(
     {
       user_id: userId,
       entry_id: entry.id,
       date_key: entry.dateKey,
-      title: entry.title,
-      body: entry.body,
+      title,
+      body,
       main_tag: tagPatch.mainTag?.trim() || null,
       sub_tag: tagPatch.subTag?.trim() || null,
       tag_folders: tagPatch.tagFolders,

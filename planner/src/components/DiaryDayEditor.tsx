@@ -168,7 +168,7 @@ export function DiaryDayEditor({
     setBodyImages(entry.bodyImages ?? [])
     pendingTitle.current = entry.title
     pendingBody.current = entry.body
-  }, [entry.id, entry.dateKey, entry.title, entry.body, entry.bodyImages])
+  }, [entry.id, entry.dateKey])
 
   useEffect(() => {
     const el = scrollerRef.current

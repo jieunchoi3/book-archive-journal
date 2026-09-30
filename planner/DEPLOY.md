@@ -38,3 +38,11 @@ Install shortcuts from **https://book-archive-journal-8l2v.vercel.app** only. Af
 Your data stays in **this browser profile** on **this exact website address** (including the subdomain) plus your Supabase account when signed in.
 
 **If diary days disappear after opening a “new” link:** `weeklyplanner-jieun1108.vercel.app` and `book-archive-journal-8l2v.vercel.app` are different browser storage buckets. Open the **old bookmark once**, wait on the Diary tab so notes upload to Supabase, then use the single production URL above and tap **Retry sync** on Diary.
+
+**September 2026 text (9/7–9/20):** Supabase still has photos for those days, but title/body were overwritten on 2026-09-20 by a bad sync. **Vercel rollbacks cannot restore that text** (data lives in Supabase, not the deploy). What still works:
+
+1. On Diary, tap **기록 복구** — reloads the month from Supabase and pushes any longer text from **this browser’s** IndexedDB.
+2. If the text exists on another device or an old bookmark URL, open that URL, stay on Diary until sync finishes, then use **기록 복구** on the production URL.
+3. Supabase **9/1–9/6** (and **9/6** body) are intact in the database; after deploy + hard refresh they should appear again once local cache is refreshed.
+
+**9/5** has no row in Supabase today — recover only from a browser that still has that day locally.
