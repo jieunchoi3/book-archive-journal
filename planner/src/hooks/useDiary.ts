@@ -63,6 +63,8 @@ export interface DiaryActions {
   entriesByDate: Record<string, DiaryEntry[]>
   loading: boolean
   syncError: string | null
+  /** Local cache is instant; this reflects Supabase upload for the latest save. */
+  cloudSaveStatus: 'idle' | 'pending' | 'saved' | 'error'
   getEntriesForDay: (dateKey: string) => DiaryEntry[]
   getEntry: (dateKey: string) => DiaryEntry
   getEntryById: (entryId: string) => DiaryEntry | null
@@ -86,6 +88,10 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
   const [entriesByDate, setEntriesByDate] = useState<Record<string, DiaryEntry[]>>({})
   const [loading, setLoading] = useState(true)
   const [syncError, setSyncError] = useState<string | null>(null)
+  const [cloudSaveStatus, setCloudSaveStatus] = useState<
+    'idle' | 'pending' | 'saved' | 'error'
+  >('idle')
+  const savedClearTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const pendingEntries = useRef<Record<string, DiaryEntry>>({})
 
@@ -100,6 +106,12 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
     [entriesByDate],
   )
 
+  const markCloudSaved = useCallback(() => {
+    setCloudSaveStatus('saved')
+    if (savedClearTimer.current) clearTimeout(savedClearTimer.current)
+    savedClearTimer.current = setTimeout(() => setCloudSaveStatus('idle'), 4000)
+  }, [])
+
   const flushSave = useCallback(
     async (entry: DiaryEntry) => {
       const key = entry.id
@@ -108,17 +120,20 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
         delete saveTimers.current[key]
       }
       delete pendingEntries.current[key]
+      setCloudSaveStatus('pending')
       try {
         await saveDiaryEntry(userId, entry)
         setSyncError(null)
+        markCloudSaved()
       } catch (e) {
         const message = e instanceof Error ? e.message : 'Diary sync failed'
         console.error('[diary] save failed', e)
         setSyncError(message)
+        setCloudSaveStatus('error')
         throw e
       }
     },
-    [userId],
+    [markCloudSaved, userId],
   )
 
   const refreshMonth = useCallback(async () => {
@@ -284,6 +299,7 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
     (entry: DiaryEntry) => {
       const key = entry.id
       pendingEntries.current[key] = entry
+      setCloudSaveStatus('pending')
       if (saveTimers.current[key]) clearTimeout(saveTimers.current[key])
       saveTimers.current[key] = setTimeout(() => {
         void flushSave(entry)
@@ -432,6 +448,7 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
     entriesByDate,
     loading,
     syncError,
+    cloudSaveStatus,
     getEntriesForDay,
     getEntry,
     getEntryById,

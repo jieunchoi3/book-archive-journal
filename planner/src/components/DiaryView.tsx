@@ -65,6 +65,7 @@ export function DiaryView({ expenses }: DiaryViewProps) {
     deleteEntry,
     loading,
     syncError,
+    cloudSaveStatus,
     refreshMonth,
     recoverDiarySync,
     repairGridImage,
@@ -370,6 +371,17 @@ export function DiaryView({ expenses }: DiaryViewProps) {
               >
                 <ChevronRight size={18} />
               </button>
+              {cloudSaveStatus === 'pending' && (
+                <span className="ml-2 text-[11px] font-medium text-muted">Supabase 저장 중…</span>
+              )}
+              {cloudSaveStatus === 'saved' && (
+                <span className="ml-2 text-[11px] font-medium text-[#34C759]">
+                  Supabase 저장됨
+                </span>
+              )}
+              {cloudSaveStatus === 'error' && (
+                <span className="ml-2 text-[11px] font-medium text-[#FF3B30]">클라우드 실패</span>
+              )}
               {!isCurrentMonth && (
                 <button
                   type="button"
