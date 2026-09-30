@@ -66,8 +66,10 @@ export function DiaryView({ expenses }: DiaryViewProps) {
     loading,
     syncError,
     refreshMonth,
+    recoverDiarySync,
     repairGridImage,
   } = diary
+  const [recoverMessage, setRecoverMessage] = useState<string | null>(null)
   const { user } = useAuth()
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null)
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null)
@@ -665,15 +667,58 @@ export function DiaryView({ expenses }: DiaryViewProps) {
             </div>
           </div>
         )}
-        {syncError && (
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#FF3B30]/10 px-3 py-2 text-[12px] text-[#FF3B30]">
-            <span>Sync issue: {syncError}</span>
+        {(syncError || recoverMessage) && (
+          <div
+            className={`mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl px-3 py-2 text-[12px] ${
+              syncError ? 'bg-[#FF3B30]/10 text-[#FF3B30]' : 'bg-[#007AFF]/10 text-[#007AFF]'
+            }`}
+          >
+            <span>{syncError ? `Sync issue: ${syncError}` : recoverMessage}</span>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => void refreshMonth()}
+                className="font-medium underline"
+              >
+                Retry
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setRecoverMessage(null)
+                  void recoverDiarySync()
+                    .then(({ pushed }) => {
+                      setRecoverMessage(
+                        pushed > 0
+                          ? `복구 완료: 이 기기에서 ${pushed}개 메모를 클라우드에 반영했어요.`
+                          : '클라우드에서 이 달 기록을 다시 불러왔어요.',
+                      )
+                    })
+                    .catch(() => {})
+                }}
+                className="font-medium underline"
+              >
+                기록 복구
+              </button>
+            </div>
+          </div>
+        )}
+        {!syncError && !recoverMessage && !loading && (
+          <div className="mt-2 flex justify-end">
             <button
               type="button"
-              onClick={() => void refreshMonth()}
-              className="font-medium underline"
+              onClick={() => {
+                void recoverDiarySync()
+                  .then(({ pushed }) => {
+                    if (pushed > 0) {
+                      setRecoverMessage(`이 기기에서 ${pushed}개 메모를 클라우드에 올렸어요.`)
+                    }
+                  })
+                  .catch(() => {})
+              }}
+              className="text-[11px] text-muted underline decoration-dotted underline-offset-2"
             >
-              Retry
+              9월 등 기록이 비어 보이면 · 기록 복구
             </button>
           </div>
         )}
