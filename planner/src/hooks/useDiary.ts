@@ -425,18 +425,6 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
     }
   }, [userId, viewMonth.year, viewMonth.month])
 
-  /** One-time per browser session: reload Sep 2026 from Supabase (user need not tap 복구). */
-  useEffect(() => {
-    if (viewMonth.year !== 2026 || viewMonth.month !== 8) return
-    try {
-      if (sessionStorage.getItem('planner-diary-auto-recover-2026-09-v1')) return
-      sessionStorage.setItem('planner-diary-auto-recover-2026-09-v1', '1')
-    } catch {
-      return
-    }
-    void recoverDiarySync().catch(() => {})
-  }, [viewMonth.year, viewMonth.month, recoverDiarySync])
-
   return {
     year: viewMonth.year,
     month: viewMonth.month,
