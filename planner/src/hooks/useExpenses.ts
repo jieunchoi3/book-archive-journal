@@ -195,6 +195,10 @@ export function useExpenses(): ExpenseActions {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hydratedRef = useRef(false)
   const saveOptionsRef = useRef<SaveExpenseStoreOptions>({})
+  const storeRef = useRef(store)
+  useEffect(() => {
+    storeRef.current = store
+  }, [store])
 
   useEffect(() => {
     let cancelled = false
@@ -256,11 +260,30 @@ export function useExpenses(): ExpenseActions {
     }
   }, [userId])
 
-  useEffect(() => {
-    return () => {
-      if (saveTimer.current) clearTimeout(saveTimer.current)
+  const flushPendingSave = useCallback(() => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current)
+      saveTimer.current = null
     }
-  }, [])
+    if (!hydratedRef.current) return
+    void saveExpenseStore(userId, storeRef.current, saveOptionsRef.current).catch((e) =>
+      console.error('[expenses] flush save failed', e),
+    )
+  }, [userId])
+
+  useEffect(() => {
+    const onPageHide = () => flushPendingSave()
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flushPendingSave()
+    }
+    window.addEventListener('pagehide', onPageHide)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('pagehide', onPageHide)
+      document.removeEventListener('visibilitychange', onVisibility)
+      flushPendingSave()
+    }
+  }, [flushPendingSave])
 
   const persist = useCallback(
     (next: ExpenseStore, options: SaveExpenseStoreOptions = {}) => {

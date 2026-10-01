@@ -3,7 +3,6 @@ import { buildSnapSeedBookings, seedContentKey } from '../data/snapSeed'
 import {
   deleteSnapBookingCloud,
   fetchSnapBookingsCloud,
-  replaceAllSnapBookingsCloud,
   upsertSnapBookingsCloud,
 } from './snapCloud'
 import { isSupabaseConfigured } from './supabase'
@@ -208,7 +207,7 @@ export async function persistSnapBookings(
   if (!isSupabaseConfigured) return
 
   try {
-    await replaceAllSnapBookingsCloud(userId, bookings)
+    await upsertSnapBookingsCloud(userId, bookings)
   } catch (e) {
     console.error('[snap] cloud save failed', e)
     throw e
