@@ -6,7 +6,7 @@ The planner app lives in **`planner/`** and deploys as the Vercel project **`wee
 
 **https://book-archive-journal-8l2v.vercel.app**
 
-Bookmark **this exact URL** for diary, weekly planner, mailbox, relations, expenses, and compass. Your diary photos and text live in **this browser’s storage for this hostname** — keep using the same link. All feature work ships on the **`main`** branch to this deployment.
+Bookmark **this exact URL** for diary, weekly planner, mailbox, relations, expenses, and compass. Your diary photos and text are **cached in this browser** (IndexedDB) for speed, and **also uploaded to Supabase** when you are signed in (`planner.diary_entries` + `diary-media`). Other devices see the same data after login — not from the URL, from your **account**. Keep one bookmark URL anyway so this Mac’s cache stays consistent. All feature work ships on the **`main`** branch to this deployment.
 
 Alternate alias (same app build, **different browser storage**): https://weeklyplanner-jieun1108.vercel.app
 
@@ -31,7 +31,8 @@ Install shortcuts from **https://book-archive-journal-8l2v.vercel.app** only. Af
 ## Data safety (no accidental loss)
 
 - **Diary:** Cloud rows and images are in Supabase (`planner.diary_entries`, bucket `diary-media`). Autosave does **not** delete cloud diary rows; only an explicit delete in the UI does. If metadata is missing but photos remain in Storage, run `planner.repair_diary_entries_from_storage(user_id)` (see `planner/supabase/migrations/20260921_diary_repair_from_storage.sql`).
-- **Tasks / weekly log:** Local browser cache is merged with Supabase on load and sync so completions are not wiped by empty cloud snapshots.
+- **Tasks / weekly log / calendar items:** Merged with Supabase on load. Template and items sync **upsert only** (no bulk orphan delete). Tab close flushes pending planner saves. Deletes are explicit in the UI.
+- **Expenses, wishlist, taste, snap:** Debounced saves flush to Supabase on tab hide / background.
 - **Wishlist photos:** Stored locally (IndexedDB); cloud holds metadata. Restores prefer snapshots that still have photos.
 - **Mailbox:** Creates, deletes, and edits sync bidirectionally when signed in; use the same account and production URL on each device.
 

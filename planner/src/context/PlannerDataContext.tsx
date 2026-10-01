@@ -47,6 +47,10 @@ import {
   deleteOneOffTaskRow,
   deleteRecurringTaskRow,
   deleteBlockRow,
+  deleteCategoryRow,
+  deleteTagRow,
+  deleteItemRow,
+  deleteLinkedAppRow,
   upsertTaskCompletion,
 } from '../lib/supabaseRepository'
 import {
@@ -1437,6 +1441,7 @@ export function PlannerDataProvider({
           item.categoryId === id ? { ...item, categoryId: null } : item,
         ),
       }))
+      void deleteCategoryRow(userId, id).catch((e) => logError('deleteCategoryRow', e))
     },
     addTag: (name, icon) => {
       const tag: Tag = { id: generateId(), name: name.trim(), icon: icon?.trim() || undefined }
@@ -1458,6 +1463,7 @@ export function PlannerDataProvider({
           tagIds: item.tagIds.filter((tid) => tid !== id),
         })),
       }))
+      void deleteTagRow(userId, id).catch((e) => logError('deleteTagRow', e))
     },
     addItem: (item) => {
       const done: ItemDone = item.recurrence ? {} : false
@@ -1495,6 +1501,7 @@ export function PlannerDataProvider({
         ...prev,
         items: prev.items.filter((item) => item.id !== id),
       }))
+      void deleteItemRow(userId, id).catch((e) => logError('deleteItemRow', e))
     },
     toggleItemDone: (itemId, dateKey) => {
       updateItemsStore((prev) => ({
@@ -1566,9 +1573,11 @@ export function PlannerDataProvider({
     deleteLinkedApp: (id) => {
       setLinkedApps((prev) => {
         const next = prev.filter((a) => a.id !== id)
+        linkedAppsRef.current = next
         persistApps(next)
         return next
       })
+      void deleteLinkedAppRow(userId, id).catch((e) => logError('deleteLinkedAppRow', e))
     },
     openLinkedApp: (app) => {
       if (app.openMode === 'newTab') {

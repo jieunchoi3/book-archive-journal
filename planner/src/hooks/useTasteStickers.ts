@@ -227,6 +227,10 @@ export function useTasteStickers(): TasteActions {
   const [kindFilter, setKindFilterState] = useState<string | 'all'>('all')
   const [subFilter, setSubFilter] = useState<string | 'all'>('all')
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const storeRef = useRef(store)
+  useEffect(() => {
+    storeRef.current = store
+  }, [store])
 
   const setKindFilter = useCallback((kind: string | 'all') => {
     setKindFilterState(kind)
@@ -307,11 +311,29 @@ export function useTasteStickers(): TasteActions {
     }
   }, [userId])
 
-  useEffect(() => {
-    return () => {
-      if (saveTimer.current) clearTimeout(saveTimer.current)
+  const flushPendingSave = useCallback(() => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current)
+      saveTimer.current = null
     }
-  }, [])
+    void saveTasteStore(userId, storeRef.current).catch((e) => {
+      console.error('[taste] flush save failed', e)
+    })
+  }, [userId])
+
+  useEffect(() => {
+    const onPageHide = () => flushPendingSave()
+    const onVisibilityHidden = () => {
+      if (document.visibilityState === 'hidden') flushPendingSave()
+    }
+    window.addEventListener('pagehide', onPageHide)
+    document.addEventListener('visibilitychange', onVisibilityHidden)
+    return () => {
+      window.removeEventListener('pagehide', onPageHide)
+      document.removeEventListener('visibilitychange', onVisibilityHidden)
+      flushPendingSave()
+    }
+  }, [flushPendingSave])
 
   useEffect(() => {
     const resync = () => {
@@ -337,6 +359,7 @@ export function useTasteStickers(): TasteActions {
 
   const persist = useCallback(
     (next: TasteStore, options?: { immediate?: boolean }) => {
+      storeRef.current = next
       setStore(next)
       if (saveTimer.current) clearTimeout(saveTimer.current)
 

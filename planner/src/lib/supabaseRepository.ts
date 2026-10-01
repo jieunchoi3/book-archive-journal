@@ -443,6 +443,29 @@ export async function fetchItemsStore(userId: string): Promise<ItemsStore> {
   }
 }
 
+async function syncItemTagLinks(
+  userId: string,
+  itemId: string,
+  tagIds: string[],
+): Promise<void> {
+  const { error: clearErr } = await supabase
+    .from('item_tags')
+    .delete()
+    .eq('user_id', userId)
+    .eq('item_id', itemId)
+  if (clearErr) throw clearErr
+  if (!tagIds.length) return
+  const { error: tagErr } = await supabase.from('item_tags').insert(
+    tagIds.map((tagId) => ({
+      item_id: itemId,
+      tag_id: tagId,
+      user_id: userId,
+    })),
+  )
+  if (tagErr) throw tagErr
+}
+
+/** Upsert planner items/categories/tags — never bulk-delete missing rows (same guard as syncTemplate). */
 export async function syncItemsStore(userId: string, store: ItemsStore): Promise<void> {
   for (const c of store.categories) {
     const { error } = await supabase.from('categories').upsert({
@@ -454,14 +477,6 @@ export async function syncItemsStore(userId: string, store: ItemsStore): Promise
     if (error) throw error
   }
 
-  const { data: existingCats } = await supabase
-    .from('categories')
-    .select('id')
-    .eq('user_id', userId)
-  const catIds = store.categories.map((c) => c.id)
-  const orphanCats = (existingCats ?? []).map((c) => c.id).filter((id) => !catIds.includes(id))
-  if (orphanCats.length) await supabase.from('categories').delete().in('id', orphanCats)
-
   for (const t of store.tags) {
     const { error } = await supabase.from('tags').upsert({
       id: t.id,
@@ -471,13 +486,6 @@ export async function syncItemsStore(userId: string, store: ItemsStore): Promise
     })
     if (error) throw error
   }
-
-  const { data: existingTags } = await supabase.from('tags').select('id').eq('user_id', userId)
-  const tagIds = store.tags.map((t) => t.id)
-  const orphanTags = (existingTags ?? []).map((t) => t.id).filter((id) => !tagIds.includes(id))
-  if (orphanTags.length) await supabase.from('tags').delete().in('id', orphanTags)
-
-  await supabase.from('item_tags').delete().eq('user_id', userId)
 
   for (const item of store.items) {
     const { error } = await supabase.from('items').upsert({
@@ -494,23 +502,27 @@ export async function syncItemsStore(userId: string, store: ItemsStore): Promise
       details: item.details?.trim() ?? '',
     })
     if (error) throw error
-
-    if (item.tagIds.length) {
-      const { error: tagErr } = await supabase.from('item_tags').insert(
-        item.tagIds.map((tagId) => ({
-          item_id: item.id,
-          tag_id: tagId,
-          user_id: userId,
-        })),
-      )
-      if (tagErr) throw tagErr
-    }
+    await syncItemTagLinks(userId, item.id, item.tagIds)
   }
+}
 
-  const { data: existingItems } = await supabase.from('items').select('id').eq('user_id', userId)
-  const itemIds = store.items.map((i) => i.id)
-  const orphanItems = (existingItems ?? []).map((i) => i.id).filter((id) => !itemIds.includes(id))
-  if (orphanItems.length) await supabase.from('items').delete().in('id', orphanItems)
+export async function deleteCategoryRow(userId: string, categoryId: string): Promise<void> {
+  const { error } = await supabase
+    .from('categories')
+    .delete()
+    .eq('user_id', userId)
+    .eq('id', categoryId)
+  if (error) throw error
+}
+
+export async function deleteTagRow(userId: string, tagId: string): Promise<void> {
+  const { error } = await supabase.from('tags').delete().eq('user_id', userId).eq('id', tagId)
+  if (error) throw error
+}
+
+export async function deleteItemRow(userId: string, itemId: string): Promise<void> {
+  const { error } = await supabase.from('items').delete().eq('user_id', userId).eq('id', itemId)
+  if (error) throw error
 }
 
 export async function fetchLinkedApps(userId: string): Promise<LinkedApp[]> {
@@ -570,10 +582,15 @@ export async function syncLinkedApps(userId: string, apps: LinkedApp[]): Promise
     })
     if (error) throw error
   }
-  const { data: existing } = await supabase.from('linked_apps').select('id').eq('user_id', userId)
-  const ids = apps.map((a) => a.id)
-  const orphans = (existing ?? []).map((a) => a.id).filter((id) => !ids.includes(id))
-  if (orphans.length) await supabase.from('linked_apps').delete().in('id', orphans)
+}
+
+export async function deleteLinkedAppRow(userId: string, appId: string): Promise<void> {
+  const { error } = await supabase
+    .from('linked_apps')
+    .delete()
+    .eq('user_id', userId)
+    .eq('id', appId)
+  if (error) throw error
 }
 
 export async function seedDefaultTemplate(userId: string): Promise<WeekTemplate> {
