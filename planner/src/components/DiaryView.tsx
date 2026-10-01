@@ -65,8 +65,9 @@ export function DiaryView({ expenses }: DiaryViewProps) {
     deleteEntry,
     loading,
     syncError,
+    cloudSaveStatus,
     refreshMonth,
-    recoverDiarySync,
+    uploadLocalDiaryToCloud,
     repairGridImage,
   } = diary
   const [recoverMessage, setRecoverMessage] = useState<string | null>(null)
@@ -370,6 +371,17 @@ export function DiaryView({ expenses }: DiaryViewProps) {
               >
                 <ChevronRight size={18} />
               </button>
+              {cloudSaveStatus === 'pending' && (
+                <span className="ml-2 text-[11px] font-medium text-muted">Supabase 저장 중…</span>
+              )}
+              {cloudSaveStatus === 'saved' && (
+                <span className="ml-2 text-[11px] font-medium text-[#34C759]">
+                  Supabase 저장됨
+                </span>
+              )}
+              {cloudSaveStatus === 'error' && (
+                <span className="ml-2 text-[11px] font-medium text-[#FF3B30]">클라우드 실패</span>
+              )}
               {!isCurrentMonth && (
                 <button
                   type="button"
@@ -686,19 +698,19 @@ export function DiaryView({ expenses }: DiaryViewProps) {
                 type="button"
                 onClick={() => {
                   setRecoverMessage(null)
-                  void recoverDiarySync()
+                  void uploadLocalDiaryToCloud()
                     .then(({ pushed }) => {
                       setRecoverMessage(
                         pushed > 0
-                          ? `복구 완료: 이 기기에서 ${pushed}개 메모를 클라우드에 반영했어요.`
-                          : '클라우드에서 이 달 기록을 다시 불러왔어요.',
+                          ? `이 기기에서 ${pushed}개 일기를 Supabase에 올렸어요.`
+                          : '올릴 로컬 일기가 없거나 이미 동기화된 상태예요.',
                       )
                     })
                     .catch(() => {})
                 }}
                 className="font-medium underline"
               >
-                기록 복구
+                이 기기 → Supabase 업로드
               </button>
             </div>
           </div>
@@ -708,17 +720,17 @@ export function DiaryView({ expenses }: DiaryViewProps) {
             <button
               type="button"
               onClick={() => {
-                void recoverDiarySync()
+                void uploadLocalDiaryToCloud()
                   .then(({ pushed }) => {
                     if (pushed > 0) {
-                      setRecoverMessage(`이 기기에서 ${pushed}개 메모를 클라우드에 올렸어요.`)
+                      setRecoverMessage(`Supabase에 ${pushed}개 일기를 올렸어요 (로컬은 그대로).`)
                     }
                   })
                   .catch(() => {})
               }}
               className="text-[11px] text-muted underline decoration-dotted underline-offset-2"
             >
-              9월 등 기록이 비어 보이면 · 기록 복구
+              다른 기기에서도 보기 · Supabase 업로드
             </button>
           </div>
         )}

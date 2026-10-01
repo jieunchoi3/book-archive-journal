@@ -156,27 +156,9 @@ export async function syncTemplate(userId: string, template: WeekTemplate): Prom
     }
   }
 
-  const { data: existingBlocks } = await supabase
-    .from('blocks')
-    .select('id')
-    .eq('user_id', userId)
-  const orphanBlocks = (existingBlocks ?? [])
-    .map((b) => b.id)
-    .filter((id) => !blockIds.includes(id))
-  if (orphanBlocks.length) {
-    await supabase.from('blocks').delete().in('id', orphanBlocks)
-  }
-
-  const { data: existingTasks } = await supabase
-    .from('recurring_tasks')
-    .select('id')
-    .eq('user_id', userId)
-  const orphanTasks = (existingTasks ?? [])
-    .map((t) => t.id)
-    .filter((id) => !taskIds.includes(id))
-  if (orphanTasks.length) {
-    await supabase.from('recurring_tasks').delete().in('id', orphanTasks)
-  }
+  // Never bulk-delete rows missing from this payload — partial/stale in-memory templates
+  // previously wiped Supabase while the UI still looked correct locally.
+  // User-initiated deletes call deleteRecurringTaskRow / deleteBlockRow instead.
 }
 
 export async function fetchWeeklyLog(userId: string, weekStart: string): Promise<WeeklyLog> {
@@ -318,6 +300,26 @@ export async function deleteOneOffTaskRow(userId: string, taskId: string): Promi
     .delete()
     .eq('user_id', userId)
     .eq('id', taskId)
+  if (error) throw error
+}
+
+export async function deleteRecurringTaskRow(userId: string, taskId: string): Promise<void> {
+  console.log(`[planner] DELETE recurring_tasks`, { userId, taskId })
+  const { error } = await supabase
+    .from('recurring_tasks')
+    .delete()
+    .eq('user_id', userId)
+    .eq('id', taskId)
+  if (error) throw error
+}
+
+export async function deleteBlockRow(userId: string, blockId: string): Promise<void> {
+  console.log(`[planner] DELETE blocks`, { userId, blockId })
+  const { error } = await supabase
+    .from('blocks')
+    .delete()
+    .eq('user_id', userId)
+    .eq('id', blockId)
   if (error) throw error
 }
 

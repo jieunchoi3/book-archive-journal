@@ -6,9 +6,9 @@ The planner app lives in **`planner/`** and deploys as the Vercel project **`wee
 
 **https://book-archive-journal-8l2v.vercel.app**
 
-Bookmark this link for diary, weekly planner, mailbox, relations, expenses, and compass. All feature work ships on the **`main`** branch to this deployment.
+Bookmark **this exact URL** for diary, weekly planner, mailbox, relations, expenses, and compass. Your diary photos and text live in **this browser’s storage for this hostname** — keep using the same link. All feature work ships on the **`main`** branch to this deployment.
 
-Alternate alias (same build): https://weeklyplanner-jieun1108.vercel.app
+Alternate alias (same app build, **different browser storage**): https://weeklyplanner-jieun1108.vercel.app
 
 ## Not the Reading Archive app
 
@@ -37,7 +37,7 @@ Install shortcuts from **https://book-archive-journal-8l2v.vercel.app** only. Af
 
 Your data stays in **this browser profile** on **this exact website address** (including the subdomain) plus your Supabase account when signed in.
 
-**If diary days disappear after opening a “new” link:** `weeklyplanner-jieun1108.vercel.app` and `book-archive-journal-8l2v.vercel.app` are different browser storage buckets. Open the **old bookmark once**, wait on the Diary tab so notes upload to Supabase, then use the single production URL above and tap **Retry sync** on Diary.
+**If diary days disappear after opening a different link:** `weeklyplanner-jieun1108.vercel.app` and `book-archive-journal-8l2v.vercel.app` are **different browser storage buckets**. If your full month is on `8l2v`, stay on `8l2v` — do not switch URLs. Avoid **Cmd+Shift+R** and **기록 복구** unless you mean to replace local data with cloud.
 
 **September 2026 text (9/7–9/20):** Supabase still has photos for those days, but title/body were overwritten on 2026-09-20 by a bad sync. **Vercel rollbacks cannot restore that text** (data lives in Supabase, not the deploy). What still works:
 

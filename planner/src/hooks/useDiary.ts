@@ -16,7 +16,6 @@ import {
   loadDiaryEntriesForMonthLocal,
   loadDiaryEntryById,
   pushAllLocalDiaryEntriesToCloud,
-  reloadDiaryMonthFromCloud,
   saveDiaryEntry,
 } from '../lib/diaryStorage'
 import { useAuth } from './useAuth'
@@ -63,6 +62,8 @@ export interface DiaryActions {
   entriesByDate: Record<string, DiaryEntry[]>
   loading: boolean
   syncError: string | null
+  /** Local cache is instant; this reflects Supabase upload for the latest save. */
+  cloudSaveStatus: 'idle' | 'pending' | 'saved' | 'error'
   getEntriesForDay: (dateKey: string) => DiaryEntry[]
   getEntry: (dateKey: string) => DiaryEntry
   getEntryById: (entryId: string) => DiaryEntry | null
@@ -71,7 +72,8 @@ export interface DiaryActions {
   createEntry: (dateKey: string) => Promise<DiaryEntry>
   deleteEntry: (entryId: string) => Promise<void>
   refreshMonth: () => Promise<void>
-  recoverDiarySync: () => Promise<{ pushed: number }>
+  /** Upload this device’s diary to Supabase without deleting local cache. */
+  uploadLocalDiaryToCloud: () => Promise<{ pushed: number }>
   repairGridImage: (entryId: string) => Promise<void>
 }
 
@@ -86,6 +88,10 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
   const [entriesByDate, setEntriesByDate] = useState<Record<string, DiaryEntry[]>>({})
   const [loading, setLoading] = useState(true)
   const [syncError, setSyncError] = useState<string | null>(null)
+  const [cloudSaveStatus, setCloudSaveStatus] = useState<
+    'idle' | 'pending' | 'saved' | 'error'
+  >('idle')
+  const savedClearTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const pendingEntries = useRef<Record<string, DiaryEntry>>({})
 
@@ -100,6 +106,12 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
     [entriesByDate],
   )
 
+  const markCloudSaved = useCallback(() => {
+    setCloudSaveStatus('saved')
+    if (savedClearTimer.current) clearTimeout(savedClearTimer.current)
+    savedClearTimer.current = setTimeout(() => setCloudSaveStatus('idle'), 4000)
+  }, [])
+
   const flushSave = useCallback(
     async (entry: DiaryEntry) => {
       const key = entry.id
@@ -108,17 +120,20 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
         delete saveTimers.current[key]
       }
       delete pendingEntries.current[key]
+      setCloudSaveStatus('pending')
       try {
         await saveDiaryEntry(userId, entry)
         setSyncError(null)
+        markCloudSaved()
       } catch (e) {
         const message = e instanceof Error ? e.message : 'Diary sync failed'
         console.error('[diary] save failed', e)
         setSyncError(message)
+        setCloudSaveStatus('error')
         throw e
       }
     },
-    [userId],
+    [markCloudSaved, userId],
   )
 
   const refreshMonth = useCallback(async () => {
@@ -284,6 +299,7 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
     (entry: DiaryEntry) => {
       const key = entry.id
       pendingEntries.current[key] = entry
+      setCloudSaveStatus('pending')
       if (saveTimers.current[key]) clearTimeout(saveTimers.current[key])
       saveTimers.current[key] = setTimeout(() => {
         void flushSave(entry)
@@ -392,38 +408,25 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
     [findEntryInState, userId],
   )
 
-  const recoverDiarySync = useCallback(async () => {
+  const uploadLocalDiaryToCloud = useCallback(async () => {
     setLoading(true)
-    const year = viewMonth.year
-    const month = viewMonth.month
+    setCloudSaveStatus('pending')
     try {
       const pushed = await pushAllLocalDiaryEntriesToCloud(userId)
-      const map = await reloadDiaryMonthFromCloud(userId, year, month)
-      const normalized: Record<string, DiaryEntry[]> = {}
-      for (const [key, list] of Object.entries(map)) {
-        normalized[key] = list.map(normalizeEntry)
-      }
-      setEntriesByDate(normalized)
+      await refreshMonth()
       setSyncError(null)
-      void backfillDiaryThumbs(userId, normalized, (entry) => {
-        setEntriesByDate((prev) => {
-          const list = prev[entry.dateKey] ?? []
-          return {
-            ...prev,
-            [entry.dateKey]: upsertInDayList(list, normalizeEntry(entry)),
-          }
-        })
-      })
+      if (pushed > 0) markCloudSaved()
       return { pushed }
     } catch (e) {
-      console.error('[diary] recover sync failed', e)
-      const message = e instanceof Error ? e.message : 'Diary recovery failed'
+      console.error('[diary] upload local→cloud failed', e)
+      const message = e instanceof Error ? e.message : 'Diary upload failed'
       setSyncError(message)
+      setCloudSaveStatus('error')
       throw e
     } finally {
       setLoading(false)
     }
-  }, [userId, viewMonth.year, viewMonth.month])
+  }, [markCloudSaved, refreshMonth, userId])
 
   return {
     year: viewMonth.year,
@@ -432,6 +435,7 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
     entriesByDate,
     loading,
     syncError,
+    cloudSaveStatus,
     getEntriesForDay,
     getEntry,
     getEntryById,
@@ -440,7 +444,7 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
     createEntry,
     deleteEntry,
     refreshMonth,
-    recoverDiarySync,
+    uploadLocalDiaryToCloud,
     repairGridImage,
   }
 }
