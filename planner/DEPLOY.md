@@ -23,6 +23,8 @@ If the window says **Reading Archive** or **Loading your library…**, you opene
 
 Install shortcuts from **https://book-archive-journal-8l2v.vercel.app** only. After a deploy, hard refresh (`Cmd+Shift+R`) once so the tab is not stuck on an old bundle.
 
+**Dock icon looks right but checkmarks reset?** The Dock app is a *copy* of whatever URL you used when you chose “Add to Dock”. A shortcut from `weeklyplanner-jieun1108.vercel.app` or an old tab uses **different browser storage** than `8l2v` — tasks and completions will not match. Fix: open **https://book-archive-journal-8l2v.vercel.app** in Safari, sign in, then **File → Add to Dock** again and remove the old Dock icon.
+
 ## Vercel settings
 
 - **weeklyplanner** → Root Directory: `planner`, production branch: **`main`**

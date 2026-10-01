@@ -467,11 +467,14 @@ export function PlannerDataProvider({
   }, [userId, enqueueTemplateSync])
 
   useEffect(() => {
-    const onPageHide = () => {
+    const onPageHide = (event: PageTransitionEvent) => {
+      saveWeeklyLogLocal(userId, weeklyLogRef.current)
       void flushAllPending()
+      if (event.persisted) return
     }
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') {
+        saveWeeklyLogLocal(userId, weeklyLogRef.current)
         void flushAllPending()
         return
       }
@@ -498,7 +501,7 @@ export function PlannerDataProvider({
       window.removeEventListener('online', onOnline)
       void flushAllPending()
     }
-  }, [flushAllPending, revalidateFromCloud])
+  }, [userId, flushAllPending, revalidateFromCloud])
 
   const putWeekCache = useCallback(
     (log: WeeklyLog) => {
@@ -566,6 +569,7 @@ export function PlannerDataProvider({
 
   useEffect(() => {
     let cancelled = false
+    const editGenAtStart = localEditGeneration.current
     ;(async () => {
       try {
         setLoading(true)
@@ -590,8 +594,18 @@ export function PlannerDataProvider({
           saveTemplateLocal(userId, finalTemplate)
         }
         setTemplate(finalTemplate ?? structuredClone(SEED_TEMPLATE))
-        putWeekCache(log)
-        setWeeklyLog(log)
+        const weekKey = log.weekStart
+        const diskLog = loadWeeklyLogLocal(userId, weekKey)
+        let memoryLog =
+          weeklyLogRef.current.weekStart === weekKey ? weeklyLogRef.current : null
+        if (editGenAtStart !== localEditGeneration.current) {
+          memoryLog =
+            weeklyLogRef.current.weekStart === weekKey ? weeklyLogRef.current : memoryLog
+        }
+        const finalLog = coalesceWeeklyLog(log, diskLog, memoryLog)
+        putWeekCache(finalLog)
+        setWeeklyLog(finalLog)
+        void syncWeeklyLog(userId, finalLog).catch((e) => logError('syncWeeklyLog', e))
         setWeekStart(getCurrentWeekStart())
         const normalizedStore = withDefaultEventCategories(store)
         setItemsStore(normalizedStore)
