@@ -32,8 +32,8 @@ Install shortcuts from **https://book-archive-journal-8l2v.vercel.app** only. Af
 
 ## Data safety (no accidental loss)
 
-- **Diary (Cloud tab):** The **Diary** tab uses **Diary V2** — loads and saves only through Supabase (`planner.diary_entries`, bucket `diary-media`). Add/delete on one signed-in device appears on others. The old local-first diary remains in code as legacy (not in the tab bar).
-- **Legacy diary:** IndexedDB merge path; do not use for new notes if you need multi-device sync.
+- **Diary tab:** Original photo diary (local IndexedDB + legacy `planner.diary_entries`). Unchanged.
+- **Cloud tab:** **New** multi-device diary on **`planner.diary_v2_entries`** and Storage bucket **`diary-v2-media`**. No shared data with the old diary table. Sign in on each device; add/delete syncs through Supabase only.
 - **Tasks / weekly log / calendar items:** Merged with Supabase on load. Template and items sync **upsert only** (no bulk orphan delete). Tab close flushes pending planner saves. Deletes are explicit in the UI.
 - **Expenses, wishlist, taste, snap:** Debounced saves flush to Supabase on tab hide / background.
 - **Wishlist photos:** Stored locally (IndexedDB); cloud holds metadata. Restores prefer snapshots that still have photos.
