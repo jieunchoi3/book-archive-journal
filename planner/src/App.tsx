@@ -11,7 +11,7 @@ import { useCompass } from './hooks/useCompass'
 import { ImportLocalDataBanner } from './components/ImportLocalDataBanner'
 import { WeekView } from './components/WeekView'
 import { MonthCalendarView } from './components/MonthCalendarView'
-import { DiaryV2View, DiaryView } from './components/DiaryView'
+import { CloudDiaryView, DiaryView } from './components/DiaryView'
 import { ExpenseView } from './components/ExpenseView'
 import { SnapView } from './components/SnapView'
 import { TasteStickerView } from './components/TasteStickerView'
@@ -81,9 +81,9 @@ function AppContent() {
     <>
       <ImportLocalDataBanner />
       {view === 'diary' ? (
-        <DiaryV2View expenses={expenses} />
-      ) : view === 'diary-legacy' ? (
         <DiaryView expenses={expenses} />
+      ) : view === 'cloud-diary' ? (
+        <CloudDiaryView expenses={expenses} />
       ) : view === 'mailbox' ? (
         <MailboxView mailbox={mailbox} />
       ) : view === 'expenses' ? (

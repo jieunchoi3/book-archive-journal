@@ -7,6 +7,11 @@ import { useAuth } from '../hooks/useAuth'
 import { loadAllDiaryEntriesLocal, clearDiaryTagsForFolder } from '../lib/diaryStorage'
 import { deleteDiaryTagFolder, loadDiaryTagFolders, saveDiaryTagFolder } from '../lib/diaryTagStorage'
 import {
+  deleteDiaryV2TagFolder,
+  loadDiaryV2TagFolders,
+  saveDiaryV2TagFolder,
+} from '../lib/diaryV2TagStorage'
+import {
   buildDiaryTagTree,
   entryHasDiaryContent,
   entryMatchesTagFilter,
@@ -53,9 +58,16 @@ interface DiaryViewProps {
 interface DiaryViewContentProps extends DiaryViewProps {
   diary: DiaryActions
   cloudFirst: boolean
+  /** Uses planner.diary_v2_entries + diary-v2-media (separate from legacy diary). */
+  freshCloudTable?: boolean
 }
 
-function DiaryViewContent({ expenses, diary, cloudFirst }: DiaryViewContentProps) {
+function DiaryViewContent({
+  expenses,
+  diary,
+  cloudFirst,
+  freshCloudTable = false,
+}: DiaryViewContentProps) {
   const {
     year,
     month,
@@ -119,13 +131,16 @@ function DiaryViewContent({ expenses, diary, cloudFirst }: DiaryViewContentProps
         if (!cancelled) setSearchIndex(all)
       })
     }
-    void loadDiaryTagFolders(user.id).then((folders) => {
+    const loadTags = freshCloudTable
+      ? loadDiaryV2TagFolders(user.id)
+      : loadDiaryTagFolders(user.id)
+    void loadTags.then((folders) => {
       if (!cancelled) setTagFolders(folders)
     })
     return () => {
       cancelled = true
     }
-  }, [cloudFirst, user.id, entriesByDate])
+  }, [cloudFirst, freshCloudTable, user.id, entriesByDate])
 
   const allEntries = useMemo(() => {
     const byId = new Map<string, DiaryEntry>()
@@ -168,7 +183,8 @@ function DiaryViewContent({ expenses, diary, cloudFirst }: DiaryViewContentProps
   )
 
   const handleCreateFolder = (folder: DiaryTagFolder) => {
-    void saveDiaryTagFolder(user.id, folder).then(setTagFolders)
+    const save = freshCloudTable ? saveDiaryV2TagFolder : saveDiaryTagFolder
+    void save(user.id, folder).then(setTagFolders)
   }
 
   const handleDeleteFolder = (mainTag: string, subTag?: string, entryCount = 0) => {
@@ -207,7 +223,9 @@ function DiaryViewContent({ expenses, diary, cloudFirst }: DiaryViewContentProps
         const all = await loadAllDiaryEntriesLocal(user.id)
         setSearchIndex(all)
       }
-      const folders = await deleteDiaryTagFolder(user.id, mainTag, subTag)
+      const folders = freshCloudTable
+        ? await deleteDiaryV2TagFolder(user.id, mainTag, subTag)
+        : await deleteDiaryTagFolder(user.id, mainTag, subTag)
       setTagFolders(folders)
       await refreshMonth()
       setTagFilter((current) => {
@@ -229,7 +247,8 @@ function DiaryViewContent({ expenses, diary, cloudFirst }: DiaryViewContentProps
     void (async () => {
       let folders = tagFolders
       for (const folder of entryFolders) {
-        folders = await saveDiaryTagFolder(user.id, {
+        const saveTag = freshCloudTable ? saveDiaryV2TagFolder : saveDiaryTagFolder
+        folders = await saveTag(user.id, {
           mainTag: folder.mainTag,
           subTag: folder.subTag,
         })
@@ -338,10 +357,12 @@ function DiaryViewContent({ expenses, diary, cloudFirst }: DiaryViewContentProps
             </div>
             <div>
               <h1 className="text-[22px] font-semibold tracking-tight text-[#1C1C1E]">
-                {cloudFirst ? 'Diary (Cloud)' : 'Diary'}
+                {freshCloudTable ? 'Cloud diary' : cloudFirst ? 'Diary (Cloud)' : 'Diary'}
               </h1>
               <p className="text-[13px] text-muted">
-                {cloudFirst
+                {freshCloudTable
+                  ? 'New Supabase table (diary_v2) — multi-device sync, separate from old diary'
+                  : cloudFirst
                   ? 'Saved in Supabase — same notes on every device when you sign in'
                   : viewMode === 'flip'
                     ? 'Flip through your photo diary like an open book'
@@ -812,11 +833,23 @@ function DiaryViewContent({ expenses, diary, cloudFirst }: DiaryViewContentProps
 
 export function DiaryView(props: DiaryViewProps) {
   const diary = useDiary()
-  return <DiaryViewContent {...props} diary={diary} cloudFirst={false} />
+  return (
+    <DiaryViewContent {...props} diary={diary} cloudFirst={false} freshCloudTable={false} />
+  )
 }
 
-/** Cloud-first diary — Supabase is the source of truth (multi-device). */
-export function DiaryV2View(props: DiaryViewProps) {
+/** Fresh cloud diary on planner.diary_v2_entries (legacy Diary tab unchanged). */
+export function CloudDiaryView(props: DiaryViewProps) {
   const diary = useDiaryV2()
-  return <DiaryViewContent {...props} diary={diary} cloudFirst={true} />
+  return (
+    <DiaryViewContent
+      {...props}
+      diary={diary}
+      cloudFirst={true}
+      freshCloudTable={true}
+    />
+  )
 }
+
+/** @deprecated Use CloudDiaryView — kept for imports */
+export const DiaryV2View = CloudDiaryView

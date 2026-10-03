@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import {
   BookHeart,
+  Cloud,
   Calendar,
   CalendarDays,
   Camera,
@@ -13,7 +14,7 @@ import {
 
 export type AppView =
   | 'diary'
-  | 'diary-legacy'
+  | 'cloud-diary'
   | 'mailbox'
   | 'expenses'
   | 'taste'
@@ -48,6 +49,14 @@ export function BottomNav({ active, onChange, badges }: BottomNavProps) {
           active={active === 'diary'}
           badge={badges?.diary}
           onClick={() => onChange('diary')}
+          light={transparent}
+        />
+        <NavButton
+          label="Cloud"
+          icon={<Cloud size={20} />}
+          active={active === 'cloud-diary'}
+          badge={badges?.['cloud-diary']}
+          onClick={() => onChange('cloud-diary')}
           light={transparent}
         />
         <NavButton

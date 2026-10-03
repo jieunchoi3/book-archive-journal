@@ -9,11 +9,11 @@ import {
 import { applyTagFoldersToEntry, getEntryTagFolders } from '../lib/diaryTags'
 import { downscaleToThumb, renderDiaryComposite } from '../lib/diaryImage'
 import {
-  deleteDiaryEntryCloud,
-  fetchDiaryEntriesForMonthCloud,
-  fetchDiaryEntryCloud,
-  upsertDiaryEntryCloud,
-} from '../lib/diaryCloud'
+  deleteDiaryV2Entry,
+  fetchDiaryV2EntriesForMonth,
+  fetchDiaryV2Entry,
+  upsertDiaryV2Entry,
+} from '../lib/diaryV2Cloud'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import type { DiaryActions } from './useDiary'
@@ -113,7 +113,7 @@ export function useDiaryV2(initialYear?: number, initialMonth?: number): DiaryAc
       delete pendingEntries.current[key]
       setCloudSaveStatus('pending')
       try {
-        await upsertDiaryEntryCloud(userId, entry, { authoritative: true })
+        await upsertDiaryV2Entry(userId, entry)
         setSyncError(null)
         markCloudSaved()
       } catch (e) {
@@ -133,7 +133,7 @@ export function useDiaryV2(initialYear?: number, initialMonth?: number): DiaryAc
     const year = viewMonth.year
     const month = viewMonth.month
     try {
-      const map = await fetchDiaryEntriesForMonthCloud(userId, year, month)
+      const map = await fetchDiaryV2EntriesForMonth(userId, year, month)
       if (gen !== refreshGen.current) return
       const normalized: Record<string, DiaryEntry[]> = {}
       for (const [key, list] of Object.entries(map)) {
@@ -161,7 +161,7 @@ export function useDiaryV2(initialYear?: number, initialMonth?: number): DiaryAc
         {
           event: '*',
           schema: 'planner',
-          table: 'diary_entries',
+          table: 'diary_v2_entries',
           filter: `user_id=eq.${userId}`,
         },
         () => {
@@ -184,7 +184,7 @@ export function useDiaryV2(initialYear?: number, initialMonth?: number): DiaryAc
   useEffect(() => {
     const flushAll = () => {
       for (const entry of Object.values(pendingEntries.current)) {
-        void upsertDiaryEntryCloud(userId, entry, { authoritative: true }).catch((e) =>
+        void upsertDiaryV2Entry(userId, entry).catch((e) =>
           console.error('[diary-v2] flush save failed', e),
         )
       }
@@ -225,7 +225,7 @@ export function useDiaryV2(initialYear?: number, initialMonth?: number): DiaryAc
   const repairGridImage = useCallback(
     async (entryId: string) => {
       try {
-        const loaded = await fetchDiaryEntryCloud(userId, entryId)
+        const loaded = await fetchDiaryV2Entry(userId, entryId)
         if (!loaded) return
         const normalized = normalizeEntry(loaded)
         setEntriesByDate((prev) => {
@@ -245,7 +245,7 @@ export function useDiaryV2(initialYear?: number, initialMonth?: number): DiaryAc
   const ensureHydrated = useCallback(
     async (entryId: string) => {
       const fromState = findEntryInState(entryId)
-      const reloaded = await fetchDiaryEntryCloud(userId, entryId)
+      const reloaded = await fetchDiaryV2Entry(userId, entryId)
       if (!fromState && !reloaded) {
         throw new Error(`Unknown diary entry ${entryId}`)
       }
@@ -278,7 +278,7 @@ export function useDiaryV2(initialYear?: number, initialMonth?: number): DiaryAc
   const upsertEntry = useCallback(
     async (entryId: string, patch: DiaryEntryPatch) => {
       const fromState = findEntryInState(entryId)
-      const loaded = fromState ? null : await fetchDiaryEntryCloud(userId, entryId)
+      const loaded = fromState ? null : await fetchDiaryV2Entry(userId, entryId)
       if (!fromState && !loaded) {
         throw new Error(`Unknown diary entry ${entryId}`)
       }
@@ -347,7 +347,7 @@ export function useDiaryV2(initialYear?: number, initialMonth?: number): DiaryAc
         const list = prev[dateKey] ?? []
         return { ...prev, [dateKey]: [entry, ...list] }
       })
-      await upsertDiaryEntryCloud(userId, entry, { authoritative: true })
+      await upsertDiaryV2Entry(userId, entry)
       return entry
     },
     [userId],
@@ -357,7 +357,7 @@ export function useDiaryV2(initialYear?: number, initialMonth?: number): DiaryAc
     async (entryId: string) => {
       const existing = findEntryInState(entryId)
       if (!existing) return
-      await deleteDiaryEntryCloud(userId, entryId)
+      await deleteDiaryV2Entry(userId, entryId)
       setEntriesByDate((prev) => removeFromDayList(prev, existing.dateKey, entryId))
     },
     [findEntryInState, userId],
