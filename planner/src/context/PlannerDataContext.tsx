@@ -293,7 +293,7 @@ export function PlannerDataProvider({
   /** Serialize template writes (recurring task adds, block edits). */
   const enqueueCompletionSync = useCallback((job: Promise<unknown>) => {
     completionSyncQueue.current = completionSyncQueue.current
-      .then(() => job)
+      .then(() => job.then(() => undefined))
       .catch((e) => logError('taskCompletion', e))
   }, [])
 
