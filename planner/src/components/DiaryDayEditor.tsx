@@ -129,7 +129,6 @@ export function DiaryDayEditor({
   const [bodyImages, setBodyImages] = useState<DiaryBodyImage[]>(entry.bodyImages ?? [])
   const [editingPhotos, setEditingPhotos] = useState(false)
   const [addingBodyImage, setAddingBodyImage] = useState(false)
-  const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const bodyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const bodyFileInputRef = useRef<HTMLInputElement>(null)
   const scrollerRef = useRef<HTMLDivElement>(null)
@@ -148,10 +147,6 @@ export function DiaryDayEditor({
   const nextEntry = getEntry(nextKey)
 
   const flushPending = useCallback(() => {
-    if (titleTimer.current) {
-      clearTimeout(titleTimer.current)
-      titleTimer.current = null
-    }
     if (bodyTimer.current) {
       clearTimeout(bodyTimer.current)
       bodyTimer.current = null
@@ -184,7 +179,6 @@ export function DiaryDayEditor({
 
   useEffect(() => {
     return () => {
-      if (titleTimer.current) clearTimeout(titleTimer.current)
       if (bodyTimer.current) clearTimeout(bodyTimer.current)
     }
   }, [])
@@ -235,8 +229,8 @@ export function DiaryDayEditor({
   const queueTitle = (value: string) => {
     setTitle(value)
     pendingTitle.current = value
-    if (titleTimer.current) clearTimeout(titleTimer.current)
-    titleTimer.current = setTimeout(() => onChange({ title: value }), 300)
+    // Keep note tab + month grid in sync with the input (cloud save is debounced in the hook).
+    onChange({ title: value })
   }
 
   const queueBody = (value: string) => {
@@ -345,7 +339,10 @@ export function DiaryDayEditor({
                             : 'bg-[#F2F2F7] text-[#636366] hover:bg-[#E8E8ED]'
                         }`}
                       >
-                        {noteTabLabel(dayEntry, index)}
+                        {noteTabLabel(
+                          active ? { ...dayEntry, title } : dayEntry,
+                          index,
+                        )}
                       </button>
                     )
                   })}

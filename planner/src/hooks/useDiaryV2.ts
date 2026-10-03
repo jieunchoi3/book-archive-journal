@@ -376,7 +376,7 @@ export function useDiaryV2(initialYear?: number, initialMonth?: number): DiaryAc
       if (saveTimers.current[key]) clearTimeout(saveTimers.current[key])
       saveTimers.current[key] = setTimeout(() => {
         void flushSave(entry)
-      }, 250)
+      }, 400)
     },
     [flushSave],
   )
