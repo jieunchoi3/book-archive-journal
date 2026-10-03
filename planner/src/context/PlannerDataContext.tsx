@@ -243,6 +243,8 @@ export function PlannerDataProvider({
   const templateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const blockLogTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const templateSyncQueue = useRef<Promise<void>>(Promise.resolve())
+  /** Ensures pagehide/visibility flush waits for in-flight checkmark writes. */
+  const completionSyncQueue = useRef<Promise<void>>(Promise.resolve())
   const itemsTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const appsTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sidebarNoteTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -289,6 +291,12 @@ export function PlannerDataProvider({
   }, [])
 
   /** Serialize template writes (recurring task adds, block edits). */
+  const enqueueCompletionSync = useCallback((job: Promise<unknown>) => {
+    completionSyncQueue.current = completionSyncQueue.current
+      .then(() => job)
+      .catch((e) => logError('taskCompletion', e))
+  }, [])
+
   const enqueueTemplateSync = useCallback(
     (tmpl: WeekTemplate): Promise<void> => {
       if (templateTimer.current) {
@@ -321,7 +329,7 @@ export function PlannerDataProvider({
     weeklyLogSyncTimer.current = setTimeout(() => {
       weeklyLogSyncTimer.current = null
       flushWeeklyLogSync()
-    }, 500)
+    }, 250)
   }, [flushWeeklyLogSync])
 
   const flushBlockLogWrite = useCallback((): void => {
@@ -340,6 +348,7 @@ export function PlannerDataProvider({
 
   const flushAllPending = useCallback(async (): Promise<void> => {
     flushBlockLogWrite()
+    await completionSyncQueue.current
     await flushWeeklyLogSync()
 
     if (templateTimer.current) {
@@ -454,7 +463,12 @@ export function PlannerDataProvider({
       if (editGenAtStart !== localEditGeneration.current) {
         memoryLog = weeklyLogRef.current.weekStart === week ? weeklyLogRef.current : memoryLog
       }
-      const merged = coalesceWeeklyLog(cloudLog, diskLog, memoryLog)
+      let merged = coalesceWeeklyLog(cloudLog, diskLog, memoryLog)
+      const live =
+        weeklyLogRef.current.weekStart === week ? weeklyLogRef.current : null
+      if (live) {
+        merged = coalesceWeeklyLog(merged, live)
+      }
 
       weekCacheRef.current.set(week, merged)
       saveWeeklyLogLocal(userId, merged)
@@ -831,8 +845,8 @@ export function PlannerDataProvider({
           putWeekCache(next)
           return next
         })
-        void upsertOneOffTask(userId, { ...task, done }, dateKey, blockId).catch((e) =>
-          logError('upsertOneOffTask', e),
+        enqueueCompletionSync(
+          upsertOneOffTask(userId, { ...task, done }, dateKey, blockId),
         )
         return
       }
@@ -860,11 +874,11 @@ export function PlannerDataProvider({
         putWeekCache(next)
         return next
       })
-      void upsertTaskCompletion(userId, week, dayKey, blockId, taskId, done).catch((e) =>
-        logError('upsertTaskCompletion', e),
+      enqueueCompletionSync(
+        upsertTaskCompletion(userId, week, dayKey, blockId, taskId, done),
       )
     },
-    [userId, putWeekCache],
+    [enqueueCompletionSync, userId, putWeekCache],
   )
 
   const toggleHideTask = useCallback(
@@ -1195,11 +1209,11 @@ export function PlannerDataProvider({
           return next
         })
 
-        void upsertTaskCompletion(userId, week, fromDayKey, toBlockId, taskId, done).catch((e) =>
-          logError('upsertTaskCompletion', e),
+        enqueueCompletionSync(
+          upsertTaskCompletion(userId, week, fromDayKey, toBlockId, taskId, done),
         )
-        void upsertTaskCompletion(userId, week, fromDayKey, fromBlockId, taskId, false).catch(
-          (e) => logError('upsertTaskCompletion', e),
+        enqueueCompletionSync(
+          upsertTaskCompletion(userId, week, fromDayKey, fromBlockId, taskId, false),
         )
         return
       }
@@ -1236,14 +1250,12 @@ export function PlannerDataProvider({
       void upsertBlockWeekLog(userId, week, fromDayKey, fromBlockId, hiddenSourceLog).catch((e) =>
         logError('upsertBlockWeekLog', e),
       )
-      void upsertOneOffTask(userId, deferredTask, toDateKey, toBlockId).catch((e) =>
-        logError('upsertOneOffTask', e),
-      )
-      void upsertTaskCompletion(userId, week, fromDayKey, fromBlockId, taskId, false).catch((e) =>
-        logError('upsertTaskCompletion', e),
+      enqueueCompletionSync(upsertOneOffTask(userId, deferredTask, toDateKey, toBlockId))
+      enqueueCompletionSync(
+        upsertTaskCompletion(userId, week, fromDayKey, fromBlockId, taskId, false),
       )
     },
-    [userId, putWeekCache, updateTemplate],
+    [enqueueCompletionSync, userId, putWeekCache, updateTemplate],
   )
 
   const renameRecurringTask = useCallback(
