@@ -13,6 +13,7 @@ import {
 
 export type AppView =
   | 'diary'
+  | 'diary-legacy'
   | 'mailbox'
   | 'expenses'
   | 'taste'

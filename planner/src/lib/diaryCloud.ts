@@ -415,8 +415,18 @@ function cloudRowHasStoredMedia(row: ExistingDiaryRow | null | undefined): boole
   return (row.layers?.length ?? 0) > 0 || (row.body_images?.length ?? 0) > 0
 }
 
+export type UpsertDiaryEntryOptions = {
+  /** When true, write the client entry as-is (multi-device Diary V2). Skips “longer text wins” merge. */
+  authoritative?: boolean
+}
+
 /** Cloud deletes only via explicit deleteDiaryEntry — never from an “empty-looking” autosave. */
-export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): Promise<void> {
+export async function upsertDiaryEntryCloud(
+  userId: string,
+  entry: DiaryEntry,
+  opts?: UpsertDiaryEntryOptions,
+): Promise<void> {
+  const authoritative = opts?.authoritative ?? false
   const { data: existingRow } = await supabase
     .from('diary_entries')
     .select('title, body, main_tag, sub_tag, tag_folders, layers, body_images, cover_path')
@@ -425,7 +435,7 @@ export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): 
     .maybeSingle()
   const prevRow = existingRow as ExistingDiaryRow | null
 
-  if (isDiaryEntryEmpty(entry) && !diaryEntryHasPhoto(entry)) {
+  if (!authoritative && isDiaryEntryEmpty(entry) && !diaryEntryHasPhoto(entry)) {
     if (cloudRowHasStoredMedia(prevRow)) {
       console.warn('[diary] skipped cloud upsert: local entry looks empty but cloud still has media', entry.dateKey)
       return
@@ -546,9 +556,11 @@ export async function upsertDiaryEntryCloud(userId: string, entry: DiaryEntry): 
     await removePaths(orphanPaths)
   }
 
-  const tagPatch = coalesceCloudTags(prevRow, entry)
-  const title = coalesceCloudText(prevRow?.title, entry.title)
-  const body = coalesceCloudText(prevRow?.body, entry.body)
+  const tagPatch = authoritative
+    ? applyTagFoldersToEntry(getEntryTagFolders(entry))
+    : coalesceCloudTags(prevRow, entry)
+  const title = authoritative ? entry.title : coalesceCloudText(prevRow?.title, entry.title)
+  const body = authoritative ? entry.body : coalesceCloudText(prevRow?.body, entry.body)
 
   const { error } = await supabase.from('diary_entries').upsert(
     {

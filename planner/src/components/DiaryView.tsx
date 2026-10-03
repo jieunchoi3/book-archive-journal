@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { BookHeart, BookOpen, ChevronLeft, ChevronRight, Hash, LayoutGrid, Wallet, X } from 'lucide-react'
-import { useDiary } from '../hooks/useDiary'
+import { useDiary, type DiaryActions } from '../hooks/useDiary'
+import { useDiaryV2 } from '../hooks/useDiaryV2'
 import type { ExpenseActions } from '../hooks/useExpenses'
 import { useAuth } from '../hooks/useAuth'
 import { loadAllDiaryEntriesLocal, clearDiaryTagsForFolder } from '../lib/diaryStorage'
@@ -49,8 +50,12 @@ interface DiaryViewProps {
   expenses: ExpenseActions
 }
 
-export function DiaryView({ expenses }: DiaryViewProps) {
-  const diary = useDiary()
+interface DiaryViewContentProps extends DiaryViewProps {
+  diary: DiaryActions
+  cloudFirst: boolean
+}
+
+function DiaryViewContent({ expenses, diary, cloudFirst }: DiaryViewContentProps) {
   const {
     year,
     month,
@@ -109,16 +114,18 @@ export function DiaryView({ expenses }: DiaryViewProps) {
 
   useEffect(() => {
     let cancelled = false
-    void loadAllDiaryEntriesLocal(user.id).then((all) => {
-      if (!cancelled) setSearchIndex(all)
-    })
+    if (!cloudFirst) {
+      void loadAllDiaryEntriesLocal(user.id).then((all) => {
+        if (!cancelled) setSearchIndex(all)
+      })
+    }
     void loadDiaryTagFolders(user.id).then((folders) => {
       if (!cancelled) setTagFolders(folders)
     })
     return () => {
       cancelled = true
     }
-  }, [user.id, entriesByDate])
+  }, [cloudFirst, user.id, entriesByDate])
 
   const allEntries = useMemo(() => {
     const byId = new Map<string, DiaryEntry>()
@@ -181,11 +188,27 @@ export function DiaryView({ expenses }: DiaryViewProps) {
     if (!window.confirm(message)) return
 
     void (async () => {
-      await clearDiaryTagsForFolder(user.id, mainTag, subTag)
+      if (cloudFirst) {
+        for (const entry of allEntries) {
+          const folders = getEntryTagFolders(entry)
+          let next = folders
+          if (subTag !== undefined) {
+            next = folders.filter(
+              (f) => !(f.mainTag === mainTag && f.subTag === subTag),
+            )
+          } else {
+            next = folders.filter((f) => f.mainTag !== mainTag)
+          }
+          if (next.length === folders.length) continue
+          await upsertEntry(entry.id, { tagFolders: next })
+        }
+      } else {
+        await clearDiaryTagsForFolder(user.id, mainTag, subTag)
+        const all = await loadAllDiaryEntriesLocal(user.id)
+        setSearchIndex(all)
+      }
       const folders = await deleteDiaryTagFolder(user.id, mainTag, subTag)
       setTagFolders(folders)
-      const all = await loadAllDiaryEntriesLocal(user.id)
-      setSearchIndex(all)
       await refreshMonth()
       setTagFilter((current) => {
         if (current.type === 'all') return current
@@ -314,11 +337,15 @@ export function DiaryView({ expenses }: DiaryViewProps) {
               <BookHeart size={20} />
             </div>
             <div>
-              <h1 className="text-[22px] font-semibold tracking-tight text-[#1C1C1E]">Diary</h1>
+              <h1 className="text-[22px] font-semibold tracking-tight text-[#1C1C1E]">
+                {cloudFirst ? 'Diary (Cloud)' : 'Diary'}
+              </h1>
               <p className="text-[13px] text-muted">
-                {viewMode === 'flip'
-                  ? 'Flip through your photo diary like an open book'
-                  : 'Your photo diary — one square for each day'}
+                {cloudFirst
+                  ? 'Saved in Supabase — same notes on every device when you sign in'
+                  : viewMode === 'flip'
+                    ? 'Flip through your photo diary like an open book'
+                    : 'Your photo diary — one square for each day'}
               </p>
             </div>
           </div>
@@ -679,7 +706,7 @@ export function DiaryView({ expenses }: DiaryViewProps) {
             </div>
           </div>
         )}
-        {(syncError || recoverMessage) && (
+        {(syncError || (!cloudFirst && recoverMessage)) && (
           <div
             className={`mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl px-3 py-2 text-[12px] ${
               syncError ? 'bg-[#FF3B30]/10 text-[#FF3B30]' : 'bg-[#007AFF]/10 text-[#007AFF]'
@@ -694,28 +721,30 @@ export function DiaryView({ expenses }: DiaryViewProps) {
               >
                 Retry
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setRecoverMessage(null)
-                  void uploadLocalDiaryToCloud()
-                    .then(({ pushed }) => {
-                      setRecoverMessage(
-                        pushed > 0
-                          ? `이 기기에서 ${pushed}개 일기를 Supabase에 올렸어요.`
-                          : '올릴 로컬 일기가 없거나 이미 동기화된 상태예요.',
-                      )
-                    })
-                    .catch(() => {})
-                }}
-                className="font-medium underline"
-              >
-                이 기기 → Supabase 업로드
-              </button>
+              {!cloudFirst && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRecoverMessage(null)
+                    void uploadLocalDiaryToCloud()
+                      .then(({ pushed }) => {
+                        setRecoverMessage(
+                          pushed > 0
+                            ? `이 기기에서 ${pushed}개 일기를 Supabase에 올렸어요.`
+                            : '올릴 로컬 일기가 없거나 이미 동기화된 상태예요.',
+                        )
+                      })
+                      .catch(() => {})
+                  }}
+                  className="font-medium underline"
+                >
+                  이 기기 → Supabase 업로드
+                </button>
+              )}
             </div>
           </div>
         )}
-        {!syncError && !recoverMessage && !loading && (
+        {!cloudFirst && !syncError && !recoverMessage && !loading && (
           <div className="mt-2 flex justify-end">
             <button
               type="button"
@@ -779,4 +808,15 @@ export function DiaryView({ expenses }: DiaryViewProps) {
       )}
     </div>
   )
+}
+
+export function DiaryView(props: DiaryViewProps) {
+  const diary = useDiary()
+  return <DiaryViewContent {...props} diary={diary} cloudFirst={false} />
+}
+
+/** Cloud-first diary — Supabase is the source of truth (multi-device). */
+export function DiaryV2View(props: DiaryViewProps) {
+  const diary = useDiaryV2()
+  return <DiaryViewContent {...props} diary={diary} cloudFirst={true} />
 }
