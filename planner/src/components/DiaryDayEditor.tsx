@@ -129,7 +129,6 @@ export function DiaryDayEditor({
   const [bodyImages, setBodyImages] = useState<DiaryBodyImage[]>(entry.bodyImages ?? [])
   const [editingPhotos, setEditingPhotos] = useState(false)
   const [addingBodyImage, setAddingBodyImage] = useState(false)
-  const bodyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const bodyFileInputRef = useRef<HTMLInputElement>(null)
   const scrollerRef = useRef<HTMLDivElement>(null)
   const navigatingRef = useRef(false)
@@ -147,10 +146,6 @@ export function DiaryDayEditor({
   const nextEntry = getEntry(nextKey)
 
   const flushPending = useCallback(() => {
-    if (bodyTimer.current) {
-      clearTimeout(bodyTimer.current)
-      bodyTimer.current = null
-    }
     const patch: Partial<Pick<DiaryEntry, 'title' | 'body'>> = {}
     if (pendingTitle.current !== entry.title) patch.title = pendingTitle.current
     if (pendingBody.current !== entry.body) patch.body = pendingBody.current
@@ -176,12 +171,6 @@ export function DiaryDayEditor({
       navigatingRef.current = false
     })
   }, [dateKey])
-
-  useEffect(() => {
-    return () => {
-      if (bodyTimer.current) clearTimeout(bodyTimer.current)
-    }
-  }, [])
 
   // Keep scroll locked on the middle panel after layout/resize.
   useEffect(() => {
@@ -236,8 +225,7 @@ export function DiaryDayEditor({
   const queueBody = (value: string) => {
     setBody(value)
     pendingBody.current = value
-    if (bodyTimer.current) clearTimeout(bodyTimer.current)
-    bodyTimer.current = setTimeout(() => onChange({ body: value }), 300)
+    onChange({ body: value })
   }
 
   const addBodyImage = useCallback(
@@ -293,7 +281,10 @@ export function DiaryDayEditor({
     <>
       <div
         className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-3 sm:p-4"
-        onClick={onClose}
+        onClick={() => {
+          flushPending()
+          onClose()
+        }}
       >
         <div
           className="flex h-[80vh] w-[80vw] max-w-none flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"

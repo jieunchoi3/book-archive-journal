@@ -86,6 +86,7 @@ function DiaryViewContent({
     refreshMonth,
     uploadLocalDiaryToCloud,
     repairGridImage,
+    flushPendingSave,
   } = diary
   const [recoverMessage, setRecoverMessage] = useState<string | null>(null)
   const { user } = useAuth()
@@ -140,7 +141,7 @@ function DiaryViewContent({
     return () => {
       cancelled = true
     }
-  }, [cloudFirst, freshCloudTable, user.id, entriesByDate])
+  }, [cloudFirst, freshCloudTable, user.id])
 
   const allEntries = useMemo(() => {
     const byId = new Map<string, DiaryEntry>()
@@ -822,6 +823,9 @@ function DiaryViewContent({
             void openDay(nextKey)
           }}
           onClose={() => {
+            if (selectedEntryId && (freshCloudTable || cloudFirst)) {
+              flushPendingSave(selectedEntryId)
+            }
             setSelectedDateKey(null)
             setSelectedEntryId(null)
           }}

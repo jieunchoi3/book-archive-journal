@@ -76,8 +76,12 @@ function entryHasInlineMedia(entry: DiaryEntry): boolean {
 }
 
 /** Keep in-flight / richer client edits when a cloud refresh races our save. */
-function mergeDiaryEntryPreferClient(local: DiaryEntry, remote: DiaryEntry): DiaryEntry {
-  const pending = entryHasInlineMedia(local)
+function mergeDiaryEntryPreferClient(
+  local: DiaryEntry,
+  remote: DiaryEntry,
+  inFlight = false,
+): DiaryEntry {
+  const pending = inFlight || entryHasInlineMedia(local)
   const localTs = Date.parse(local.updatedAt) || 0
   const remoteTs = Date.parse(remote.updatedAt) || 0
   if (localTs >= remoteTs || pending) {
@@ -106,6 +110,7 @@ function mergeMonthMaps(
   remote: Record<string, DiaryEntry[]>,
   prev: Record<string, DiaryEntry[]>,
   pending: Record<string, DiaryEntry>,
+  saving: Set<string>,
 ): Record<string, DiaryEntry[]> {
   const out: Record<string, DiaryEntry[]> = {}
   const dateKeys = new Set([...Object.keys(remote), ...Object.keys(prev)])
@@ -118,8 +123,9 @@ function mergeMonthMaps(
     for (const entry of prev[dateKey] ?? []) {
       const local = pending[entry.id] ?? entry
       const fromRemote = byId.get(entry.id)
+      const inFlight = Boolean(pending[entry.id] || saving.has(entry.id))
       if (fromRemote) {
-        byId.set(entry.id, mergeDiaryEntryPreferClient(local, fromRemote))
+        byId.set(entry.id, mergeDiaryEntryPreferClient(local, fromRemote, inFlight))
       } else if (pending[entry.id] || !isDiaryEntryEmpty(local)) {
         byId.set(entry.id, local)
       }
@@ -129,7 +135,9 @@ function mergeMonthMaps(
       const existing = byId.get(entry.id)
       byId.set(
         entry.id,
-        existing ? mergeDiaryEntryPreferClient(entry, existing) : entry,
+        existing
+          ? mergeDiaryEntryPreferClient(entry, existing, true)
+          : entry,
       )
     }
     const list = [...byId.values()].sort(
@@ -221,7 +229,7 @@ export function useDiaryV2(initialYear?: number, initialMonth?: number): DiaryAc
         normalized[key] = list.map(normalizeEntry)
       }
       setEntriesByDate((prev) =>
-        mergeMonthMaps(normalized, prev, pendingEntries.current),
+        mergeMonthMaps(normalized, prev, pendingEntries.current, savingEntries.current),
       )
       setSyncError(null)
     } catch (e) {
@@ -375,8 +383,21 @@ export function useDiaryV2(initialYear?: number, initialMonth?: number): DiaryAc
       setCloudSaveStatus('pending')
       if (saveTimers.current[key]) clearTimeout(saveTimers.current[key])
       saveTimers.current[key] = setTimeout(() => {
-        void flushSave(entry)
+        const latest = pendingEntries.current[key]
+        if (latest) void flushSave(latest)
       }, 400)
+    },
+    [flushSave],
+  )
+
+  const flushPendingSave = useCallback(
+    (entryId: string) => {
+      if (saveTimers.current[entryId]) {
+        clearTimeout(saveTimers.current[entryId])
+        delete saveTimers.current[entryId]
+      }
+      const pending = pendingEntries.current[entryId]
+      if (pending) void flushSave(pending)
     },
     [flushSave],
   )
@@ -516,5 +537,6 @@ export function useDiaryV2(initialYear?: number, initialMonth?: number): DiaryAc
     refreshMonth,
     uploadLocalDiaryToCloud,
     repairGridImage,
+    flushPendingSave,
   }
 }

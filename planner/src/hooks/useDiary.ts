@@ -75,6 +75,8 @@ export interface DiaryActions {
   /** Upload this device’s diary to Supabase without deleting local cache. */
   uploadLocalDiaryToCloud: () => Promise<{ pushed: number }>
   repairGridImage: (entryId: string) => Promise<void>
+  /** Flush debounced cloud save for one entry (e.g. when closing the day editor). */
+  flushPendingSave: (entryId: string) => void
 }
 
 export function useDiary(initialYear?: number, initialMonth?: number): DiaryActions {
@@ -302,8 +304,21 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
       setCloudSaveStatus('pending')
       if (saveTimers.current[key]) clearTimeout(saveTimers.current[key])
       saveTimers.current[key] = setTimeout(() => {
-        void flushSave(entry)
+        const latest = pendingEntries.current[key]
+        if (latest) void flushSave(latest)
       }, 400)
+    },
+    [flushSave],
+  )
+
+  const flushPendingSave = useCallback(
+    (entryId: string) => {
+      if (saveTimers.current[entryId]) {
+        clearTimeout(saveTimers.current[entryId])
+        delete saveTimers.current[entryId]
+      }
+      const pending = pendingEntries.current[entryId]
+      if (pending) void flushSave(pending)
     },
     [flushSave],
   )
@@ -446,5 +461,6 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
     refreshMonth,
     uploadLocalDiaryToCloud,
     repairGridImage,
+    flushPendingSave,
   }
 }
