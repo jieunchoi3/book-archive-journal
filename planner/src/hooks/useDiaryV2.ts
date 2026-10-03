@@ -4,6 +4,7 @@ import {
   DEFAULT_DIARY_FRAME_COLOR,
   emptyDiaryEntry,
   ensureDiaryEntryId,
+  isDiaryEntryEmpty,
   pickPrimaryDiaryEntry,
 } from '../types/diary'
 import { applyTagFoldersToEntry, getEntryTagFolders } from '../lib/diaryTags'
@@ -66,6 +67,79 @@ function removeFromDayList(
   return copy
 }
 
+function entryHasInlineMedia(entry: DiaryEntry): boolean {
+  if (entry.coverDataUrl?.startsWith('data:')) return true
+  if (entry.thumbDataUrl?.startsWith('data:')) return true
+  if (entry.layers.some((l) => l.src.startsWith('data:'))) return true
+  if ((entry.bodyImages ?? []).some((i) => i.src.startsWith('data:'))) return true
+  return false
+}
+
+/** Keep in-flight / richer client edits when a cloud refresh races our save. */
+function mergeDiaryEntryPreferClient(local: DiaryEntry, remote: DiaryEntry): DiaryEntry {
+  const pending = entryHasInlineMedia(local)
+  const localTs = Date.parse(local.updatedAt) || 0
+  const remoteTs = Date.parse(remote.updatedAt) || 0
+  if (localTs >= remoteTs || pending) {
+    return {
+      ...remote,
+      title: local.title,
+      body: local.body,
+      tagFolders: local.tagFolders?.length ? local.tagFolders : remote.tagFolders,
+      mainTag: local.mainTag ?? remote.mainTag,
+      subTag: local.subTag ?? remote.subTag,
+      layers: local.layers.some((l) => l.src) ? local.layers : remote.layers,
+      bodyImages:
+        (local.bodyImages?.length ?? 0) > 0 ? (local.bodyImages ?? []) : remote.bodyImages,
+      frameColor: local.frameColor || remote.frameColor,
+      canvasStrokes:
+        (local.canvasStrokes?.length ?? 0) > 0 ? local.canvasStrokes : remote.canvasStrokes,
+      coverDataUrl: local.coverDataUrl || remote.coverDataUrl,
+      thumbDataUrl: local.thumbDataUrl || remote.thumbDataUrl,
+      updatedAt: localTs >= remoteTs ? local.updatedAt : remote.updatedAt,
+    }
+  }
+  return remote
+}
+
+function mergeMonthMaps(
+  remote: Record<string, DiaryEntry[]>,
+  prev: Record<string, DiaryEntry[]>,
+  pending: Record<string, DiaryEntry>,
+): Record<string, DiaryEntry[]> {
+  const out: Record<string, DiaryEntry[]> = {}
+  const dateKeys = new Set([...Object.keys(remote), ...Object.keys(prev)])
+
+  for (const dateKey of dateKeys) {
+    const byId = new Map<string, DiaryEntry>()
+    for (const entry of remote[dateKey] ?? []) {
+      byId.set(entry.id, entry)
+    }
+    for (const entry of prev[dateKey] ?? []) {
+      const local = pending[entry.id] ?? entry
+      const fromRemote = byId.get(entry.id)
+      if (fromRemote) {
+        byId.set(entry.id, mergeDiaryEntryPreferClient(local, fromRemote))
+      } else if (pending[entry.id] || !isDiaryEntryEmpty(local)) {
+        byId.set(entry.id, local)
+      }
+    }
+    for (const entry of Object.values(pending)) {
+      if (entry.dateKey !== dateKey) continue
+      const existing = byId.get(entry.id)
+      byId.set(
+        entry.id,
+        existing ? mergeDiaryEntryPreferClient(entry, existing) : entry,
+      )
+    }
+    const list = [...byId.values()].sort(
+      (a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0),
+    )
+    if (list.length) out[dateKey] = list
+  }
+  return out
+}
+
 /** Supabase-first diary — no IndexedDB merge; realtime refresh across devices. */
 export function useDiaryV2(initialYear?: number, initialMonth?: number): DiaryActions {
   const { user } = useAuth()
@@ -85,6 +159,8 @@ export function useDiaryV2(initialYear?: number, initialMonth?: number): DiaryAc
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const pendingEntries = useRef<Record<string, DiaryEntry>>({})
   const refreshGen = useRef(0)
+  const realtimeRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const savingEntries = useRef<Set<string>>(new Set())
 
   const findEntryInState = useCallback(
     (entryId: string): DiaryEntry | null => {
@@ -110,10 +186,12 @@ export function useDiaryV2(initialYear?: number, initialMonth?: number): DiaryAc
         clearTimeout(saveTimers.current[key])
         delete saveTimers.current[key]
       }
-      delete pendingEntries.current[key]
+      pendingEntries.current[key] = entry
+      savingEntries.current.add(key)
       setCloudSaveStatus('pending')
       try {
         await upsertDiaryV2Entry(userId, entry)
+        delete pendingEntries.current[key]
         setSyncError(null)
         markCloudSaved()
       } catch (e) {
@@ -122,14 +200,17 @@ export function useDiaryV2(initialYear?: number, initialMonth?: number): DiaryAc
         setSyncError(message)
         setCloudSaveStatus('error')
         throw e
+      } finally {
+        savingEntries.current.delete(key)
       }
     },
     [markCloudSaved, userId],
   )
 
-  const refreshMonth = useCallback(async () => {
+  const refreshMonth = useCallback(async (opts?: { background?: boolean }) => {
+    const background = opts?.background ?? false
     const gen = ++refreshGen.current
-    setLoading(true)
+    if (!background) setLoading(true)
     const year = viewMonth.year
     const month = viewMonth.month
     try {
@@ -139,13 +220,15 @@ export function useDiaryV2(initialYear?: number, initialMonth?: number): DiaryAc
       for (const [key, list] of Object.entries(map)) {
         normalized[key] = list.map(normalizeEntry)
       }
-      setEntriesByDate(normalized)
+      setEntriesByDate((prev) =>
+        mergeMonthMaps(normalized, prev, pendingEntries.current),
+      )
       setSyncError(null)
     } catch (e) {
       console.error('[diary-v2] month refresh failed', e)
       setSyncError(e instanceof Error ? e.message : 'Could not load diary')
     } finally {
-      if (gen === refreshGen.current) setLoading(false)
+      if (gen === refreshGen.current && !background) setLoading(false)
     }
   }, [userId, viewMonth.year, viewMonth.month])
 
@@ -165,13 +248,16 @@ export function useDiaryV2(initialYear?: number, initialMonth?: number): DiaryAc
           filter: `user_id=eq.${userId}`,
         },
         () => {
-          void refreshMonth()
+          if (realtimeRefreshTimer.current) clearTimeout(realtimeRefreshTimer.current)
+          realtimeRefreshTimer.current = setTimeout(() => {
+            void refreshMonth({ background: true })
+          }, 500)
         },
       )
       .subscribe()
 
     const onVisible = () => {
-      if (document.visibilityState === 'visible') void refreshMonth()
+      if (document.visibilityState === 'visible') void refreshMonth({ background: true })
     }
     document.addEventListener('visibilitychange', onVisible)
 
@@ -244,12 +330,32 @@ export function useDiaryV2(initialYear?: number, initialMonth?: number): DiaryAc
 
   const ensureHydrated = useCallback(
     async (entryId: string) => {
+      const pending = pendingEntries.current[entryId]
+      if (pending) return pending
+
       const fromState = findEntryInState(entryId)
+      const layersNeedSrc =
+        fromState?.layers.some((l) => !l.src && (l.strokes?.length ?? 0) === 0) ?? false
+      const bodyImagesNeedSrc =
+        fromState?.bodyImages?.some((i) => !i.src) ?? false
+      if (
+        fromState &&
+        !layersNeedSrc &&
+        !bodyImagesNeedSrc &&
+        !savingEntries.current.has(entryId)
+      ) {
+        return fromState
+      }
+
       const reloaded = await fetchDiaryV2Entry(userId, entryId)
       if (!fromState && !reloaded) {
         throw new Error(`Unknown diary entry ${entryId}`)
       }
-      const current = normalizeEntry(reloaded ?? fromState!)
+      const base = normalizeEntry(reloaded ?? fromState!)
+      const current =
+        fromState && reloaded
+          ? mergeDiaryEntryPreferClient(fromState, base)
+          : base
       setEntriesByDate((prev) => {
         const list = prev[current.dateKey] ?? []
         return {
@@ -270,7 +376,7 @@ export function useDiaryV2(initialYear?: number, initialMonth?: number): DiaryAc
       if (saveTimers.current[key]) clearTimeout(saveTimers.current[key])
       saveTimers.current[key] = setTimeout(() => {
         void flushSave(entry)
-      }, 400)
+      }, 250)
     },
     [flushSave],
   )
@@ -282,46 +388,32 @@ export function useDiaryV2(initialYear?: number, initialMonth?: number): DiaryAc
       if (!fromState && !loaded) {
         throw new Error(`Unknown diary entry ${entryId}`)
       }
-      let existing = normalizeEntry(fromState ?? loaded!)
+      const existing = normalizeEntry(fromState ?? loaded!)
 
       const nextLayers: DiaryPhotoLayer[] = patch.layers ?? existing.layers
       const nextBodyImages = patch.bodyImages ?? existing.bodyImages ?? []
       const nextFrameColor = patch.frameColor ?? existing.frameColor
       const nextCanvasStrokes = patch.canvasStrokes ?? existing.canvasStrokes
-      let coverDataUrl = existing.coverDataUrl
-      let thumbDataUrl = existing.thumbDataUrl ?? null
-      if (
-        patch.layers !== undefined ||
-        patch.frameColor !== undefined ||
-        patch.canvasStrokes !== undefined
-      ) {
-        coverDataUrl = await renderDiaryComposite(
-          nextLayers,
-          1600,
-          nextFrameColor,
-          nextCanvasStrokes,
-        )
-        thumbDataUrl = coverDataUrl ? await downscaleToThumb(coverDataUrl) : null
-      }
 
-      const next: DiaryEntry = {
+      const instant: DiaryEntry = {
         ...existing,
         ...patch,
         layers: nextLayers,
         bodyImages: nextBodyImages,
         frameColor: nextFrameColor,
         canvasStrokes: nextCanvasStrokes,
-        coverDataUrl,
-        thumbDataUrl,
+        coverDataUrl: existing.coverDataUrl,
+        thumbDataUrl: existing.thumbDataUrl ?? null,
         id: entryId,
         updatedAt: new Date().toISOString(),
       }
 
+      pendingEntries.current[entryId] = instant
       setEntriesByDate((prev) => {
-        const list = prev[next.dateKey] ?? []
+        const list = prev[instant.dateKey] ?? []
         return {
           ...prev,
-          [next.dateKey]: upsertInDayList(list, next),
+          [instant.dateKey]: upsertInDayList(list, instant),
         }
       })
 
@@ -330,12 +422,50 @@ export function useDiaryV2(initialYear?: number, initialMonth?: number): DiaryAc
         patch.bodyImages !== undefined ||
         patch.frameColor !== undefined ||
         patch.canvasStrokes !== undefined
-      if (touchesMedia) {
-        await flushSave(next)
-      } else {
-        persistDebounced(next)
+
+      const runCloudSave = async (entry: DiaryEntry) => {
+        try {
+          await flushSave(entry)
+        } catch {
+          // flushSave already surfaced syncError
+        }
       }
-      return next
+
+      if (touchesMedia) {
+        void (async () => {
+          let coverDataUrl = instant.coverDataUrl
+          let thumbDataUrl = instant.thumbDataUrl ?? null
+          try {
+            coverDataUrl = await renderDiaryComposite(
+              nextLayers,
+              1600,
+              nextFrameColor,
+              nextCanvasStrokes,
+            )
+            thumbDataUrl = coverDataUrl ? await downscaleToThumb(coverDataUrl) : null
+          } catch (e) {
+            console.warn('[diary-v2] cover render failed', e)
+          }
+          const withCover: DiaryEntry = {
+            ...instant,
+            coverDataUrl,
+            thumbDataUrl,
+          }
+          pendingEntries.current[entryId] = withCover
+          setEntriesByDate((prev) => {
+            const list = prev[withCover.dateKey] ?? []
+            return {
+              ...prev,
+              [withCover.dateKey]: upsertInDayList(list, withCover),
+            }
+          })
+          await runCloudSave(withCover)
+        })()
+      } else {
+        persistDebounced(instant)
+      }
+
+      return instant
     },
     [findEntryInState, flushSave, persistDebounced, userId],
   )

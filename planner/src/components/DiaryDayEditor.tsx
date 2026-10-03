@@ -287,12 +287,12 @@ export function DiaryDayEditor({
     frameColor: string
     canvasStrokes: DiaryStroke[]
   }) => {
+    setEditingPhotos(false)
     onChange({
       layers: result.layers,
       frameColor: result.frameColor,
       canvasStrokes: result.canvasStrokes,
     })
-    setEditingPhotos(false)
   }
 
   return (
@@ -439,6 +439,29 @@ export function DiaryDayEditor({
                         alt=""
                         className="aspect-square w-full object-cover"
                       />
+                    </button>
+                  ) : entry.layers.some((l) => l.src) ||
+                    (entry.canvasStrokes?.length ?? 0) > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => setEditingPhotos(true)}
+                      className="relative block w-full overflow-hidden rounded-2xl ring-1 ring-hairline"
+                    >
+                      {entry.layers.find((l) => l.src)?.src ? (
+                        <img
+                          src={entry.layers.find((l) => l.src)!.src}
+                          alt=""
+                          className="aspect-square w-full object-cover"
+                        />
+                      ) : (
+                        <div
+                          className="aspect-square w-full"
+                          style={{ backgroundColor: entry.frameColor }}
+                        />
+                      )}
+                      <span className="absolute inset-x-0 bottom-0 bg-black/45 py-1.5 text-center text-[11px] font-medium text-white">
+                        Saving preview…
+                      </span>
                     </button>
                   ) : (
                     <button
