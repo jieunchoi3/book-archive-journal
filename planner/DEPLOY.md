@@ -10,6 +10,8 @@ Bookmark **this exact URL** for diary, weekly planner, mailbox, relations, expen
 
 Alternate alias (same app build, **different browser storage**): https://weeklyplanner-jieun1108.vercel.app
 
+**Fresh preview for current `main` (commit `9259fa9`, Diary + Diary 2):** https://weeklyplanner-hok6bc6rb-jieun1108.vercel.app — must stay on the **weeklyplanner** project; do not point `8l2v` at **book-archive-journal** (that serves Reading Archive).
+
 ## Not the Reading Archive app
 
 | App | Folder | Vercel project | URL |
