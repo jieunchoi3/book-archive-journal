@@ -37,7 +37,9 @@ Install shortcuts from **https://book-archive-journal-8l2v.vercel.app** only. Af
 
 Your data stays in **this browser profile** on **this exact website address** (including the subdomain) plus your Supabase account when signed in.
 
-**If diary days disappear after opening a “new” link:** `weeklyplanner-jieun1108.vercel.app` and `book-archive-journal-8l2v.vercel.app` are different browser storage buckets. Open the **old bookmark once**, wait on the Diary tab so notes upload to Supabase, then use the single production URL above and tap **Retry sync** on Diary.
+**If diary days disappear after opening a different link:** `weeklyplanner-jieun1108.vercel.app` and `book-archive-journal-8l2v.vercel.app` are **different browser storage buckets**. Changing the bookmark or re-adding the Dock **does not copy** IndexedDB from the old address — it only loads what is in **Supabase** for your account. Open the **old bookmark once**, stay on Diary until sync finishes, then use the production URL above and tap **기록 복구** (or **Retry sync**) to merge cloud + this browser. If cloud text was already cleared, recovery is only from a browser that still has the old URL open (see below). Avoid **Cmd+Shift+R** unless you mean to hard-reset the app bundle.
+
+**Snap (코지캡쳐) bookings:** Same rule — each URL has its own IndexedDB. Cloud table is `planner.snap_bookings`. After sign-in, open the Snap tab once on production URL; the app seeds Notion import rows and **backfills Supabase** when cloud was empty. Use period **전체** or month **2025-09** to see September shoots, not only “이번 달”.
 
 **September 2026 text (9/7–9/20):** Supabase still has photos for those days, but title/body were overwritten on 2026-09-20 by a bad sync. **Vercel rollbacks cannot restore that text** (data lives in Supabase, not the deploy). What still works:
 

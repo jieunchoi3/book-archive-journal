@@ -193,10 +193,25 @@ async function mergeLocalAndCloud(
   }
 }
 
+/** If cloud is still empty but we have rows (seed or local), push once so a new URL/device can reload them. */
+async function backfillSnapCloudIfEmpty(userId: string, bookings: SnapBooking[]): Promise<void> {
+  if (!isSupabaseConfigured || !bookings.length) return
+  try {
+    const cloud = await fetchSnapBookingsCloud(userId)
+    if (cloud.length) return
+    await upsertSnapBookingsCloud(userId, bookings)
+    console.info('[snap] backfilled cloud from local/seed', { count: bookings.length })
+  } catch (e) {
+    console.warn('[snap] cloud backfill failed', e)
+  }
+}
+
 export async function loadSnapBookings(userId: string): Promise<SnapBooking[]> {
   const local = await loadBookingsLocal(userId)
   const merged = await mergeLocalAndCloud(userId, local?.bookings)
-  return ensureNotionImportSeed(userId, merged)
+  const withSeed = await ensureNotionImportSeed(userId, merged)
+  await backfillSnapCloudIfEmpty(userId, withSeed)
+  return withSeed
 }
 
 export async function persistSnapBookings(
