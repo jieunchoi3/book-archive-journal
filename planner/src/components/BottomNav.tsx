@@ -6,7 +6,6 @@ import {
   CalendarDays,
   Camera,
   Compass,
-  Home,
   Mail,
   Sticker,
   Wallet,
@@ -22,7 +21,6 @@ export type AppView =
   | 'monthly'
   | 'weekly'
   | 'compass'
-  | 'relations'
 
 interface BottomNavProps {
   active: AppView
@@ -105,14 +103,6 @@ export function BottomNav({ active, onChange, badges }: BottomNavProps) {
           active={active === 'weekly'}
           badge={badges?.weekly}
           onClick={() => onChange('weekly')}
-          light={transparent}
-        />
-        <NavButton
-          label="Room"
-          icon={<Home size={20} />}
-          active={active === 'relations'}
-          badge={badges?.relations}
-          onClick={() => onChange('relations')}
           light={transparent}
         />
         <NavButton
