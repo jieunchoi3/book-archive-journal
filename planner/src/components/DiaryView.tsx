@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { BookHeart, BookOpen, ChevronLeft, ChevronRight, Hash, LayoutGrid, Wallet, X } from 'lucide-react'
+import {
+  BookHeart,
+  BookOpen,
+  ChevronLeft,
+  ChevronRight,
+  Hash,
+  LayoutGrid,
+  MessageCircle,
+  Wallet,
+  X,
+} from 'lucide-react'
 import { useDiary, type DiaryActions } from '../hooks/useDiary'
 import { useDiaryV2 } from '../hooks/useDiaryV2'
 import type { ExpenseActions } from '../hooks/useExpenses'
@@ -44,6 +54,7 @@ import {
   PLANNER_ORIGIN_HINT_DISMISS_KEY,
 } from '../lib/plannerOrigin'
 import { PageSearch, type SearchSuggestion } from './PageSearch'
+import { CloudDiaryCoachPanel } from './CloudDiaryCoachPanel'
 
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const SPEND_TOGGLE_KEY = 'planner:diaryShowSpending'
@@ -89,6 +100,7 @@ function DiaryViewContent({
     flushPendingSave,
   } = diary
   const [recoverMessage, setRecoverMessage] = useState<string | null>(null)
+  const [coachOpen, setCoachOpen] = useState(false)
   const { user } = useAuth()
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null)
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null)
@@ -372,6 +384,16 @@ function DiaryViewContent({
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {freshCloudTable && (
+              <button
+                type="button"
+                onClick={() => setCoachOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-full bg-[#007AFF] px-3 py-1.5 text-[12px] font-medium text-white shadow-sm hover:bg-[#0066DD]"
+              >
+                <MessageCircle size={14} />
+                AI coach
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setViewMode((m) => (m === 'flip' ? 'grid' : 'flip'))}
@@ -789,6 +811,14 @@ function DiaryViewContent({
         )}
         </div>
       </div>
+
+      {freshCloudTable && (
+        <CloudDiaryCoachPanel
+          userId={user.id}
+          open={coachOpen}
+          onClose={() => setCoachOpen(false)}
+        />
+      )}
 
       {selectedDateKey && selectedEntry && selectedEntryId && (
         <DiaryDayEditor
