@@ -20,6 +20,7 @@ import {
   persistSnapBookingDelete,
   persistSnapBookingUpsert,
   persistSnapBookings,
+  reloadSnapBookingsFromCloud,
 } from '../lib/snapStorage'
 import { generateId, getTodayKey } from '../lib/weekUtils'
 import { useAuth } from './useAuth'
@@ -72,6 +73,7 @@ export interface SnapActions {
   totalCashDiscount: number
   totalFxDelta: number
   repeatCustomers: Array<{ name: string; count: number; revenue: number }>
+  reloadFromCloud: () => Promise<void>
 }
 
 function syncBookingExpenseLink(
@@ -423,6 +425,16 @@ export function useSnapBookings(expenseBridge?: SnapExpenseBridge): SnapActions 
     [bookings, expenseBridge, persist, userId],
   )
 
+  const reloadFromCloud = useCallback(async () => {
+    setLoading(true)
+    try {
+      const loaded = await reloadSnapBookingsFromCloud(userId)
+      setBookings(loaded)
+    } finally {
+      setLoading(false)
+    }
+  }, [userId])
+
   return {
     loading,
     bookings,
@@ -446,6 +458,7 @@ export function useSnapBookings(expenseBridge?: SnapExpenseBridge): SnapActions 
     totalCashDiscount,
     totalFxDelta,
     repeatCustomers,
+    reloadFromCloud,
   }
 }
 
