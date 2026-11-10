@@ -68,6 +68,7 @@ import { coalesceWeeklyLog } from '../lib/weeklyLogMerge'
 import { coalesceWeekTemplate, templateTaskCount } from '../lib/templateMerge'
 import { loadItemsStoreMerged } from '../lib/loadItemsStoreMerged'
 import {
+  loadItemsStoreLocal,
   loadTemplateLocal,
   loadWeeklyLogLocal,
   saveItemsStoreLocal,
@@ -119,6 +120,9 @@ interface PlannerDataContextValue {
   user: User
   loading: boolean
   loadingWeek: boolean
+  cloudSyncing: boolean
+  cloudSyncError: string | null
+  refreshFromCloud: () => Promise<void>
   showImportBanner: boolean
   importing: boolean
   importLocalData: () => Promise<void>
@@ -214,6 +218,21 @@ interface PlannerDataContextValue {
 
 const PlannerDataContext = createContext<PlannerDataContextValue | null>(null)
 
+function hasCachedPlannerSnapshot(
+  userId: string,
+  weekKey: string,
+): boolean {
+  const tmpl = loadTemplateLocal(userId)
+  const log = loadWeeklyLogLocal(userId, weekKey)
+  const store = loadItemsStoreLocal(userId)
+  return (
+    !!tmpl ||
+    (log != null && weeklyLogHasContent(log)) ||
+    (store != null &&
+      (store.items.length > 0 || store.categories.length > 0 || store.tags.length > 0))
+  )
+}
+
 export function PlannerDataProvider({
   user,
   onSignOut,
@@ -226,6 +245,8 @@ export function PlannerDataProvider({
   const userId = user.id
   const [loading, setLoading] = useState(true)
   const [loadingWeek, setLoadingWeek] = useState(false)
+  const [cloudSyncing, setCloudSyncing] = useState(false)
+  const [cloudSyncError, setCloudSyncError] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
   const [showImportBanner, setShowImportBanner] = useState(false)
 
@@ -581,65 +602,121 @@ export function PlannerDataProvider({
     [persistSidebarNote],
   )
 
+  const mergeCloudPlannerData = useCallback(
+    async (editGenAtStart: number, initialWeekKey: string) => {
+      const [tmpl, log, store, apps, remoteNote] = await Promise.all([
+        fetchTemplate(userId),
+        loadWeeklyLog(initialWeekKey),
+        loadItemsStoreMerged(userId),
+        fetchLinkedApps(userId),
+        fetchSidebarNote(userId).catch(() => null),
+      ])
+
+      const localTmpl = loadTemplateLocal(userId)
+      let finalTemplate = coalesceWeekTemplate(tmpl, localTmpl)
+      if (!finalTemplate) {
+        finalTemplate = await seedDefaultTemplate(userId)
+      } else if (tmpl && templateTaskCount(finalTemplate) > templateTaskCount(tmpl)) {
+        templateRef.current = finalTemplate
+        void enqueueTemplateSync(finalTemplate)
+      }
+      if (finalTemplate) {
+        templateRef.current = finalTemplate
+        saveTemplateLocal(userId, finalTemplate)
+      }
+      setTemplate(finalTemplate ?? structuredClone(SEED_TEMPLATE))
+
+      const logWeekKey = log.weekStart
+      const diskLog = loadWeeklyLogLocal(userId, logWeekKey)
+      let memoryLog =
+        weeklyLogRef.current.weekStart === logWeekKey ? weeklyLogRef.current : null
+      if (editGenAtStart !== localEditGeneration.current) {
+        memoryLog =
+          weeklyLogRef.current.weekStart === logWeekKey ? weeklyLogRef.current : memoryLog
+      }
+      const finalLog = coalesceWeeklyLog(log, diskLog, memoryLog)
+      putWeekCache(finalLog)
+      setWeeklyLog(finalLog)
+      void syncWeeklyLog(userId, finalLog).catch((e) => logError('syncWeeklyLog', e))
+      setWeekStart(logWeekKey)
+
+      const normalizedStore = withDefaultEventCategories(store)
+      setItemsStore(normalizedStore)
+      saveItemsStoreLocal(userId, normalizedStore)
+      if (normalizedStore.categories.length !== store.categories.length) {
+        void syncItemsStore(userId, normalizedStore).catch((e) => logError('seedCategories', e))
+      }
+      setLinkedApps(apps)
+
+      const localNote = loadSidebarNoteLocal(userId)
+      let note = localNote
+      if (remoteNote !== null) {
+        note = remoteNote.length > 0 ? remoteNote : localNote
+        if (note !== localNote) saveSidebarNoteLocal(userId, note)
+      } else if (localNote) {
+        void upsertSidebarNote(userId, localNote).catch((e) => logError('upsertSidebarNote', e))
+      }
+      setSidebarNoteState(note)
+      setShowImportBanner(hasLocalPlannerData() && !isLocalImportDone())
+    },
+    [userId, loadWeeklyLog, putWeekCache, enqueueTemplateSync],
+  )
+
+  const refreshFromCloud = useCallback(async () => {
+    setCloudSyncing(true)
+    setCloudSyncError(null)
+    try {
+      await mergeCloudPlannerData(localEditGeneration.current, weekStartRef.current)
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Could not load planner from Supabase'
+      setCloudSyncError(message)
+      logError('refreshFromCloud', e)
+      throw e
+    } finally {
+      setCloudSyncing(false)
+    }
+  }, [mergeCloudPlannerData])
+
   useEffect(() => {
     let cancelled = false
     const editGenAtStart = localEditGeneration.current
+    const weekKey = getCurrentWeekStart()
+    const hasLocalBootstrap = hasCachedPlannerSnapshot(userId, weekKey)
+
+    if (hasLocalBootstrap) {
+      const localTmpl = loadTemplateLocal(userId)
+      const diskLog = loadWeeklyLogLocal(userId, weekKey)
+      const localStore = loadItemsStoreLocal(userId)
+      const localNote = loadSidebarNoteLocal(userId)
+      if (localTmpl) {
+        templateRef.current = localTmpl
+        setTemplate(localTmpl)
+      }
+      if (diskLog) {
+        putWeekCache(diskLog)
+        weeklyLogRef.current = diskLog
+        setWeeklyLog(diskLog)
+      }
+      if (localStore) {
+        setItemsStore(withDefaultEventCategories(localStore))
+      }
+      if (localNote) setSidebarNoteState(localNote)
+      setWeekStart(weekKey)
+      setLoading(false)
+    }
+
     ;(async () => {
       try {
-        setLoading(true)
-        const [tmpl, log, store, apps, remoteNote] = await Promise.all([
-          fetchTemplate(userId),
-          loadWeeklyLog(getCurrentWeekStart()),
-          loadItemsStoreMerged(userId),
-          fetchLinkedApps(userId),
-          fetchSidebarNote(userId).catch(() => null),
-        ])
+        if (!hasLocalBootstrap) setLoading(true)
         if (cancelled) return
-        const localTmpl = loadTemplateLocal(userId)
-        let finalTemplate = coalesceWeekTemplate(tmpl, localTmpl)
-        if (!finalTemplate) {
-          finalTemplate = await seedDefaultTemplate(userId)
-        } else if (tmpl && templateTaskCount(finalTemplate) > templateTaskCount(tmpl)) {
-          templateRef.current = finalTemplate
-          void enqueueTemplateSync(finalTemplate)
-        }
-        if (finalTemplate) {
-          templateRef.current = finalTemplate
-          saveTemplateLocal(userId, finalTemplate)
-        }
-        setTemplate(finalTemplate ?? structuredClone(SEED_TEMPLATE))
-        const weekKey = log.weekStart
-        const diskLog = loadWeeklyLogLocal(userId, weekKey)
-        let memoryLog =
-          weeklyLogRef.current.weekStart === weekKey ? weeklyLogRef.current : null
-        if (editGenAtStart !== localEditGeneration.current) {
-          memoryLog =
-            weeklyLogRef.current.weekStart === weekKey ? weeklyLogRef.current : memoryLog
-        }
-        const finalLog = coalesceWeeklyLog(log, diskLog, memoryLog)
-        putWeekCache(finalLog)
-        setWeeklyLog(finalLog)
-        void syncWeeklyLog(userId, finalLog).catch((e) => logError('syncWeeklyLog', e))
-        setWeekStart(getCurrentWeekStart())
-        const normalizedStore = withDefaultEventCategories(store)
-        setItemsStore(normalizedStore)
-        saveItemsStoreLocal(userId, normalizedStore)
-        if (normalizedStore.categories.length !== store.categories.length) {
-          void syncItemsStore(userId, normalizedStore).catch((e) => logError('seedCategories', e))
-        }
-        setLinkedApps(apps)
-        const localNote = loadSidebarNoteLocal(userId)
-        let note = localNote
-        if (remoteNote !== null) {
-          note = remoteNote.length > 0 ? remoteNote : localNote
-          if (note !== localNote) saveSidebarNoteLocal(userId, note)
-        } else if (localNote) {
-          void upsertSidebarNote(userId, localNote).catch((e) => logError('upsertSidebarNote', e))
-        }
-        setSidebarNoteState(note)
-        setShowImportBanner(hasLocalPlannerData() && !isLocalImportDone())
+        await mergeCloudPlannerData(editGenAtStart, weekKey)
       } catch (e) {
-        if (!cancelled) logError('loadPlannerData', e)
+        if (!cancelled) {
+          setCloudSyncError(
+            e instanceof Error ? e.message : 'Could not load planner from Supabase',
+          )
+          logError('loadPlannerData', e)
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -647,7 +724,7 @@ export function PlannerDataProvider({
     return () => {
       cancelled = true
     }
-  }, [userId, loadWeeklyLog, putWeekCache])
+  }, [userId, mergeCloudPlannerData])
 
   const importLocalData = useCallback(async () => {
     setImporting(true)
@@ -1404,6 +1481,9 @@ export function PlannerDataProvider({
     user,
     loading,
     loadingWeek,
+    cloudSyncing,
+    cloudSyncError,
+    refreshFromCloud,
     showImportBanner,
     importing,
     importLocalData,

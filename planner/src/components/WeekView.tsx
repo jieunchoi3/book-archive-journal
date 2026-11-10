@@ -40,6 +40,7 @@ import { CompassDueSection } from './CompassDueSection'
 import { PageSearch, type SearchSuggestion } from './PageSearch'
 import type { LinkedAppsActions } from '../hooks/useLinkedApps'
 import type { CompassActions } from '../hooks/useCompass'
+import { usePlannerData } from '../context/PlannerDataContext'
 
 interface WeekViewProps {
   template: WeekTemplate
@@ -60,6 +61,7 @@ export function WeekView({
   compass,
   onOpenCompassAsk,
 }: WeekViewProps) {
+  const { cloudSyncing, cloudSyncError, refreshFromCloud } = usePlannerData()
   const isMobileLayout = useMobileLayout()
   const { collapsed: sidebarCollapsed, setCollapsed: setSidebarCollapsed } =
     usePlannerSidebarCollapsed()
@@ -270,7 +272,18 @@ export function WeekView({
             />
             </div>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <button
+              type="button"
+              disabled={cloudSyncing}
+              onClick={() => void refreshFromCloud()}
+              className="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-white px-3 py-1.5 text-[11px] font-medium text-[#007AFF] shadow-sm hover:bg-[#F2F2F7] disabled:opacity-50"
+              title="Reload weekly template, tasks, and events from Supabase"
+            >
+              {cloudSyncing ? <Loader2 size={12} className="animate-spin" /> : null}
+              클라우드 동기화
+            </button>
+            <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={goPrev}
@@ -296,8 +309,15 @@ export function WeekView({
             >
               <ChevronRight size={18} />
             </button>
+            </div>
           </div>
         </header>
+
+        {cloudSyncError && (
+          <p className="mb-3 rounded-xl bg-[#FF3B30]/10 px-3 py-2 text-[12px] text-[#FF3B30]">
+            {cloudSyncError}
+          </p>
+        )}
 
         <div className="mb-4">
           <PageSearch

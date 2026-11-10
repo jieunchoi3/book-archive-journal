@@ -72,18 +72,15 @@ export function CloudDiaryCoachPanel({
       return
     }
 
-    let pending: CoachChatMessage[] = []
-    setMessages((prev) => {
-      pending = [...prev, { role: 'user', content: text }]
-      return pending
-    })
+    const toSend: CoachChatMessage[] = [...messages, { role: 'user', content: text }]
+    setMessages(toSend)
     setDraft('')
     setLoading(true)
     setError(null)
 
     try {
-      const res = await sendCloudDiaryCoachChat(token, pending)
-      setMessages((prev) => [...prev, { role: 'assistant', content: res.reply }])
+      const res = await sendCloudDiaryCoachChat(token, toSend)
+      setMessages([...toSend, { role: 'assistant', content: res.reply }])
       if (typeof res.entryCount === 'number') setEntryCount(res.entryCount)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not reach the coach')
@@ -92,7 +89,7 @@ export function CloudDiaryCoachPanel({
     } finally {
       setLoading(false)
     }
-  }, [draft, loading])
+  }, [draft, loading, messages])
 
   if (!open) return null
 
