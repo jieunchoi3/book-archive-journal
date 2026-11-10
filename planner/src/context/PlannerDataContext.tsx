@@ -563,12 +563,21 @@ export function PlannerDataProvider({
   )
 
   const persistItems = useCallback(
-    (store: typeof itemsStore) => {
+    (store: typeof itemsStore, flushCloud = false) => {
       saveItemsStoreLocal(userId, store)
+      itemsStoreRef.current = store
       if (itemsTimer.current) clearTimeout(itemsTimer.current)
-      itemsTimer.current = setTimeout(() => {
-        syncItemsStore(userId, store).catch((e) => logError('syncItemsStore', e))
-      }, 400)
+      const push = () => {
+        itemsTimer.current = null
+        void syncItemsStore(userId, itemsStoreRef.current).catch((e) => {
+          logError('syncItemsStore', e)
+          setCloudSyncError(
+            e instanceof Error ? e.message : 'Could not save events to Supabase',
+          )
+        })
+      }
+      if (flushCloud) push()
+      else itemsTimer.current = setTimeout(push, 400)
     },
     [userId],
   )
@@ -1055,7 +1064,7 @@ export function PlannerDataProvider({
       }
       setItemsStore((prev) => {
         const next = { ...prev, items: [...prev.items, newItem] }
-        persistItems(next)
+        persistItems(next, true)
         return next
       })
     },
@@ -1435,10 +1444,13 @@ export function PlannerDataProvider({
   )
 
   const updateItemsStore = useCallback(
-    (updater: (prev: typeof itemsStore) => typeof itemsStore) => {
+    (
+      updater: (prev: typeof itemsStore) => typeof itemsStore,
+      options?: { flushCloud?: boolean },
+    ) => {
       setItemsStore((prev) => {
         const next = updater(prev)
-        persistItems(next)
+        persistItems(next, options?.flushCloud ?? false)
         return next
       })
     },
@@ -1574,7 +1586,9 @@ export function PlannerDataProvider({
     addItem: (item) => {
       const done: ItemDone = item.recurrence ? {} : false
       const newItem: Item = { ...item, id: generateId(), done }
-      updateItemsStore((prev) => ({ ...prev, items: [...prev.items, newItem] }))
+      updateItemsStore((prev) => ({ ...prev, items: [...prev.items, newItem] }), {
+        flushCloud: true,
+      })
       return newItem.id
     },
     updateItem: (id, updates) => {

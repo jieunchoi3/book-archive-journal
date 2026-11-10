@@ -41,6 +41,7 @@ import { PageSearch, type SearchSuggestion } from './PageSearch'
 import type { LinkedAppsActions } from '../hooks/useLinkedApps'
 import type { CompassActions } from '../hooks/useCompass'
 import { usePlannerData } from '../context/PlannerDataContext'
+import { readAppVersionMeta } from '../lib/appVersion'
 
 interface WeekViewProps {
   template: WeekTemplate
@@ -270,6 +271,9 @@ export function WeekView({
                 void planner.goToWeek(targetWeek)
               }}
             />
+            <p className="mt-0.5 text-[10px] text-muted/80" title="Build stamp for cache debugging">
+              build {readAppVersionMeta() ?? 'unknown'}
+            </p>
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
