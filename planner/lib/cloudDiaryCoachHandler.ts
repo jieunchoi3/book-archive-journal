@@ -172,26 +172,28 @@ async function callGatewayChat(
   return json.choices?.[0]?.message?.content?.trim() ?? ''
 }
 
+/** Newer Google AI keys no longer serve gemini-1.5 / 2.5 — use current flash models. */
+const COACH_MODELS = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3-flash-preview'] as const
+
 async function callCoachLlm(
   auth: LlmAuth,
   systemText: string,
   messages: CoachChatMessage[],
 ): Promise<{ text: string; model: string }> {
-  let model = 'gemini-2.5-flash'
-  try {
-    const text =
-      auth.kind === 'gemini'
-        ? await callGeminiChat(model, systemText, messages, auth.key)
-        : await callGatewayChat(model, systemText, messages, auth.token)
-    if (text.trim()) return { text: text.trim(), model }
-  } catch {
-    model = 'gemini-2.5-pro'
+  const errors: string[] = []
+  for (const model of COACH_MODELS) {
+    try {
+      const text =
+        auth.kind === 'gemini'
+          ? await callGeminiChat(model, systemText, messages, auth.key)
+          : await callGatewayChat(model, systemText, messages, auth.token)
+      if (text.trim()) return { text: text.trim(), model }
+      errors.push(`${model}: empty response`)
+    } catch (e) {
+      errors.push(e instanceof Error ? e.message : String(e))
+    }
   }
-  const text =
-    auth.kind === 'gemini'
-      ? await callGeminiChat(model, systemText, messages, auth.key)
-      : await callGatewayChat(model, systemText, messages, auth.token)
-  return { text: text.trim(), model }
+  throw new Error(errors[0] ?? 'All Gemini models failed')
 }
 
 export async function handleCloudDiaryCoachRequest(req: Request): Promise<Response> {
