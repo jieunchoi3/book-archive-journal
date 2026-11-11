@@ -467,14 +467,27 @@ async function syncItemTagLinks(
 
 /** Upsert planner items/categories/tags — never bulk-delete missing rows (same guard as syncTemplate). */
 export async function syncItemsStore(userId: string, store: ItemsStore): Promise<void> {
-  for (const c of store.categories) {
+  const categoryById = new Map(store.categories.map((c) => [c.id, c]))
+  // Ensure every item's category exists before item upserts (FK).
+  for (const item of store.items) {
+    if (!item.categoryId || categoryById.has(item.categoryId)) continue
+    categoryById.set(item.categoryId, {
+      id: item.categoryId,
+      name: 'Untitled',
+      color: '#8E8E93',
+    })
+  }
+
+  const errors: string[] = []
+
+  for (const c of categoryById.values()) {
     const { error } = await supabase.from('categories').upsert({
       id: c.id,
       user_id: userId,
       name: c.name,
       color: c.color,
     })
-    if (error) throw error
+    if (error) errors.push(`category ${c.id}: ${error.message}`)
   }
 
   for (const t of store.tags) {
@@ -484,15 +497,19 @@ export async function syncItemsStore(userId: string, store: ItemsStore): Promise
       name: t.name,
       icon: t.icon ?? null,
     })
-    if (error) throw error
+    if (error) errors.push(`tag ${t.id}: ${error.message}`)
   }
 
+  const knownCategoryIds = new Set(categoryById.keys())
+
   for (const item of store.items) {
+    const categoryId =
+      item.categoryId && knownCategoryIds.has(item.categoryId) ? item.categoryId : null
     const { error } = await supabase.from('items').upsert({
       id: item.id,
       user_id: userId,
       title: item.title,
-      category_id: item.categoryId,
+      category_id: categoryId,
       due_date: item.dueDate,
       recurrence: item.recurrence,
       done: item.done,
@@ -501,8 +518,19 @@ export async function syncItemsStore(userId: string, store: ItemsStore): Promise
       checkable: item.checkable,
       details: item.details?.trim() ?? '',
     })
-    if (error) throw error
-    await syncItemTagLinks(userId, item.id, item.tagIds)
+    if (error) {
+      errors.push(`item ${item.id}: ${error.message}`)
+      continue
+    }
+    try {
+      await syncItemTagLinks(userId, item.id, item.tagIds)
+    } catch (e) {
+      errors.push(`item tags ${item.id}: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  if (errors.length) {
+    throw new Error(`syncItemsStore partial failure (${errors.length}): ${errors[0]}`)
   }
 }
 

@@ -338,16 +338,20 @@ export function useTasteStickers(): TasteActions {
   useEffect(() => {
     const resync = () => {
       if (document.visibilityState !== 'visible') return
-      void syncTasteStoreWithCloud(userId)
-        .then(async (loaded) => {
+      flushPendingSave()
+      void (async () => {
+        try {
+          // Let the flush write land before merging cloud, so focus don't wipe local.
+          await new Promise((r) => setTimeout(r, 50))
+          const loaded = await syncTasteStoreWithCloud(userId)
           const hydrated = await ensureTasteStoreHydrated(userId, loaded)
           setStore(normalizeStore(hydrated))
           setCloudEmpty(false)
           setSyncError(null)
-        })
-        .catch((e) => {
+        } catch (e) {
           console.warn('[taste] focus sync failed', e)
-        })
+        }
+      })()
     }
     document.addEventListener('visibilitychange', resync)
     window.addEventListener('focus', resync)
@@ -355,7 +359,7 @@ export function useTasteStickers(): TasteActions {
       document.removeEventListener('visibilitychange', resync)
       window.removeEventListener('focus', resync)
     }
-  }, [userId])
+  }, [userId, flushPendingSave])
 
   const persist = useCallback(
     (next: TasteStore, options?: { immediate?: boolean }) => {
@@ -364,7 +368,7 @@ export function useTasteStickers(): TasteActions {
       if (saveTimer.current) clearTimeout(saveTimer.current)
 
       const save = () => {
-        void saveTasteStore(userId, next).catch((e) => {
+        void saveTasteStore(userId, storeRef.current).catch((e) => {
           console.error('[taste] save failed', e)
           setSyncError(e instanceof Error ? e.message : 'Could not save taste data to Supabase')
         })
@@ -378,6 +382,14 @@ export function useTasteStickers(): TasteActions {
       saveTimer.current = setTimeout(save, 300)
     },
     [userId],
+  )
+
+  /** Always derive from storeRef so rapid edits do not overwrite each other. */
+  const updateStore = useCallback(
+    (updater: (prev: TasteStore) => TasteStore, options?: { immediate?: boolean }) => {
+      persist(updater(storeRef.current), options)
+    },
+    [persist],
   )
 
   const monthKey = monthKeyFromParts(viewMonth.year, viewMonth.month)
@@ -445,21 +457,21 @@ export function useTasteStickers(): TasteActions {
         stripColor: randomPolaroidStripColor(),
         accent: meta.accent,
       }
-      persist({ ...store, stickers: [sticker, ...store.stickers] })
+      updateStore((prev) => ({ ...prev, stickers: [sticker, ...prev.stickers] }))
       return sticker
     },
-    [persist, store],
+    [updateStore],
   )
 
   const updateSticker: TasteActions['updateSticker'] = useCallback(
     (id, patch) => {
-      persist({
-        ...store,
-        stickers: store.stickers.map((s) => {
+      updateStore((prev) => ({
+        ...prev,
+        stickers: prev.stickers.map((s) => {
           if (s.id !== id) return s
           const next = { ...s, ...patch }
           const categoryId = patch.categoryId ?? s.categoryId
-          const meta = tasteCategoryMeta(store.categories, categoryId)
+          const meta = tasteCategoryMeta(prev.categories, categoryId)
           next.categoryId = meta.id
           next.accent = meta.accent
           if (patch.categoryId != null || patch.subcategoryId != null) {
@@ -486,24 +498,24 @@ export function useTasteStickers(): TasteActions {
           }
           return next
         }),
-      })
+      }))
     },
-    [persist, store],
+    [updateStore],
   )
 
   const deleteSticker = useCallback(
     (id: string) => {
-      persist(markTasteStickersDeleted(store, [id]), { immediate: true })
+      updateStore((prev) => markTasteStickersDeleted(prev, [id]), { immediate: true })
     },
-    [persist, store],
+    [updateStore],
   )
 
   const deleteStickers = useCallback(
     (ids: string[]) => {
       if (!ids.length) return
-      persist(markTasteStickersDeleted(store, ids), { immediate: true })
+      updateStore((prev) => markTasteStickersDeleted(prev, ids), { immediate: true })
     },
-    [persist, store],
+    [updateStore],
   )
 
   const updateStickersCategory = useCallback(
@@ -512,9 +524,9 @@ export function useTasteStickers(): TasteActions {
       const idSet = new Set(ids)
       const meta = tasteCategoryMeta(store.categories, categoryId)
       const resolvedSub = resolveSubcategoryId(meta, subcategoryId ?? '')
-      persist({
-        ...store,
-        stickers: store.stickers.map((s) => {
+      updateStore((prev) => ({
+        ...prev,
+        stickers: prev.stickers.map((s) => {
           if (!idSet.has(s.id)) return s
           return {
             ...s,
@@ -523,9 +535,9 @@ export function useTasteStickers(): TasteActions {
             subcategoryId: resolvedSub,
           }
         }),
-      })
+      }))
     },
-    [persist, store],
+    [updateStore],
   )
 
   const addCategory = useCallback(
@@ -542,10 +554,10 @@ export function useTasteStickers(): TasteActions {
         youtube: trimmed.toLowerCase() === 'music',
         subcategories: [],
       }
-      persist({ ...store, categories: [...store.categories, category] })
+      updateStore((prev) => ({ ...prev, categories: [...prev.categories, category] }))
       return category
     },
-    [persist, store],
+    [updateStore],
   )
 
   const renameCategory = useCallback(
@@ -559,9 +571,9 @@ export function useTasteStickers(): TasteActions {
       ) {
         return
       }
-      persist({
-        ...store,
-        categories: store.categories.map((c) =>
+      updateStore((prev) => ({
+        ...prev,
+        categories: prev.categories.map((c) =>
           c.id === id
             ? {
                 ...c,
@@ -570,9 +582,9 @@ export function useTasteStickers(): TasteActions {
               }
             : c,
         ),
-      })
+      }))
     },
-    [persist, store],
+    [updateStore],
   )
 
   const deleteCategory = useCallback(
@@ -582,10 +594,10 @@ export function useTasteStickers(): TasteActions {
         store.categories.find((c) => c.id !== id)?.id ?? store.categories[0]!.id
       const nextCategories = store.categories.filter((c) => c.id !== id)
       const fallbackMeta = tasteCategoryMeta(nextCategories, fallback)
-      persist({
-        ...store,
+      updateStore((prev) => ({
+        ...prev,
         categories: nextCategories,
-        stickers: store.stickers.map((s) =>
+        stickers: prev.stickers.map((s) =>
           s.categoryId === id
             ? {
                 ...s,
@@ -595,10 +607,10 @@ export function useTasteStickers(): TasteActions {
               }
             : s,
         ),
-      })
+      }))
       if (kindFilter === id) setKindFilter('all')
     },
-    [persist, store, kindFilter, setKindFilter],
+    [updateStore, kindFilter, setKindFilter],
   )
 
   const moveCategoryIntoCategory = useCallback(
@@ -653,7 +665,7 @@ export function useTasteStickers(): TasteActions {
         }
       })
 
-      persist({ ...store, categories: nextCategories, stickers: nextStickers })
+      updateStore((prev) => ({ ...prev, categories: nextCategories, stickers: nextStickers }))
 
       if (kindFilter === sourceId) {
         setKindFilter(targetId)
@@ -662,7 +674,7 @@ export function useTasteStickers(): TasteActions {
 
       return true
     },
-    [persist, store, kindFilter, setKindFilter, setSubFilter],
+    [updateStore, kindFilter, setKindFilter, setSubFilter],
   )
 
   const addSubcategory = useCallback(
@@ -675,15 +687,15 @@ export function useTasteStickers(): TasteActions {
         return null
       }
       const sub: TasteSubcategory = { id: generateId(), name: trimmed }
-      persist({
-        ...store,
-        categories: store.categories.map((c) =>
+      updateStore((prev) => ({
+        ...prev,
+        categories: prev.categories.map((c) =>
           c.id === categoryId ? { ...c, subcategories: [...c.subcategories, sub] } : c,
         ),
-      })
+      }))
       return sub
     },
-    [persist, store],
+    [updateStore],
   )
 
   const renameSubcategory = useCallback(
@@ -699,9 +711,9 @@ export function useTasteStickers(): TasteActions {
       ) {
         return
       }
-      persist({
-        ...store,
-        categories: store.categories.map((c) =>
+      updateStore((prev) => ({
+        ...prev,
+        categories: prev.categories.map((c) =>
           c.id === categoryId
             ? {
                 ...c,
@@ -711,16 +723,16 @@ export function useTasteStickers(): TasteActions {
               }
             : c,
         ),
-      })
+      }))
     },
-    [persist, store],
+    [updateStore],
   )
 
   const deleteSubcategory = useCallback(
     (categoryId: string, subcategoryId: string) => {
-      persist({
-        ...store,
-        categories: store.categories.map((c) =>
+      updateStore((prev) => ({
+        ...prev,
+        categories: prev.categories.map((c) =>
           c.id === categoryId
             ? {
                 ...c,
@@ -728,36 +740,38 @@ export function useTasteStickers(): TasteActions {
               }
             : c,
         ),
-        stickers: store.stickers.map((s) =>
+        stickers: prev.stickers.map((s) =>
           s.categoryId === categoryId && s.subcategoryId === subcategoryId
             ? { ...s, subcategoryId: '' }
             : s,
         ),
-      })
+      }))
       if (subFilter === subcategoryId) setSubFilter('all')
     },
-    [persist, store, subFilter],
+    [updateStore, subFilter],
   )
 
   const setMonthBackground = useCallback(
     (key: string, dataUrl: string) => {
       if (!key || !dataUrl) return
-      persist({
-        ...store,
-        monthBackgrounds: { ...store.monthBackgrounds, [key]: dataUrl },
-      })
+      updateStore((prev) => ({
+        ...prev,
+        monthBackgrounds: { ...prev.monthBackgrounds, [key]: dataUrl },
+      }))
     },
-    [persist, store],
+    [updateStore],
   )
 
   const clearMonthBackground = useCallback(
     (key: string) => {
-      if (!key || !store.monthBackgrounds[key]) return
-      const next = { ...store.monthBackgrounds }
-      delete next[key]
-      persist({ ...store, monthBackgrounds: next })
+      updateStore((prev) => {
+        if (!key || !prev.monthBackgrounds[key]) return prev
+        const next = { ...prev.monthBackgrounds }
+        delete next[key]
+        return { ...prev, monthBackgrounds: next }
+      })
     },
-    [persist, store],
+    [updateStore],
   )
 
   const setViewMonth = useCallback((year: number, month: number) => {

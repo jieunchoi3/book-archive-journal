@@ -392,7 +392,8 @@ function coalesceCloudText(existing: string | null | undefined, incoming: string
   const next = incoming.trim()
   if (!next) return existing ?? ''
   if (!prev) return incoming
-  return next.length >= prev.length ? incoming : (existing ?? '')
+  // Prefer non-empty incoming edits; length-only coalesce kept wiping short updates.
+  return incoming
 }
 
 function coalesceCloudTags(

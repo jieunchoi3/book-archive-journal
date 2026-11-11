@@ -401,9 +401,10 @@ export function useDiary(initialYear?: number, initialMonth?: number): DiaryActi
         const list = prev[dateKey] ?? []
         return { ...prev, [dateKey]: [entry, ...list] }
       })
+      await flushSave(entry)
       return entry
     },
-    [],
+    [flushSave],
   )
 
   const deleteEntry = useCallback(

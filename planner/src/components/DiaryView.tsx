@@ -853,7 +853,7 @@ function DiaryViewContent({
             void openDay(nextKey)
           }}
           onClose={() => {
-            if (selectedEntryId && (freshCloudTable || cloudFirst)) {
+            if (selectedEntryId) {
               flushPendingSave(selectedEntryId)
             }
             setSelectedDateKey(null)

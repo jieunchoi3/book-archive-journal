@@ -1662,29 +1662,32 @@ export function PlannerDataProvider({
       return newItem.id
     },
     updateItem: (id, updates) => {
-      updateItemsStore((prev) => ({
-        ...prev,
-        items: prev.items.map((item) => {
-          if (item.id !== id) return item
-          const next = {
-            ...item,
-            ...updates,
-            id: item.id,
-            details:
-              updates.details !== undefined
-                ? updates.details.trim() || undefined
-                : item.details,
-          }
-          if (updates.recurrence !== undefined) {
-            if (updates.recurrence === null && isRecurringItem(item)) {
-              next.done = getItemDone(item, item.dueDate ?? undefined)
-            } else if (updates.recurrence !== null && !isRecurringItem(item)) {
-              next.done = {}
+      updateItemsStore(
+        (prev) => ({
+          ...prev,
+          items: prev.items.map((item) => {
+            if (item.id !== id) return item
+            const next = {
+              ...item,
+              ...updates,
+              id: item.id,
+              details:
+                updates.details !== undefined
+                  ? updates.details.trim() || undefined
+                  : item.details,
             }
-          }
-          return next
+            if (updates.recurrence !== undefined) {
+              if (updates.recurrence === null && isRecurringItem(item)) {
+                next.done = getItemDone(item, item.dueDate ?? undefined)
+              } else if (updates.recurrence !== null && !isRecurringItem(item)) {
+                next.done = {}
+              }
+            }
+            return next
+          }),
         }),
-      }))
+        { flushCloud: true },
+      )
     },
     deleteItem: (id) => {
       updateItemsStore((prev) => ({
@@ -1694,21 +1697,27 @@ export function PlannerDataProvider({
       void deleteItemRow(userId, id).catch((e) => logError('deleteItemRow', e))
     },
     toggleItemDone: (itemId, dateKey) => {
-      updateItemsStore((prev) => ({
-        ...prev,
-        items: prev.items.map((item) => {
-          if (item.id !== itemId) return item
-          const key = dateKey ?? item.dueDate ?? undefined
-          if (isRecurringItem(item) || (key && typeof item.done === 'object' && item.done !== null)) {
-            if (!key) return item
-            const map =
-              typeof item.done === 'object' && item.done !== null ? { ...item.done } : {}
-            map[key] = !map[key]
-            return { ...item, done: map }
-          }
-          return { ...item, done: item.done !== true }
+      updateItemsStore(
+        (prev) => ({
+          ...prev,
+          items: prev.items.map((item) => {
+            if (item.id !== itemId) return item
+            const key = dateKey ?? item.dueDate ?? undefined
+            if (
+              isRecurringItem(item) ||
+              (key && typeof item.done === 'object' && item.done !== null)
+            ) {
+              if (!key) return item
+              const map =
+                typeof item.done === 'object' && item.done !== null ? { ...item.done } : {}
+              map[key] = !map[key]
+              return { ...item, done: map }
+            }
+            return { ...item, done: item.done !== true }
+          }),
         }),
-      }))
+        { flushCloud: true },
+      )
     },
     filterItems: (list, categoryFilter, tagFilters) => {
       let result = list

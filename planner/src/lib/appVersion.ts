@@ -4,7 +4,10 @@ export function readAppVersionMeta(): string | null {
   return document.querySelector('meta[name="app-version"]')?.getAttribute('content') ?? null
 }
 
-/** Hard-refresh when Vercel ships a new build so PWAs do not stay on an old JS bundle. */
+/**
+ * Hard-refresh when Vercel ships a new build so PWAs do not stay on an old JS bundle.
+ * Delay briefly so in-flight React pagehide flushes can start before navigation.
+ */
 export function ensureAppVersionFresh(): void {
   const meta = readAppVersionMeta()
   if (!meta) return
@@ -24,7 +27,10 @@ export function ensureAppVersionFresh(): void {
     }
     const url = new URL(window.location.href)
     url.searchParams.set('v', meta)
-    window.location.replace(url.toString())
+    // Give pagehide / visibility handlers a beat to flush local→cloud before replace.
+    window.setTimeout(() => {
+      window.location.replace(url.toString())
+    }, 400)
     return
   }
 
