@@ -62,7 +62,8 @@ export function WeekView({
   compass,
   onOpenCompassAsk,
 }: WeekViewProps) {
-  const { cloudSyncing, cloudSyncError, refreshFromCloud } = usePlannerData()
+  const { cloudSyncing, cloudSyncError, refreshFromCloud, uploadThisDeviceToCloud } =
+    usePlannerData()
   const isMobileLayout = useMobileLayout()
   const { collapsed: sidebarCollapsed, setCollapsed: setSidebarCollapsed } =
     usePlannerSidebarCollapsed()
@@ -280,12 +281,31 @@ export function WeekView({
             <button
               type="button"
               disabled={cloudSyncing}
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    'Upload THIS browser’s weekly planner (events, routines, My Note) to Supabase?\n\nDo this on the Mac/browser that still shows your full schedule, then refresh 8l2v elsewhere.',
+                  )
+                ) {
+                  return
+                }
+                void uploadThisDeviceToCloud()
+              }}
+              className="inline-flex items-center gap-1.5 rounded-full bg-[#007AFF] px-3 py-1.5 text-[11px] font-medium text-white shadow-sm hover:bg-[#0066DD] disabled:opacity-50"
+              title="Push this device’s planner data to Supabase"
+            >
+              {cloudSyncing ? <Loader2 size={12} className="animate-spin" /> : null}
+              이 기기 → 클라우드
+            </button>
+            <button
+              type="button"
+              disabled={cloudSyncing}
               onClick={() => void refreshFromCloud()}
               className="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-white px-3 py-1.5 text-[11px] font-medium text-[#007AFF] shadow-sm hover:bg-[#F2F2F7] disabled:opacity-50"
               title="Reload weekly template, tasks, and events from Supabase"
             >
               {cloudSyncing ? <Loader2 size={12} className="animate-spin" /> : null}
-              클라우드 동기화
+              클라우드에서 불러오기
             </button>
             <div className="flex items-center gap-1">
             <button

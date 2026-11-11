@@ -68,6 +68,7 @@ import { coalesceWeeklyLog } from '../lib/weeklyLogMerge'
 import { coalesceWeekTemplate, templateTaskCount } from '../lib/templateMerge'
 import { loadItemsStoreMerged } from '../lib/loadItemsStoreMerged'
 import {
+  loadAllWeeklyLogsLocal,
   loadItemsStoreLocal,
   loadTemplateLocal,
   loadWeeklyLogLocal,
@@ -76,6 +77,7 @@ import {
   saveWeeklyLogLocal,
   weeklyLogHasContent,
 } from '../lib/plannerLocalCache'
+import { mergeItemsStores } from '../lib/itemsStoreMerge'
 import { logError } from '../lib/formatError'
 import {
   getHiddenBlockTasks,
@@ -123,6 +125,8 @@ interface PlannerDataContextValue {
   cloudSyncing: boolean
   cloudSyncError: string | null
   refreshFromCloud: () => Promise<void>
+  /** Push this browser's planner data (events, template, notes) up to Supabase. */
+  uploadThisDeviceToCloud: () => Promise<void>
   showImportBanner: boolean
   importing: boolean
   importLocalData: () => Promise<void>
@@ -686,6 +690,69 @@ export function PlannerDataProvider({
     }
   }, [mergeCloudPlannerData])
 
+  /**
+   * Upload whatever is on THIS browser (in-memory + localStorage) to Supabase.
+   * Use on the device that still shows the full weekly planner, then open 8l2v elsewhere.
+   */
+  const uploadThisDeviceToCloud = useCallback(async () => {
+    setCloudSyncing(true)
+    setCloudSyncError(null)
+    try {
+      await flushAllPending()
+
+      const diskTemplate = loadTemplateLocal(userId)
+      const finalTemplate =
+        coalesceWeekTemplate(templateRef.current, diskTemplate) ?? templateRef.current
+      await syncTemplate(userId, finalTemplate)
+      templateRef.current = finalTemplate
+      saveTemplateLocal(userId, finalTemplate)
+      setTemplate(finalTemplate)
+
+      const diskItems = loadItemsStoreLocal(userId)
+      const memoryItems = itemsStoreRef.current
+      const mergedItems = diskItems
+        ? mergeItemsStores(memoryItems, diskItems)
+        : memoryItems
+      await syncItemsStore(userId, mergedItems)
+      itemsStoreRef.current = mergedItems
+      saveItemsStoreLocal(userId, mergedItems)
+      setItemsStore(mergedItems)
+
+      const logsByWeek = new Map<string, WeeklyLog>()
+      for (const log of loadAllWeeklyLogsLocal(userId)) {
+        logsByWeek.set(log.weekStart, log)
+      }
+      logsByWeek.set(weekStartRef.current, {
+        ...weeklyLogRef.current,
+        weekStart: weekStartRef.current,
+      })
+      for (const log of logsByWeek.values()) {
+        await syncWeeklyLog(userId, log)
+        putWeekCache(log)
+      }
+
+      await syncLinkedApps(userId, linkedAppsRef.current)
+
+      const note =
+        sidebarNoteRef.current.trim() || loadSidebarNoteLocal(userId) || ''
+      if (note) {
+        await upsertSidebarNote(userId, note)
+        saveSidebarNoteLocal(userId, note)
+        setSidebarNoteState(note)
+      }
+
+      await mergeCloudPlannerData(localEditGeneration.current, weekStartRef.current)
+    } catch (e) {
+      const message =
+        e instanceof Error ? e.message : 'Could not upload this device to Supabase'
+      setCloudSyncError(message)
+      logError('uploadThisDeviceToCloud', e)
+      throw e
+    } finally {
+      setCloudSyncing(false)
+    }
+  }, [userId, flushAllPending, putWeekCache, mergeCloudPlannerData])
+
   useEffect(() => {
     let cancelled = false
     const editGenAtStart = localEditGeneration.current
@@ -738,36 +805,38 @@ export function PlannerDataProvider({
   const importLocalData = useCallback(async () => {
     setImporting(true)
     try {
+      // Prefer current scoped cache on this browser; fall back to pre-migration keys.
+      const scopedTemplate = loadTemplateLocal(userId)
+      const scopedItems = loadItemsStoreLocal(userId)
+      const scopedLogs = loadAllWeeklyLogsLocal(userId)
       await importAllFromLocal(userId, {
-        template: loadTemplateLegacy(),
-        weeklyLogs: loadAllWeeklyLogsLegacy(),
-        itemsStore: loadItemsStoreFromLegacy(),
+        template: scopedTemplate ?? loadTemplateLegacy(),
+        weeklyLogs:
+          scopedLogs.length > 0 ? scopedLogs : loadAllWeeklyLogsLegacy(),
+        itemsStore:
+          scopedItems && scopedItems.items.length > 0
+            ? scopedItems
+            : loadItemsStoreFromLegacy(),
         linkedApps: loadLinkedAppsLegacy(),
       })
-      markLocalImportDone()
-      clearPlannerLocalData()
-      const [tmpl, store, apps] = await Promise.all([
-        fetchTemplate(userId),
-        loadItemsStoreMerged(userId),
-        fetchLinkedApps(userId),
-      ])
-      if (tmpl) setTemplate(tmpl)
-      const normalizedStore = withDefaultEventCategories(store)
-      setItemsStore(normalizedStore)
-      if (normalizedStore.categories.length !== store.categories.length) {
-        void syncItemsStore(userId, normalizedStore).catch((e) => logError('seedCategories', e))
+      const localNote = loadSidebarNoteLocal(userId)
+      if (localNote?.trim()) {
+        await upsertSidebarNote(userId, localNote)
       }
-      setLinkedApps(apps)
-      const log = await loadWeeklyLog(weekStart)
-      putWeekCache(log)
-      setWeeklyLog(log)
+      markLocalImportDone()
+      // Keep scoped cache; only clear pre-migration keys.
+      clearPlannerLocalData()
+      await uploadThisDeviceToCloud()
       setShowImportBanner(false)
     } catch (e) {
       logError('importLocalData', e)
+      setCloudSyncError(
+        e instanceof Error ? e.message : 'Import to Supabase failed',
+      )
     } finally {
       setImporting(false)
     }
-  }, [userId, weekStart, loadWeeklyLog, putWeekCache])
+  }, [userId, uploadThisDeviceToCloud])
 
   const goToWeek = useCallback(
     async (newWeekStart: string) => {
@@ -1496,6 +1565,7 @@ export function PlannerDataProvider({
     cloudSyncing,
     cloudSyncError,
     refreshFromCloud,
+    uploadThisDeviceToCloud,
     showImportBanner,
     importing,
     importLocalData,
