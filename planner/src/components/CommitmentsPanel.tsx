@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import {
   ChevronDown,
   ChevronRight,
+  Minus,
   PanelLeftClose,
   Plus,
   Repeat,
@@ -30,9 +31,11 @@ interface CommitmentsPanelProps {
 function PoolChip({
   commitment,
   slotIndex,
+  totalRemaining,
 }: {
   commitment: WeekCommitment
   slotIndex: number
+  totalRemaining: number
 }) {
   const data: CommitmentSlotDragData = {
     type: 'commitment-slot',
@@ -52,7 +55,7 @@ function PoolChip({
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      className={`inline-flex max-w-full items-center gap-1.5 rounded-lg border px-2 py-1 text-left text-[11px] font-medium shadow-sm transition-opacity ${
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border text-[11px] font-semibold shadow-sm transition-opacity ${
         isDragging ? 'opacity-40' : 'cursor-grab active:cursor-grabbing'
       }`}
       style={{
@@ -60,13 +63,10 @@ function PoolChip({
         backgroundColor: `${commitment.color}14`,
         color: commitment.color,
       }}
-      title={`${commitment.title} — 요일로 드래그`}
+      title={`${commitment.title} (${slotIndex + 1}/${totalRemaining}) — 요일로 드래그`}
+      aria-label={`${commitment.title} 슬롯 ${slotIndex + 1}`}
     >
-      <span
-        className="h-1.5 w-1.5 shrink-0 rounded-full"
-        style={{ backgroundColor: commitment.color }}
-      />
-      <span className="truncate">{commitment.title}</span>
+      {slotIndex + 1}
     </button>
   )
 }
@@ -88,6 +88,13 @@ function CommitmentEditor({
 }) {
   const [open, setOpen] = useState(false)
   const [draftTask, setDraftTask] = useState('')
+  const placed = commitment.targetPerWeek - remaining
+
+  const bumpTarget = (delta: number) => {
+    onUpdate({
+      targetPerWeek: Math.max(0, Math.min(21, commitment.targetPerWeek + delta)),
+    })
+  }
 
   const addDefaultTask = (repeatWeekly: boolean) => {
     const label = draftTask.trim()
@@ -103,7 +110,7 @@ function CommitmentEditor({
 
   return (
     <li className="rounded-xl border border-hairline bg-white/80 px-2.5 py-2">
-      <div className="flex items-start gap-2">
+      <div className="flex items-start gap-1.5">
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
@@ -113,17 +120,46 @@ function CommitmentEditor({
         >
           {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </button>
+        <span
+          className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full"
+          style={{ backgroundColor: commitment.color }}
+          aria-hidden
+        />
         <div className="min-w-0 flex-1">
           <input
             value={commitment.title}
             onChange={(e) => onUpdate({ title: e.target.value })}
             className="w-full truncate bg-transparent text-[13px] font-semibold text-[#1C1C1E] outline-none"
-            aria-label="커밋먼트 제목"
+            aria-label="카테고리 이름"
+            placeholder="예: AI 공부"
           />
           <p className="mt-0.5 text-[10px] text-muted">
-            {commitment.targetPerWeek - remaining}/{commitment.targetPerWeek} 이번 주 · 남은{' '}
-            {remaining}
+            {placed}/{commitment.targetPerWeek} 배치 · 남은 {remaining}
           </p>
+        </div>
+        <div className="flex items-center gap-0.5 rounded-lg border border-hairline bg-white p-0.5">
+          <button
+            type="button"
+            onClick={() => bumpTarget(-1)}
+            className="rounded p-1 text-muted hover:bg-[#F2F2F7] hover:text-[#1C1C1E]"
+            aria-label="주당 횟수 줄이기"
+          >
+            <Minus size={12} />
+          </button>
+          <span
+            className="min-w-[1.5rem] text-center text-[12px] font-semibold tabular-nums text-[#1C1C1E]"
+            title="주당 목표 블록 수"
+          >
+            {commitment.targetPerWeek}
+          </span>
+          <button
+            type="button"
+            onClick={() => bumpTarget(1)}
+            className="rounded p-1 text-muted hover:bg-[#F2F2F7] hover:text-[#1C1C1E]"
+            aria-label="주당 횟수 늘리기"
+          >
+            <Plus size={12} />
+          </button>
         </div>
         <button
           type="button"
@@ -137,19 +173,9 @@ function CommitmentEditor({
 
       {open && (
         <div className="mt-2 space-y-2 border-t border-hairline pt-2">
-          <label className="flex items-center justify-between gap-2 text-[11px] text-muted">
-            <span>주당 목표</span>
-            <input
-              type="number"
-              min={0}
-              max={21}
-              value={commitment.targetPerWeek}
-              onChange={(e) =>
-                onUpdate({ targetPerWeek: Number(e.target.value) || 0 })
-              }
-              className="w-14 rounded-lg border border-hairline bg-white px-2 py-1 text-right text-[12px] text-[#1C1C1E]"
-            />
-          </label>
+          <p className="text-[10px] leading-relaxed text-muted">
+            주당 횟수를 올리면 같은 카테고리 색의 블록이 더 생깁니다. 예: AI 공부 × 6
+          </p>
 
           <div className="flex flex-wrap gap-1">
             {COMMITMENT_COLORS.map((color) => (
@@ -238,6 +264,96 @@ function CommitmentEditor({
   )
 }
 
+function AddCommitmentForm({
+  onAdd,
+  onCancel,
+}: {
+  onAdd: (title: string, targetPerWeek: number, color: string) => void
+  onCancel: () => void
+}) {
+  const [title, setTitle] = useState('')
+  const [target, setTarget] = useState(3)
+  const [color, setColor] = useState<string>(COMMITMENT_COLORS[0])
+
+  const submit = () => {
+    const trimmed = title.trim() || '새 카테고리'
+    onAdd(trimmed, target, color)
+  }
+
+  return (
+    <div className="mt-2 space-y-2 rounded-xl border border-[#007AFF]/25 bg-[#007AFF]/[0.04] p-2.5">
+      <input
+        autoFocus
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            submit()
+          }
+          if (e.key === 'Escape') onCancel()
+        }}
+        placeholder="카테고리 이름 · 예: AI 공부"
+        className="w-full rounded-lg border border-hairline bg-white px-2.5 py-1.5 text-[12px] outline-none focus:border-[#007AFF]/40"
+      />
+      <label className="flex items-center justify-between gap-2 text-[11px] text-muted">
+        <span>주당 블록 수</span>
+        <div className="flex items-center gap-0.5 rounded-lg border border-hairline bg-white p-0.5">
+          <button
+            type="button"
+            onClick={() => setTarget((n) => Math.max(0, n - 1))}
+            className="rounded p-1 hover:bg-[#F2F2F7]"
+            aria-label="줄이기"
+          >
+            <Minus size={12} />
+          </button>
+          <span className="min-w-[1.5rem] text-center text-[12px] font-semibold tabular-nums text-[#1C1C1E]">
+            {target}
+          </span>
+          <button
+            type="button"
+            onClick={() => setTarget((n) => Math.min(21, n + 1))}
+            className="rounded p-1 hover:bg-[#F2F2F7]"
+            aria-label="늘리기"
+          >
+            <Plus size={12} />
+          </button>
+        </div>
+      </label>
+      <div className="flex flex-wrap gap-1">
+        {COMMITMENT_COLORS.map((c) => (
+          <button
+            key={c}
+            type="button"
+            onClick={() => setColor(c)}
+            className={`h-5 w-5 rounded-full border-2 ${
+              color === c ? 'border-[#1C1C1E]' : 'border-transparent'
+            }`}
+            style={{ backgroundColor: c }}
+            aria-label={`색상 ${c}`}
+          />
+        ))}
+      </div>
+      <div className="flex gap-1.5">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="flex-1 rounded-lg py-1.5 text-[11px] font-medium text-muted hover:bg-white"
+        >
+          취소
+        </button>
+        <button
+          type="button"
+          onClick={submit}
+          className="flex-1 rounded-lg bg-[#007AFF] py-1.5 text-[11px] font-medium text-white"
+        >
+          추가
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export function CommitmentsPanel({ renderQuickLaunch }: CommitmentsPanelProps) {
   const { setCollapsed } = usePlannerSidebarCollapsed()
   const {
@@ -249,12 +365,30 @@ export function CommitmentsPanel({ renderQuickLaunch }: CommitmentsPanelProps) {
     deleteCommitment,
     getCommitment,
   } = useWeekCommitments()
+  const [adding, setAdding] = useState(false)
+
+  const poolByCommitment = useMemo(() => {
+    const groups: { commitment: WeekCommitment; slots: number[] }[] = []
+    const index = new Map<string, number>()
+    for (const { commitmentId, slotIndex } of poolSlots) {
+      const c = getCommitment(commitmentId)
+      if (!c) continue
+      let gi = index.get(commitmentId)
+      if (gi === undefined) {
+        gi = groups.length
+        index.set(commitmentId, gi)
+        groups.push({ commitment: c, slots: [] })
+      }
+      groups[gi]!.slots.push(slotIndex)
+    }
+    return groups
+  }, [poolSlots, getCommitment])
 
   return (
     <aside className="w-56 shrink-0">
       <div className="mb-3 flex items-center justify-between px-1">
         <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted">
-          Weekly commitments
+          Categories
         </h2>
         <button
           type="button"
@@ -266,6 +400,9 @@ export function CommitmentsPanel({ renderQuickLaunch }: CommitmentsPanelProps) {
           <PanelLeftClose size={16} />
         </button>
       </div>
+      <p className="mb-2 px-1 text-[10px] leading-relaxed text-muted">
+        카테고리 하나 = 같은 색 블록 N개. 주당 횟수를 올리세요.
+      </p>
 
       <ul className="space-y-2">
         {commitments.map((c) => (
@@ -279,38 +416,64 @@ export function CommitmentsPanel({ renderQuickLaunch }: CommitmentsPanelProps) {
         ))}
       </ul>
 
-      <button
-        type="button"
-        onClick={() => addCommitment()}
-        className="mt-2 flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-hairline py-2 text-[12px] text-muted transition-colors hover:border-[#007AFF]/40 hover:bg-[#007AFF]/5 hover:text-[#007AFF]"
-      >
-        <Plus size={14} />
-        Add commitment
-      </button>
+      {adding ? (
+        <AddCommitmentForm
+          onCancel={() => setAdding(false)}
+          onAdd={(title, targetPerWeek, color) => {
+            addCommitment({ title, targetPerWeek, color })
+            setAdding(false)
+          }}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setAdding(true)}
+          className="mt-2 flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-hairline py-2 text-[12px] text-muted transition-colors hover:border-[#007AFF]/40 hover:bg-[#007AFF]/5 hover:text-[#007AFF]"
+        >
+          <Plus size={14} />
+          Add category
+        </button>
+      )}
 
       <div className="mt-4 border-t border-hairline pt-3">
         <h3 className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-muted">
           Blocks to distribute
         </h3>
-        {poolSlots.length === 0 ? (
+        {poolByCommitment.length === 0 ? (
           <p className="px-1 text-[11px] leading-relaxed text-muted">
             {commitments.length === 0
-              ? '커밋먼트를 추가하면 이번 주 슬롯이 여기에 나타납니다.'
+              ? '카테고리를 추가하고 주당 횟수를 정하면 블록이 여기에 생깁니다.'
               : '이번 주 슬롯을 모두 배치했습니다. 다음 월요일에 다시 채워집니다.'}
           </p>
         ) : (
-          <div className="flex flex-wrap gap-1.5">
-            {poolSlots.map(({ commitmentId, slotIndex }) => {
-              const c = getCommitment(commitmentId)
-              if (!c) return null
-              return (
-                <PoolChip
-                  key={`${commitmentId}:${slotIndex}`}
-                  commitment={c}
-                  slotIndex={slotIndex}
-                />
-              )
-            })}
+          <div className="space-y-2.5">
+            {poolByCommitment.map(({ commitment, slots }) => (
+              <div key={commitment.id}>
+                <div className="mb-1 flex items-center gap-1.5 px-1">
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ backgroundColor: commitment.color }}
+                  />
+                  <span
+                    className="truncate text-[11px] font-semibold"
+                    style={{ color: commitment.color }}
+                  >
+                    {commitment.title}
+                  </span>
+                  <span className="text-[10px] text-muted">×{slots.length}</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {slots.map((slotIndex) => (
+                    <PoolChip
+                      key={`${commitment.id}:${slotIndex}`}
+                      commitment={commitment}
+                      slotIndex={slotIndex}
+                      totalRemaining={slots.length}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>

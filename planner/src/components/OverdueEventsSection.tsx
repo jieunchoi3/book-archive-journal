@@ -27,7 +27,6 @@ function formatOverdueLabel(dateKey: string): string {
 
 function MyNoteDrawer() {
   const { sidebarNote, setSidebarNote } = usePlannerData()
-  const [expanded, setExpanded] = useState(false)
   const [draft, setDraft] = useState(sidebarNote)
   const [savedVisible, setSavedVisible] = useState(false)
 
@@ -52,17 +51,7 @@ function MyNoteDrawer() {
       className="overflow-hidden rounded-xl border border-hairline bg-white/90 shadow-sm backdrop-blur-md"
       aria-label="My Note"
     >
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-[#F9F9FB]"
-        aria-expanded={expanded}
-      >
-        {expanded ? (
-          <ChevronDown size={14} className="shrink-0 text-muted" aria-hidden />
-        ) : (
-          <ChevronRight size={14} className="shrink-0 text-muted" aria-hidden />
-        )}
+      <div className="flex items-center gap-2 border-b border-hairline px-4 py-2.5">
         <Lock size={12} className="shrink-0 text-muted/70" aria-hidden />
         <h2 className="text-[12px] font-semibold tracking-wide text-[#3C3C43]">My Note</h2>
         {savedVisible && (
@@ -70,24 +59,23 @@ function MyNoteDrawer() {
             Saved
           </span>
         )}
-      </button>
-      {expanded && (
-        <div className="border-t border-hairline px-3 pb-3 pt-2">
-          <textarea
-            value={draft}
-            onChange={(e) => handleChange(e.target.value)}
-            placeholder="이번 달 목표, 메모, 생각…"
-            className="min-h-[160px] w-full resize-y rounded-xl border border-[#F0E6C8] bg-[#FFFCF0] px-3 py-2.5 text-[12px] leading-relaxed text-[#3C3C43] shadow-sm placeholder:text-[#AEAEB2] focus:border-[#E8D9A8] focus:outline-none focus:ring-2 focus:ring-[#F5E6B8]/80"
-            spellCheck
-          />
-        </div>
-      )}
+      </div>
+      <div className="px-3 pb-3 pt-2">
+        <textarea
+          value={draft}
+          onChange={(e) => handleChange(e.target.value)}
+          placeholder="이번 달 목표, 메모, 생각…"
+          className="min-h-[120px] w-full resize-y rounded-xl border border-[#F0E6C8] bg-[#FFFCF0] px-3 py-2.5 text-[12px] leading-relaxed text-[#3C3C43] shadow-sm placeholder:text-[#AEAEB2] focus:border-[#E8D9A8] focus:outline-none focus:ring-2 focus:ring-[#F5E6B8]/80"
+          spellCheck
+        />
+      </div>
     </section>
   )
 }
 
 export function OverdueEventsSection({ items, onSelectDate }: OverdueEventsSectionProps) {
   const overdue = useMemo(() => getOverdueOccurrences(items.items), [items.items])
+  const [overdueExpanded, setOverdueExpanded] = useState(false)
 
   return (
     <div className="sticky top-0 z-20 mb-4 space-y-2">
@@ -96,7 +84,17 @@ export function OverdueEventsSection({ items, onSelectDate }: OverdueEventsSecti
           className="overflow-hidden rounded-xl border border-[#FF3B30]/22 bg-[#FFF5F5]/95 shadow-sm backdrop-blur-md"
           aria-label="밀린 일정"
         >
-          <div className="flex items-center gap-2 border-b border-[#FF3B30]/12 px-4 py-2.5">
+          <button
+            type="button"
+            onClick={() => setOverdueExpanded((v) => !v)}
+            className="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-[#FF3B30]/5"
+            aria-expanded={overdueExpanded}
+          >
+            {overdueExpanded ? (
+              <ChevronDown size={14} className="shrink-0 text-[#FF3B30]" aria-hidden />
+            ) : (
+              <ChevronRight size={14} className="shrink-0 text-[#FF3B30]" aria-hidden />
+            )}
             <AlertCircle size={14} className="shrink-0 text-[#FF3B30]" aria-hidden />
             <h2 className="text-[12px] font-semibold tracking-wide text-[#FF3B30]">
               밀린 일정
@@ -104,38 +102,45 @@ export function OverdueEventsSection({ items, onSelectDate }: OverdueEventsSecti
             <span className="rounded-full bg-[#FF3B30]/12 px-1.5 py-0.5 text-[10px] font-semibold text-[#FF3B30]">
               {overdue.length}
             </span>
-          </div>
+            {!overdueExpanded && (
+              <span className="ml-auto text-[10px] font-medium text-[#FF3B30]/70">
+                펼치기
+              </span>
+            )}
+          </button>
 
-          <ul className="flex max-h-52 flex-col gap-1.5 overflow-y-auto px-3 py-2.5">
-            {overdue.map((occ) => {
-              const cat = items.getCategory(occ.item.categoryId)
-              return (
-                <li
-                  key={`${occ.item.id}:${occ.dateKey}`}
-                  className="flex items-start gap-2"
-                >
-                  <span className="mt-1.5 w-[4.5rem] shrink-0 text-[10px] font-medium leading-tight text-[#FF3B30]/90">
-                    {formatOverdueLabel(occ.dateKey)}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <ItemChip
-                      occurrence={occ}
-                      categoryColor={cat?.color}
-                      onToggleDone={
-                        occ.item.checkable
-                          ? () => items.toggleItemDone(occ.item.id, occ.dateKey)
-                          : undefined
-                      }
-                      onClick={
-                        onSelectDate ? () => onSelectDate(occ.dateKey) : undefined
-                      }
-                      onDelete={() => items.deleteItem(occ.item.id)}
-                    />
-                  </div>
-                </li>
-              )
-            })}
-          </ul>
+          {overdueExpanded && (
+            <ul className="flex max-h-52 flex-col gap-1.5 overflow-y-auto border-t border-[#FF3B30]/12 px-3 py-2.5">
+              {overdue.map((occ) => {
+                const cat = items.getCategory(occ.item.categoryId)
+                return (
+                  <li
+                    key={`${occ.item.id}:${occ.dateKey}`}
+                    className="flex items-start gap-2"
+                  >
+                    <span className="mt-1.5 w-[4.5rem] shrink-0 text-[10px] font-medium leading-tight text-[#FF3B30]/90">
+                      {formatOverdueLabel(occ.dateKey)}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <ItemChip
+                        occurrence={occ}
+                        categoryColor={cat?.color}
+                        onToggleDone={
+                          occ.item.checkable
+                            ? () => items.toggleItemDone(occ.item.id, occ.dateKey)
+                            : undefined
+                        }
+                        onClick={
+                          onSelectDate ? () => onSelectDate(occ.dateKey) : undefined
+                        }
+                        onDelete={() => items.deleteItem(occ.item.id)}
+                      />
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
         </section>
       )}
 

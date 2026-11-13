@@ -303,8 +303,8 @@ export function WeekView({
         )}
 
         <div className="min-w-0 flex-1">
-          <header className="mb-4 flex flex-wrap items-center justify-between gap-3 sm:mb-6">
-            <div className="flex min-w-0 items-start gap-2">
+          <header className="mb-4 flex flex-wrap items-center gap-3 sm:mb-5">
+            <div className="flex min-w-0 shrink-0 items-start gap-2">
               {sidebarCollapsed && (
                 <button
                   type="button"
@@ -317,19 +317,31 @@ export function WeekView({
                 </button>
               )}
               <div className="min-w-0">
-              <h1 className="text-[20px] font-semibold tracking-tight text-[#1C1C1E] sm:text-[22px]">
-                Weekly Planner
-              </h1>
-              <MonthCalendarTrigger
-                weekStart={weekStart}
-                label={formatWeekRange(weekStart)}
-                onSelectWeek={(targetWeek) => {
-                  void planner.goToWeek(targetWeek)
-                }}
-              />
+                <h1 className="text-[20px] font-semibold tracking-tight text-[#1C1C1E] sm:text-[22px]">
+                  Weekly Planner
+                </h1>
+                <MonthCalendarTrigger
+                  weekStart={weekStart}
+                  label={formatWeekRange(weekStart)}
+                  onSelectWeek={(targetWeek) => {
+                    void planner.goToWeek(targetWeek)
+                  }}
+                />
               </div>
             </div>
-            <div className="flex items-center gap-1">
+
+            <div className="min-w-[12rem] flex-1">
+              <PageSearch
+                placeholder="Search blocks, tasks, events…"
+                suggestions={searchSuggestions}
+                onSelect={(s) => {
+                  const dayKey = s.id.split(':')[1] as DayKey | undefined
+                  if (dayKey) setFocusedDayKey(dayKey)
+                }}
+              />
+            </div>
+
+            <div className="flex shrink-0 items-center gap-1">
               <button
                 type="button"
                 onClick={goPrev}
@@ -357,17 +369,6 @@ export function WeekView({
               </button>
             </div>
           </header>
-
-          <div className="mb-4">
-            <PageSearch
-              placeholder="Search blocks, tasks, events…"
-              suggestions={searchSuggestions}
-              onSelect={(s) => {
-                const dayKey = s.id.split(':')[1] as DayKey | undefined
-                if (dayKey) setFocusedDayKey(dayKey)
-              }}
-            />
-          </div>
 
           <OverdueEventsSection
             items={items}
