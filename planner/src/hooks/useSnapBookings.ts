@@ -20,6 +20,7 @@ import {
   persistSnapBookingDelete,
   persistSnapBookingUpsert,
   persistSnapBookings,
+  reloadSnapBookingsFromCloud,
 } from '../lib/snapStorage'
 import { generateId, getTodayKey } from '../lib/weekUtils'
 import { useAuth } from './useAuth'
@@ -72,6 +73,7 @@ export interface SnapActions {
   totalCashDiscount: number
   totalFxDelta: number
   repeatCustomers: Array<{ name: string; count: number; revenue: number }>
+  reloadFromCloud: () => Promise<void>
 }
 
 function syncBookingExpenseLink(
@@ -106,6 +108,10 @@ export function useSnapBookings(expenseBridge?: SnapExpenseBridge): SnapActions 
   const [period, setPeriodState] = useState<SnapPeriod>('month')
   const [monthFilter, setMonthFilterState] = useState<string | null>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const bookingsRef = useRef(bookings)
+  useEffect(() => {
+    bookingsRef.current = bookings
+  }, [bookings])
 
   const setPeriod = useCallback((p: SnapPeriod) => {
     setMonthFilterState(null)
@@ -140,6 +146,7 @@ export function useSnapBookings(expenseBridge?: SnapExpenseBridge): SnapActions 
 
   const persist = useCallback(
     (next: SnapBooking[]) => {
+      bookingsRef.current = next
       setBookings(next)
       if (saveTimer.current) clearTimeout(saveTimer.current)
       saveTimer.current = setTimeout(() => {
@@ -148,6 +155,28 @@ export function useSnapBookings(expenseBridge?: SnapExpenseBridge): SnapActions 
     },
     [userId],
   )
+
+  const flushPendingSave = useCallback(() => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current)
+      saveTimer.current = null
+    }
+    void persistSnapBookings(userId, bookingsRef.current).catch(console.error)
+  }, [userId])
+
+  useEffect(() => {
+    const onPageHide = () => flushPendingSave()
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flushPendingSave()
+    }
+    window.addEventListener('pagehide', onPageHide)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      window.removeEventListener('pagehide', onPageHide)
+      document.removeEventListener('visibilitychange', onVisibility)
+      flushPendingSave()
+    }
+  }, [flushPendingSave])
 
   useEffect(() => {
     if (loading || !expenseBridge) return
@@ -396,6 +425,16 @@ export function useSnapBookings(expenseBridge?: SnapExpenseBridge): SnapActions 
     [bookings, expenseBridge, persist, userId],
   )
 
+  const reloadFromCloud = useCallback(async () => {
+    setLoading(true)
+    try {
+      const loaded = await reloadSnapBookingsFromCloud(userId)
+      setBookings(loaded)
+    } finally {
+      setLoading(false)
+    }
+  }, [userId])
+
   return {
     loading,
     bookings,
@@ -419,6 +458,7 @@ export function useSnapBookings(expenseBridge?: SnapExpenseBridge): SnapActions 
     totalCashDiscount,
     totalFxDelta,
     repeatCustomers,
+    reloadFromCloud,
   }
 }
 

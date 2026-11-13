@@ -1,4 +1,4 @@
-import { fetchItemsStore } from './supabaseRepository'
+import { fetchItemsStore, syncItemsStore } from './supabaseRepository'
 import type { ItemsStore } from './itemStorageLegacy'
 import { loadItemsStoreFromLegacy } from './localStorageLegacy'
 import { mergeItemsStores } from './itemsStoreMerge'
@@ -27,5 +27,19 @@ export async function loadItemsStoreMerged(userId: string): Promise<ItemsStore> 
 
   const merged = mergeItemsStores(cloud, local)
   saveItemsStoreLocal(userId, merged)
+  const cloudItemIds = new Set(cloud.items.map((i) => i.id))
+  const hasLocalOnlyItems = merged.items.some((i) => !cloudItemIds.has(i.id))
+  if (
+    hasLocalOnlyItems ||
+    merged.items.length > cloud.items.length ||
+    merged.categories.length > cloud.categories.length ||
+    merged.tags.length > cloud.tags.length
+  ) {
+    try {
+      await syncItemsStore(userId, merged)
+    } catch (e) {
+      console.error('[planner] push merged items store to cloud failed', e)
+    }
+  }
   return merged
 }

@@ -6,9 +6,11 @@ The planner app lives in **`planner/`** and deploys as the Vercel project **`wee
 
 **https://book-archive-journal-8l2v.vercel.app**
 
-Bookmark **this exact URL** for diary, weekly planner, mailbox, relations, expenses, and compass. Your diary photos and text live in **this browser’s storage for this hostname** — keep using the same link. All feature work ships on the **`main`** branch to this deployment.
+Bookmark **this exact URL** for diary, weekly planner, mailbox, relations, expenses, and compass. Your diary photos and text are **cached in this browser** (IndexedDB) for speed, and **also uploaded to Supabase** when you are signed in (`planner.diary_entries` + `diary-media`). Other devices see the same data after login — not from the URL, from your **account**. Keep one bookmark URL anyway so this Mac’s cache stays consistent. All feature work ships on the **`main`** branch to this deployment.
 
 Alternate alias (same app build, **different browser storage**): https://weeklyplanner-jieun1108.vercel.app
+
+**Fresh preview for current `main` (commit `9259fa9`, Diary + Diary 2):** https://weeklyplanner-hok6bc6rb-jieun1108.vercel.app — must stay on the **weeklyplanner** project; do not point `8l2v` at **book-archive-journal** (that serves Reading Archive).
 
 ## Not the Reading Archive app
 
@@ -23,6 +25,8 @@ If the window says **Reading Archive** or **Loading your library…**, you opene
 
 Install shortcuts from **https://book-archive-journal-8l2v.vercel.app** only. After a deploy, hard refresh (`Cmd+Shift+R`) once so the tab is not stuck on an old bundle.
 
+**Dock icon looks right but checkmarks reset?** The Dock app is a *copy* of whatever URL you used when you chose “Add to Dock”. A shortcut from `weeklyplanner-jieun1108.vercel.app` or an old tab uses **different browser storage** than `8l2v` — tasks and completions will not match. Fix: open **https://book-archive-journal-8l2v.vercel.app** in Safari, sign in, then **File → Add to Dock** again and remove the old Dock icon.
+
 ## Vercel settings
 
 - **weeklyplanner** → Root Directory: `planner`, production branch: **`main`**
@@ -30,8 +34,10 @@ Install shortcuts from **https://book-archive-journal-8l2v.vercel.app** only. Af
 
 ## Data safety (no accidental loss)
 
-- **Diary:** Cloud rows and images are in Supabase (`planner.diary_entries`, bucket `diary-media`). Autosave does **not** delete cloud diary rows; only an explicit delete in the UI does. If metadata is missing but photos remain in Storage, run `planner.repair_diary_entries_from_storage(user_id)` (see `planner/supabase/migrations/20260921_diary_repair_from_storage.sql`).
-- **Tasks / weekly log:** Local browser cache is merged with Supabase on load and sync so completions are not wiped by empty cloud snapshots.
+- **Diary tab:** Original photo diary (local IndexedDB + legacy `planner.diary_entries`). Unchanged.
+- **Cloud tab:** **New** multi-device diary on **`planner.diary_v2_entries`** and Storage bucket **`diary-v2-media`**. No shared data with the old diary table. Sign in on each device; add/delete syncs through Supabase only.
+- **Tasks / weekly log / calendar items:** Merged with Supabase on load. Template and items sync **upsert only** (no bulk orphan delete). Tab close flushes pending planner saves. Deletes are explicit in the UI.
+- **Expenses, wishlist, taste, snap:** Debounced saves flush to Supabase on tab hide / background.
 - **Wishlist photos:** Stored locally (IndexedDB); cloud holds metadata. Restores prefer snapshots that still have photos.
 - **Mailbox:** Creates, deletes, and edits sync bidirectionally when signed in; use the same account and production URL on each device.
 

@@ -47,6 +47,10 @@ import {
   deleteOneOffTaskRow,
   deleteRecurringTaskRow,
   deleteBlockRow,
+  deleteCategoryRow,
+  deleteTagRow,
+  deleteItemRow,
+  deleteLinkedAppRow,
   upsertTaskCompletion,
 } from '../lib/supabaseRepository'
 import {
@@ -64,6 +68,8 @@ import { coalesceWeeklyLog } from '../lib/weeklyLogMerge'
 import { coalesceWeekTemplate, templateTaskCount } from '../lib/templateMerge'
 import { loadItemsStoreMerged } from '../lib/loadItemsStoreMerged'
 import {
+  loadAllWeeklyLogsLocal,
+  loadItemsStoreLocal,
   loadTemplateLocal,
   loadWeeklyLogLocal,
   saveItemsStoreLocal,
@@ -71,6 +77,7 @@ import {
   saveWeeklyLogLocal,
   weeklyLogHasContent,
 } from '../lib/plannerLocalCache'
+import { mergeItemsStores } from '../lib/itemsStoreMerge'
 import { logError } from '../lib/formatError'
 import {
   getHiddenBlockTasks,
@@ -78,6 +85,11 @@ import {
   isBlockCompleteForDay as isBlockComplete,
 } from '../lib/blockTasks'
 import { generateId, getCurrentWeekStart, getDateKeyForDay } from '../lib/weekUtils'
+import { flushWeekCommitments } from '../lib/weekCommitmentFlush'
+import {
+  loadWeekStartsOn,
+  setWeekStartsOnRuntime,
+} from '../lib/weekStartPreference'
 import { SEED_TEMPLATE } from '../data/seedTemplate'
 
 function withDefaultEventCategories(
@@ -115,6 +127,11 @@ interface PlannerDataContextValue {
   user: User
   loading: boolean
   loadingWeek: boolean
+  cloudSyncing: boolean
+  cloudSyncError: string | null
+  refreshFromCloud: () => Promise<void>
+  /** Push this browser's planner data (events, template, notes) up to Supabase. */
+  uploadThisDeviceToCloud: () => Promise<void>
   showImportBanner: boolean
   importing: boolean
   importLocalData: () => Promise<void>
@@ -210,6 +227,21 @@ interface PlannerDataContextValue {
 
 const PlannerDataContext = createContext<PlannerDataContextValue | null>(null)
 
+function hasCachedPlannerSnapshot(
+  userId: string,
+  weekKey: string,
+): boolean {
+  const tmpl = loadTemplateLocal(userId)
+  const log = loadWeeklyLogLocal(userId, weekKey)
+  const store = loadItemsStoreLocal(userId)
+  return (
+    !!tmpl ||
+    (log != null && weeklyLogHasContent(log)) ||
+    (store != null &&
+      (store.items.length > 0 || store.categories.length > 0 || store.tags.length > 0))
+  )
+}
+
 export function PlannerDataProvider({
   user,
   onSignOut,
@@ -222,12 +254,19 @@ export function PlannerDataProvider({
   const userId = user.id
   const [loading, setLoading] = useState(true)
   const [loadingWeek, setLoadingWeek] = useState(false)
+  const [cloudSyncing, setCloudSyncing] = useState(false)
+  const [cloudSyncError, setCloudSyncError] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
   const [showImportBanner, setShowImportBanner] = useState(false)
 
   const [template, setTemplate] = useState<WeekTemplate>(structuredClone(SEED_TEMPLATE))
-  const [weekStart, setWeekStart] = useState(getCurrentWeekStart)
-  const [weeklyLog, setWeeklyLog] = useState<WeeklyLog>(() => emptyWeeklyLog(getCurrentWeekStart()))
+  const [weekStart, setWeekStart] = useState(() => {
+    setWeekStartsOnRuntime(loadWeekStartsOn(userId))
+    return getCurrentWeekStart()
+  })
+  const [weeklyLog, setWeeklyLog] = useState<WeeklyLog>(() =>
+    emptyWeeklyLog(getCurrentWeekStart()),
+  )
   const [itemsStore, setItemsStore] = useState<{ categories: Category[]; tags: Tag[]; items: Item[] }>({
     categories: [],
     tags: [],
@@ -239,6 +278,8 @@ export function PlannerDataProvider({
   const templateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const blockLogTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const templateSyncQueue = useRef<Promise<void>>(Promise.resolve())
+  /** Ensures pagehide/visibility flush waits for in-flight checkmark writes. */
+  const completionSyncQueue = useRef<Promise<void>>(Promise.resolve())
   const itemsTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const appsTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sidebarNoteTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -285,6 +326,12 @@ export function PlannerDataProvider({
   }, [])
 
   /** Serialize template writes (recurring task adds, block edits). */
+  const enqueueCompletionSync = useCallback((job: Promise<unknown>) => {
+    completionSyncQueue.current = completionSyncQueue.current
+      .then(() => job.then(() => undefined))
+      .catch((e) => logError('taskCompletion', e))
+  }, [])
+
   const enqueueTemplateSync = useCallback(
     (tmpl: WeekTemplate): Promise<void> => {
       if (templateTimer.current) {
@@ -317,7 +364,7 @@ export function PlannerDataProvider({
     weeklyLogSyncTimer.current = setTimeout(() => {
       weeklyLogSyncTimer.current = null
       flushWeeklyLogSync()
-    }, 500)
+    }, 250)
   }, [flushWeeklyLogSync])
 
   const flushBlockLogWrite = useCallback((): void => {
@@ -336,6 +383,7 @@ export function PlannerDataProvider({
 
   const flushAllPending = useCallback(async (): Promise<void> => {
     flushBlockLogWrite()
+    await completionSyncQueue.current
     await flushWeeklyLogSync()
 
     if (templateTimer.current) {
@@ -373,6 +421,7 @@ export function PlannerDataProvider({
     saveItemsStoreLocal(userId, itemsStoreRef.current)
 
     await templateSyncQueue.current
+    await flushWeekCommitments()
   }, [userId, flushBlockLogWrite, flushWeeklyLogSync, enqueueTemplateSync])
 
   const lastRevalidateMs = useRef(0)
@@ -450,7 +499,12 @@ export function PlannerDataProvider({
       if (editGenAtStart !== localEditGeneration.current) {
         memoryLog = weeklyLogRef.current.weekStart === week ? weeklyLogRef.current : memoryLog
       }
-      const merged = coalesceWeeklyLog(cloudLog, diskLog, memoryLog)
+      let merged = coalesceWeeklyLog(cloudLog, diskLog, memoryLog)
+      const live =
+        weeklyLogRef.current.weekStart === week ? weeklyLogRef.current : null
+      if (live) {
+        merged = coalesceWeeklyLog(merged, live)
+      }
 
       weekCacheRef.current.set(week, merged)
       saveWeeklyLogLocal(userId, merged)
@@ -463,11 +517,14 @@ export function PlannerDataProvider({
   }, [userId, enqueueTemplateSync])
 
   useEffect(() => {
-    const onPageHide = () => {
+    const onPageHide = (event: PageTransitionEvent) => {
+      saveWeeklyLogLocal(userId, weeklyLogRef.current)
       void flushAllPending()
+      if (event.persisted) return
     }
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') {
+        saveWeeklyLogLocal(userId, weeklyLogRef.current)
         void flushAllPending()
         return
       }
@@ -494,7 +551,7 @@ export function PlannerDataProvider({
       window.removeEventListener('online', onOnline)
       void flushAllPending()
     }
-  }, [flushAllPending, revalidateFromCloud])
+  }, [userId, flushAllPending, revalidateFromCloud])
 
   const putWeekCache = useCallback(
     (log: WeeklyLog) => {
@@ -521,12 +578,21 @@ export function PlannerDataProvider({
   )
 
   const persistItems = useCallback(
-    (store: typeof itemsStore) => {
+    (store: typeof itemsStore, flushCloud = false) => {
       saveItemsStoreLocal(userId, store)
+      itemsStoreRef.current = store
       if (itemsTimer.current) clearTimeout(itemsTimer.current)
-      itemsTimer.current = setTimeout(() => {
-        syncItemsStore(userId, store).catch((e) => logError('syncItemsStore', e))
-      }, 400)
+      const push = () => {
+        itemsTimer.current = null
+        void syncItemsStore(userId, itemsStoreRef.current).catch((e) => {
+          logError('syncItemsStore', e)
+          setCloudSyncError(
+            e instanceof Error ? e.message : 'Could not save events to Supabase',
+          )
+        })
+      }
+      if (flushCloud) push()
+      else itemsTimer.current = setTimeout(push, 400)
     },
     [userId],
   )
@@ -560,54 +626,191 @@ export function PlannerDataProvider({
     [persistSidebarNote],
   )
 
+  const mergeCloudPlannerData = useCallback(
+    async (editGenAtStart: number, initialWeekKey: string) => {
+      const [tmpl, log, store, apps, remoteNote] = await Promise.all([
+        fetchTemplate(userId),
+        loadWeeklyLog(initialWeekKey),
+        loadItemsStoreMerged(userId),
+        fetchLinkedApps(userId),
+        fetchSidebarNote(userId).catch(() => null),
+      ])
+
+      const localTmpl = loadTemplateLocal(userId)
+      let finalTemplate = coalesceWeekTemplate(tmpl, localTmpl)
+      // Cloud day blocks were intentionally cleared for commitment-first Weekly.
+      // Do not rehydrate Morning Routine etc. from a stale local template.
+      if (tmpl && tmpl.days.every((d) => (d.blocks?.length ?? 0) === 0)) {
+        finalTemplate = {
+          ...tmpl,
+          days: tmpl.days.map((d) => ({ ...d, blocks: [] })),
+        }
+      } else if (!finalTemplate) {
+        finalTemplate = await seedDefaultTemplate(userId)
+      } else if (tmpl && templateTaskCount(finalTemplate) > templateTaskCount(tmpl)) {
+        templateRef.current = finalTemplate
+        void enqueueTemplateSync(finalTemplate)
+      }
+      if (finalTemplate) {
+        templateRef.current = finalTemplate
+        saveTemplateLocal(userId, finalTemplate)
+      }
+      setTemplate(finalTemplate ?? structuredClone(SEED_TEMPLATE))
+
+      const logWeekKey = log.weekStart
+      const diskLog = loadWeeklyLogLocal(userId, logWeekKey)
+      let memoryLog =
+        weeklyLogRef.current.weekStart === logWeekKey ? weeklyLogRef.current : null
+      if (editGenAtStart !== localEditGeneration.current) {
+        memoryLog =
+          weeklyLogRef.current.weekStart === logWeekKey ? weeklyLogRef.current : memoryLog
+      }
+      const finalLog = coalesceWeeklyLog(log, diskLog, memoryLog)
+      putWeekCache(finalLog)
+      setWeeklyLog(finalLog)
+      void syncWeeklyLog(userId, finalLog).catch((e) => logError('syncWeeklyLog', e))
+      setWeekStart(logWeekKey)
+
+      const normalizedStore = withDefaultEventCategories(store)
+      setItemsStore(normalizedStore)
+      saveItemsStoreLocal(userId, normalizedStore)
+      if (normalizedStore.categories.length !== store.categories.length) {
+        void syncItemsStore(userId, normalizedStore).catch((e) => logError('seedCategories', e))
+      }
+      setLinkedApps(apps)
+
+      const localNote = loadSidebarNoteLocal(userId)
+      let note = localNote
+      if (remoteNote !== null) {
+        note = remoteNote.length > 0 ? remoteNote : localNote
+        if (note !== localNote) saveSidebarNoteLocal(userId, note)
+      } else if (localNote) {
+        void upsertSidebarNote(userId, localNote).catch((e) => logError('upsertSidebarNote', e))
+      }
+      setSidebarNoteState(note)
+      setShowImportBanner(hasLocalPlannerData() && !isLocalImportDone())
+    },
+    [userId, loadWeeklyLog, putWeekCache, enqueueTemplateSync],
+  )
+
+  const refreshFromCloud = useCallback(async () => {
+    setCloudSyncing(true)
+    setCloudSyncError(null)
+    try {
+      await mergeCloudPlannerData(localEditGeneration.current, weekStartRef.current)
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Could not load planner from Supabase'
+      setCloudSyncError(message)
+      logError('refreshFromCloud', e)
+      throw e
+    } finally {
+      setCloudSyncing(false)
+    }
+  }, [mergeCloudPlannerData])
+
+  /**
+   * Upload whatever is on THIS browser (in-memory + localStorage) to Supabase.
+   * Use on the device that still shows the full weekly planner, then open 8l2v elsewhere.
+   */
+  const uploadThisDeviceToCloud = useCallback(async () => {
+    setCloudSyncing(true)
+    setCloudSyncError(null)
+    try {
+      await flushAllPending()
+
+      const diskTemplate = loadTemplateLocal(userId)
+      const finalTemplate =
+        coalesceWeekTemplate(templateRef.current, diskTemplate) ?? templateRef.current
+      await syncTemplate(userId, finalTemplate)
+      templateRef.current = finalTemplate
+      saveTemplateLocal(userId, finalTemplate)
+      setTemplate(finalTemplate)
+
+      const diskItems = loadItemsStoreLocal(userId)
+      const memoryItems = itemsStoreRef.current
+      const mergedItems = diskItems
+        ? mergeItemsStores(memoryItems, diskItems)
+        : memoryItems
+      await syncItemsStore(userId, mergedItems)
+      itemsStoreRef.current = mergedItems
+      saveItemsStoreLocal(userId, mergedItems)
+      setItemsStore(mergedItems)
+
+      const logsByWeek = new Map<string, WeeklyLog>()
+      for (const log of loadAllWeeklyLogsLocal(userId)) {
+        logsByWeek.set(log.weekStart, log)
+      }
+      logsByWeek.set(weekStartRef.current, {
+        ...weeklyLogRef.current,
+        weekStart: weekStartRef.current,
+      })
+      for (const log of logsByWeek.values()) {
+        await syncWeeklyLog(userId, log)
+        putWeekCache(log)
+      }
+
+      await syncLinkedApps(userId, linkedAppsRef.current)
+
+      const note =
+        sidebarNoteRef.current.trim() || loadSidebarNoteLocal(userId) || ''
+      if (note) {
+        await upsertSidebarNote(userId, note)
+        saveSidebarNoteLocal(userId, note)
+        setSidebarNoteState(note)
+      }
+
+      await mergeCloudPlannerData(localEditGeneration.current, weekStartRef.current)
+    } catch (e) {
+      const message =
+        e instanceof Error ? e.message : 'Could not upload this device to Supabase'
+      setCloudSyncError(message)
+      logError('uploadThisDeviceToCloud', e)
+      throw e
+    } finally {
+      setCloudSyncing(false)
+    }
+  }, [userId, flushAllPending, putWeekCache, mergeCloudPlannerData])
+
   useEffect(() => {
     let cancelled = false
+    const editGenAtStart = localEditGeneration.current
+    const weekKey = getCurrentWeekStart()
+    const hasLocalBootstrap = hasCachedPlannerSnapshot(userId, weekKey)
+
+    if (hasLocalBootstrap) {
+      const localTmpl = loadTemplateLocal(userId)
+      const diskLog = loadWeeklyLogLocal(userId, weekKey)
+      const localStore = loadItemsStoreLocal(userId)
+      const localNote = loadSidebarNoteLocal(userId)
+      if (localTmpl) {
+        templateRef.current = localTmpl
+        setTemplate(localTmpl)
+      }
+      if (diskLog) {
+        putWeekCache(diskLog)
+        weeklyLogRef.current = diskLog
+        setWeeklyLog(diskLog)
+      }
+      if (localStore) {
+        setItemsStore(withDefaultEventCategories(localStore))
+      }
+      if (localNote) setSidebarNoteState(localNote)
+      setWeekStart(weekKey)
+      setLoading(false)
+    }
+
     ;(async () => {
       try {
-        setLoading(true)
-        const [tmpl, log, store, apps, remoteNote] = await Promise.all([
-          fetchTemplate(userId),
-          loadWeeklyLog(getCurrentWeekStart()),
-          loadItemsStoreMerged(userId),
-          fetchLinkedApps(userId),
-          fetchSidebarNote(userId).catch(() => null),
-        ])
+        if (!hasLocalBootstrap) setLoading(true)
         if (cancelled) return
-        const localTmpl = loadTemplateLocal(userId)
-        let finalTemplate = coalesceWeekTemplate(tmpl, localTmpl)
-        if (!finalTemplate) {
-          finalTemplate = await seedDefaultTemplate(userId)
-        } else if (tmpl && templateTaskCount(finalTemplate) > templateTaskCount(tmpl)) {
-          templateRef.current = finalTemplate
-          void enqueueTemplateSync(finalTemplate)
-        }
-        if (finalTemplate) {
-          templateRef.current = finalTemplate
-          saveTemplateLocal(userId, finalTemplate)
-        }
-        setTemplate(finalTemplate ?? structuredClone(SEED_TEMPLATE))
-        putWeekCache(log)
-        setWeeklyLog(log)
-        setWeekStart(getCurrentWeekStart())
-        const normalizedStore = withDefaultEventCategories(store)
-        setItemsStore(normalizedStore)
-        saveItemsStoreLocal(userId, normalizedStore)
-        if (normalizedStore.categories.length !== store.categories.length) {
-          void syncItemsStore(userId, normalizedStore).catch((e) => logError('seedCategories', e))
-        }
-        setLinkedApps(apps)
-        const localNote = loadSidebarNoteLocal(userId)
-        let note = localNote
-        if (remoteNote !== null) {
-          note = remoteNote.length > 0 ? remoteNote : localNote
-          if (note !== localNote) saveSidebarNoteLocal(userId, note)
-        } else if (localNote) {
-          void upsertSidebarNote(userId, localNote).catch((e) => logError('upsertSidebarNote', e))
-        }
-        setSidebarNoteState(note)
-        setShowImportBanner(hasLocalPlannerData() && !isLocalImportDone())
+        await mergeCloudPlannerData(editGenAtStart, weekKey)
       } catch (e) {
-        if (!cancelled) logError('loadPlannerData', e)
+        if (!cancelled) {
+          setCloudSyncError(
+            e instanceof Error ? e.message : 'Could not load planner from Supabase',
+          )
+          logError('loadPlannerData', e)
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -615,41 +818,43 @@ export function PlannerDataProvider({
     return () => {
       cancelled = true
     }
-  }, [userId, loadWeeklyLog, putWeekCache])
+  }, [userId, mergeCloudPlannerData])
 
   const importLocalData = useCallback(async () => {
     setImporting(true)
     try {
+      // Prefer current scoped cache on this browser; fall back to pre-migration keys.
+      const scopedTemplate = loadTemplateLocal(userId)
+      const scopedItems = loadItemsStoreLocal(userId)
+      const scopedLogs = loadAllWeeklyLogsLocal(userId)
       await importAllFromLocal(userId, {
-        template: loadTemplateLegacy(),
-        weeklyLogs: loadAllWeeklyLogsLegacy(),
-        itemsStore: loadItemsStoreFromLegacy(),
+        template: scopedTemplate ?? loadTemplateLegacy(),
+        weeklyLogs:
+          scopedLogs.length > 0 ? scopedLogs : loadAllWeeklyLogsLegacy(),
+        itemsStore:
+          scopedItems && scopedItems.items.length > 0
+            ? scopedItems
+            : loadItemsStoreFromLegacy(),
         linkedApps: loadLinkedAppsLegacy(),
       })
-      markLocalImportDone()
-      clearPlannerLocalData()
-      const [tmpl, store, apps] = await Promise.all([
-        fetchTemplate(userId),
-        loadItemsStoreMerged(userId),
-        fetchLinkedApps(userId),
-      ])
-      if (tmpl) setTemplate(tmpl)
-      const normalizedStore = withDefaultEventCategories(store)
-      setItemsStore(normalizedStore)
-      if (normalizedStore.categories.length !== store.categories.length) {
-        void syncItemsStore(userId, normalizedStore).catch((e) => logError('seedCategories', e))
+      const localNote = loadSidebarNoteLocal(userId)
+      if (localNote?.trim()) {
+        await upsertSidebarNote(userId, localNote)
       }
-      setLinkedApps(apps)
-      const log = await loadWeeklyLog(weekStart)
-      putWeekCache(log)
-      setWeeklyLog(log)
+      markLocalImportDone()
+      // Keep scoped cache; only clear pre-migration keys.
+      clearPlannerLocalData()
+      await uploadThisDeviceToCloud()
       setShowImportBanner(false)
     } catch (e) {
       logError('importLocalData', e)
+      setCloudSyncError(
+        e instanceof Error ? e.message : 'Import to Supabase failed',
+      )
     } finally {
       setImporting(false)
     }
-  }, [userId, weekStart, loadWeeklyLog, putWeekCache])
+  }, [userId, uploadThisDeviceToCloud])
 
   const goToWeek = useCallback(
     async (newWeekStart: string) => {
@@ -813,8 +1018,8 @@ export function PlannerDataProvider({
           putWeekCache(next)
           return next
         })
-        void upsertOneOffTask(userId, { ...task, done }, dateKey, blockId).catch((e) =>
-          logError('upsertOneOffTask', e),
+        enqueueCompletionSync(
+          upsertOneOffTask(userId, { ...task, done }, dateKey, blockId),
         )
         return
       }
@@ -842,11 +1047,11 @@ export function PlannerDataProvider({
         putWeekCache(next)
         return next
       })
-      void upsertTaskCompletion(userId, week, dayKey, blockId, taskId, done).catch((e) =>
-        logError('upsertTaskCompletion', e),
+      enqueueCompletionSync(
+        upsertTaskCompletion(userId, week, dayKey, blockId, taskId, done),
       )
     },
-    [userId, putWeekCache],
+    [enqueueCompletionSync, userId, putWeekCache],
   )
 
   const toggleHideTask = useCallback(
@@ -946,7 +1151,7 @@ export function PlannerDataProvider({
       }
       setItemsStore((prev) => {
         const next = { ...prev, items: [...prev.items, newItem] }
-        persistItems(next)
+        persistItems(next, true)
         return next
       })
     },
@@ -1177,11 +1382,11 @@ export function PlannerDataProvider({
           return next
         })
 
-        void upsertTaskCompletion(userId, week, fromDayKey, toBlockId, taskId, done).catch((e) =>
-          logError('upsertTaskCompletion', e),
+        enqueueCompletionSync(
+          upsertTaskCompletion(userId, week, fromDayKey, toBlockId, taskId, done),
         )
-        void upsertTaskCompletion(userId, week, fromDayKey, fromBlockId, taskId, false).catch(
-          (e) => logError('upsertTaskCompletion', e),
+        enqueueCompletionSync(
+          upsertTaskCompletion(userId, week, fromDayKey, fromBlockId, taskId, false),
         )
         return
       }
@@ -1218,14 +1423,12 @@ export function PlannerDataProvider({
       void upsertBlockWeekLog(userId, week, fromDayKey, fromBlockId, hiddenSourceLog).catch((e) =>
         logError('upsertBlockWeekLog', e),
       )
-      void upsertOneOffTask(userId, deferredTask, toDateKey, toBlockId).catch((e) =>
-        logError('upsertOneOffTask', e),
-      )
-      void upsertTaskCompletion(userId, week, fromDayKey, fromBlockId, taskId, false).catch((e) =>
-        logError('upsertTaskCompletion', e),
+      enqueueCompletionSync(upsertOneOffTask(userId, deferredTask, toDateKey, toBlockId))
+      enqueueCompletionSync(
+        upsertTaskCompletion(userId, week, fromDayKey, fromBlockId, taskId, false),
       )
     },
-    [userId, putWeekCache, updateTemplate],
+    [enqueueCompletionSync, userId, putWeekCache, updateTemplate],
   )
 
   const renameRecurringTask = useCallback(
@@ -1328,10 +1531,13 @@ export function PlannerDataProvider({
   )
 
   const updateItemsStore = useCallback(
-    (updater: (prev: typeof itemsStore) => typeof itemsStore) => {
+    (
+      updater: (prev: typeof itemsStore) => typeof itemsStore,
+      options?: { flushCloud?: boolean },
+    ) => {
       setItemsStore((prev) => {
         const next = updater(prev)
-        persistItems(next)
+        persistItems(next, options?.flushCloud ?? false)
         return next
       })
     },
@@ -1374,6 +1580,10 @@ export function PlannerDataProvider({
     user,
     loading,
     loadingWeek,
+    cloudSyncing,
+    cloudSyncError,
+    refreshFromCloud,
+    uploadThisDeviceToCloud,
     showImportBanner,
     importing,
     importLocalData,
@@ -1437,6 +1647,7 @@ export function PlannerDataProvider({
           item.categoryId === id ? { ...item, categoryId: null } : item,
         ),
       }))
+      void deleteCategoryRow(userId, id).catch((e) => logError('deleteCategoryRow', e))
     },
     addTag: (name, icon) => {
       const tag: Tag = { id: generateId(), name: name.trim(), icon: icon?.trim() || undefined }
@@ -1458,60 +1669,73 @@ export function PlannerDataProvider({
           tagIds: item.tagIds.filter((tid) => tid !== id),
         })),
       }))
+      void deleteTagRow(userId, id).catch((e) => logError('deleteTagRow', e))
     },
     addItem: (item) => {
       const done: ItemDone = item.recurrence ? {} : false
       const newItem: Item = { ...item, id: generateId(), done }
-      updateItemsStore((prev) => ({ ...prev, items: [...prev.items, newItem] }))
+      updateItemsStore((prev) => ({ ...prev, items: [...prev.items, newItem] }), {
+        flushCloud: true,
+      })
       return newItem.id
     },
     updateItem: (id, updates) => {
-      updateItemsStore((prev) => ({
-        ...prev,
-        items: prev.items.map((item) => {
-          if (item.id !== id) return item
-          const next = {
-            ...item,
-            ...updates,
-            id: item.id,
-            details:
-              updates.details !== undefined
-                ? updates.details.trim() || undefined
-                : item.details,
-          }
-          if (updates.recurrence !== undefined) {
-            if (updates.recurrence === null && isRecurringItem(item)) {
-              next.done = getItemDone(item, item.dueDate ?? undefined)
-            } else if (updates.recurrence !== null && !isRecurringItem(item)) {
-              next.done = {}
+      updateItemsStore(
+        (prev) => ({
+          ...prev,
+          items: prev.items.map((item) => {
+            if (item.id !== id) return item
+            const next = {
+              ...item,
+              ...updates,
+              id: item.id,
+              details:
+                updates.details !== undefined
+                  ? updates.details.trim() || undefined
+                  : item.details,
             }
-          }
-          return next
+            if (updates.recurrence !== undefined) {
+              if (updates.recurrence === null && isRecurringItem(item)) {
+                next.done = getItemDone(item, item.dueDate ?? undefined)
+              } else if (updates.recurrence !== null && !isRecurringItem(item)) {
+                next.done = {}
+              }
+            }
+            return next
+          }),
         }),
-      }))
+        { flushCloud: true },
+      )
     },
     deleteItem: (id) => {
       updateItemsStore((prev) => ({
         ...prev,
         items: prev.items.filter((item) => item.id !== id),
       }))
+      void deleteItemRow(userId, id).catch((e) => logError('deleteItemRow', e))
     },
     toggleItemDone: (itemId, dateKey) => {
-      updateItemsStore((prev) => ({
-        ...prev,
-        items: prev.items.map((item) => {
-          if (item.id !== itemId) return item
-          const key = dateKey ?? item.dueDate ?? undefined
-          if (isRecurringItem(item) || (key && typeof item.done === 'object' && item.done !== null)) {
-            if (!key) return item
-            const map =
-              typeof item.done === 'object' && item.done !== null ? { ...item.done } : {}
-            map[key] = !map[key]
-            return { ...item, done: map }
-          }
-          return { ...item, done: item.done !== true }
+      updateItemsStore(
+        (prev) => ({
+          ...prev,
+          items: prev.items.map((item) => {
+            if (item.id !== itemId) return item
+            const key = dateKey ?? item.dueDate ?? undefined
+            if (
+              isRecurringItem(item) ||
+              (key && typeof item.done === 'object' && item.done !== null)
+            ) {
+              if (!key) return item
+              const map =
+                typeof item.done === 'object' && item.done !== null ? { ...item.done } : {}
+              map[key] = !map[key]
+              return { ...item, done: map }
+            }
+            return { ...item, done: item.done !== true }
+          }),
         }),
-      }))
+        { flushCloud: true },
+      )
     },
     filterItems: (list, categoryFilter, tagFilters) => {
       let result = list
@@ -1566,9 +1790,11 @@ export function PlannerDataProvider({
     deleteLinkedApp: (id) => {
       setLinkedApps((prev) => {
         const next = prev.filter((a) => a.id !== id)
+        linkedAppsRef.current = next
         persistApps(next)
         return next
       })
+      void deleteLinkedAppRow(userId, id).catch((e) => logError('deleteLinkedAppRow', e))
     },
     openLinkedApp: (app) => {
       if (app.openMode === 'newTab') {

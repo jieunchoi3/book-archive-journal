@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react'
 import {
   BookHeart,
+  BookMarked,
   Calendar,
   CalendarDays,
   Camera,
   Compass,
-  Home,
   Mail,
   Sticker,
   Wallet,
@@ -13,6 +13,7 @@ import {
 
 export type AppView =
   | 'diary'
+  | 'cloud-diary'
   | 'mailbox'
   | 'expenses'
   | 'taste'
@@ -20,7 +21,6 @@ export type AppView =
   | 'monthly'
   | 'weekly'
   | 'compass'
-  | 'relations'
 
 interface BottomNavProps {
   active: AppView
@@ -40,13 +40,21 @@ export function BottomNav({ active, onChange, badges }: BottomNavProps) {
           : 'border-t border-hairline bg-white/95 backdrop-blur-md'
       }`}
     >
-      <div className="mx-auto flex max-w-xl justify-between gap-0.5 px-0.5 py-1.5 sm:justify-around sm:gap-0 sm:px-3 sm:py-2">
+      <div className="mx-auto flex max-w-xl gap-0.5 overflow-x-auto px-0.5 py-1.5 [-ms-overflow-style:none] [scrollbar-width:none] sm:justify-around sm:gap-0 sm:px-3 sm:py-2 [&::-webkit-scrollbar]:hidden">
         <NavButton
           label="Diary"
           icon={<BookHeart size={20} />}
           active={active === 'diary'}
           badge={badges?.diary}
           onClick={() => onChange('diary')}
+          light={transparent}
+        />
+        <NavButton
+          label="Diary 2"
+          icon={<BookMarked size={20} />}
+          active={active === 'cloud-diary'}
+          badge={badges?.['cloud-diary']}
+          onClick={() => onChange('cloud-diary')}
           light={transparent}
         />
         <NavButton
@@ -98,14 +106,6 @@ export function BottomNav({ active, onChange, badges }: BottomNavProps) {
           light={transparent}
         />
         <NavButton
-          label="Room"
-          icon={<Home size={20} />}
-          active={active === 'relations'}
-          badge={badges?.relations}
-          onClick={() => onChange('relations')}
-          light={transparent}
-        />
-        <NavButton
           label="Compass"
           icon={<Compass size={20} />}
           active={active === 'compass'}
@@ -146,7 +146,7 @@ function NavButton({
     <button
       type="button"
       onClick={onClick}
-      className={`relative flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 transition-colors sm:flex-none sm:px-3 ${colorClass}`}
+      className={`relative flex min-w-[3.25rem] shrink-0 flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 transition-colors sm:min-w-0 sm:flex-1 sm:px-3 ${colorClass}`}
     >
       <span className="relative">
         {icon}
