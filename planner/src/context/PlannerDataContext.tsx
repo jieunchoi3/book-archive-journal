@@ -37,7 +37,6 @@ import {
   fetchTemplate,
   fetchWeeklyLog,
   importAllFromLocal,
-  seedDefaultTemplate,
   syncItemsStore,
   syncLinkedApps,
   upsertSidebarNote,
@@ -68,12 +67,17 @@ import {
   weeklyLogHasContent,
 } from '../lib/plannerLocalCache'
 import { logError } from '../lib/formatError'
+import { flushWeekCommitments } from '../lib/weekCommitmentFlush'
 import {
   getHiddenBlockTasks,
   getVisibleBlockTasks,
   isBlockCompleteForDay as isBlockComplete,
 } from '../lib/blockTasks'
 import { generateId, getCurrentWeekStart, getDateKeyForDay } from '../lib/weekUtils'
+import {
+  loadWeekStartsOn,
+  setWeekStartsOnRuntime,
+} from '../lib/weekStartPreference'
 import { SEED_TEMPLATE } from '../data/seedTemplate'
 
 function withDefaultEventCategories(
@@ -222,8 +226,13 @@ export function PlannerDataProvider({
   const [showImportBanner, setShowImportBanner] = useState(false)
 
   const [template, setTemplate] = useState<WeekTemplate>(structuredClone(SEED_TEMPLATE))
-  const [weekStart, setWeekStart] = useState(getCurrentWeekStart)
-  const [weeklyLog, setWeeklyLog] = useState<WeeklyLog>(() => emptyWeeklyLog(getCurrentWeekStart()))
+  const [weekStart, setWeekStart] = useState(() => {
+    setWeekStartsOnRuntime(loadWeekStartsOn(userId))
+    return getCurrentWeekStart()
+  })
+  const [weeklyLog, setWeeklyLog] = useState<WeeklyLog>(() =>
+    emptyWeeklyLog(getCurrentWeekStart()),
+  )
   const [itemsStore, setItemsStore] = useState<{ categories: Category[]; tags: Tag[]; items: Item[] }>({
     categories: [],
     tags: [],
@@ -355,6 +364,7 @@ export function PlannerDataProvider({
     saveTemplateLocal(userId, templateRef.current)
 
     await templateSyncQueue.current
+    await flushWeekCommitments()
   }, [userId, flushBlockLogWrite, enqueueTemplateSync])
 
   const lastRevalidateMs = useRef(0)
@@ -533,11 +543,32 @@ export function PlannerDataProvider({
           fetchSidebarNote(userId).catch(() => null),
         ])
         if (cancelled) return
-        let finalTemplate = tmpl ?? loadTemplateLocal(userId)
+        // Prefer cloud template. Do not fall back to a local copy that still
+        // has deleted day blocks — that was rehydrating Morning Routine etc.
+        let finalTemplate = tmpl
         if (!finalTemplate) {
-          finalTemplate = await seedDefaultTemplate(userId)
+          const local = loadTemplateLocal(userId)
+          const localEmpty =
+            local && local.days.every((d) => (d.blocks?.length ?? 0) === 0)
+          finalTemplate = localEmpty ? local : null
         }
-        if (finalTemplate) saveTemplateLocal(userId, finalTemplate)
+        if (!finalTemplate) {
+          // Seed day meta only (no seed blocks) so Weekly stays commitment-first.
+          const emptyDays = structuredClone(SEED_TEMPLATE)
+          emptyDays.days = emptyDays.days.map((d) => ({ ...d, blocks: [] }))
+          await syncTemplate(userId, emptyDays)
+          finalTemplate = emptyDays
+        }
+        if (finalTemplate) {
+          // Strip any stale blocks if cloud already cleared them.
+          if (tmpl && tmpl.days.every((d) => (d.blocks?.length ?? 0) === 0)) {
+            finalTemplate = {
+              ...tmpl,
+              days: tmpl.days.map((d) => ({ ...d, blocks: [] })),
+            }
+          }
+          saveTemplateLocal(userId, finalTemplate)
+        }
         setTemplate(finalTemplate)
         putWeekCache(log)
         setWeeklyLog(log)
