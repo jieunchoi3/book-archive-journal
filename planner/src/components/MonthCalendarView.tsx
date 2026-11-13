@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { DndContext, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { ChevronLeft, ChevronRight, PanelLeftOpen, Plus } from 'lucide-react'
 import type { ItemsActions } from '../hooks/useItems'
 import type { PlannerActions } from '../hooks/usePlanner'
@@ -319,7 +320,10 @@ export function MonthCalendarView({
     })
   }, [items.items, items.categories, items.tags, items.getCategory])
 
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
+
   return (
+    <DndContext sensors={sensors}>
     <div className="flex min-h-screen gap-4 p-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:gap-6 sm:p-6 sm:pb-24">
       {!sidebarCollapsed && (
         <aside className="hidden shrink-0 lg:block">
@@ -642,5 +646,6 @@ export function MonthCalendarView({
         <EditItemModal item={editingItem} items={items} onClose={() => setEditingId(null)} />
       )}
     </div>
+    </DndContext>
   )
 }

@@ -85,6 +85,11 @@ import {
   isBlockCompleteForDay as isBlockComplete,
 } from '../lib/blockTasks'
 import { generateId, getCurrentWeekStart, getDateKeyForDay } from '../lib/weekUtils'
+import { flushWeekCommitments } from '../lib/weekCommitmentFlush'
+import {
+  loadWeekStartsOn,
+  setWeekStartsOnRuntime,
+} from '../lib/weekStartPreference'
 import { SEED_TEMPLATE } from '../data/seedTemplate'
 
 function withDefaultEventCategories(
@@ -255,8 +260,13 @@ export function PlannerDataProvider({
   const [showImportBanner, setShowImportBanner] = useState(false)
 
   const [template, setTemplate] = useState<WeekTemplate>(structuredClone(SEED_TEMPLATE))
-  const [weekStart, setWeekStart] = useState(getCurrentWeekStart)
-  const [weeklyLog, setWeeklyLog] = useState<WeeklyLog>(() => emptyWeeklyLog(getCurrentWeekStart()))
+  const [weekStart, setWeekStart] = useState(() => {
+    setWeekStartsOnRuntime(loadWeekStartsOn(userId))
+    return getCurrentWeekStart()
+  })
+  const [weeklyLog, setWeeklyLog] = useState<WeeklyLog>(() =>
+    emptyWeeklyLog(getCurrentWeekStart()),
+  )
   const [itemsStore, setItemsStore] = useState<{ categories: Category[]; tags: Tag[]; items: Item[] }>({
     categories: [],
     tags: [],
@@ -411,6 +421,7 @@ export function PlannerDataProvider({
     saveItemsStoreLocal(userId, itemsStoreRef.current)
 
     await templateSyncQueue.current
+    await flushWeekCommitments()
   }, [userId, flushBlockLogWrite, flushWeeklyLogSync, enqueueTemplateSync])
 
   const lastRevalidateMs = useRef(0)
@@ -627,7 +638,14 @@ export function PlannerDataProvider({
 
       const localTmpl = loadTemplateLocal(userId)
       let finalTemplate = coalesceWeekTemplate(tmpl, localTmpl)
-      if (!finalTemplate) {
+      // Cloud day blocks were intentionally cleared for commitment-first Weekly.
+      // Do not rehydrate Morning Routine etc. from a stale local template.
+      if (tmpl && tmpl.days.every((d) => (d.blocks?.length ?? 0) === 0)) {
+        finalTemplate = {
+          ...tmpl,
+          days: tmpl.days.map((d) => ({ ...d, blocks: [] })),
+        }
+      } else if (!finalTemplate) {
         finalTemplate = await seedDefaultTemplate(userId)
       } else if (tmpl && templateTaskCount(finalTemplate) > templateTaskCount(tmpl)) {
         templateRef.current = finalTemplate
