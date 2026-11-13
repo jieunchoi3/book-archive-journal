@@ -1,14 +1,17 @@
 import { useMemo, useState } from 'react'
+import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import type { Block, DayTemplate } from '../types/planner'
 import type { PlannerActions } from '../hooks/usePlanner'
-import { blockDragId } from '../lib/taskDnd'
+import { blockDragId, dayCommitmentDropId } from '../lib/taskDnd'
 import { formatShortDateForDay, isToday } from '../lib/weekUtils'
 import { BlockCard, SortableBlockCard } from './BlockCard'
 import { BlockEditModal } from './BlockEditModal'
 import { DayItemsSection } from './DayItemsSection'
 import { TaskCheckbox } from './TaskCheckbox'
+import { CommitmentPlacementCard } from './CommitmentPlacementCard'
+import { useWeekCommitments } from '../context/WeekCommitmentContext'
 import type { ItemsActions } from '../hooks/useItems'
 
 interface DayColumnProps {
@@ -60,6 +63,13 @@ export function DayColumn({ day, weekStart, planner, items, onFocusDay }: DayCol
   const [showCompleted, setShowCompleted] = useState(false)
   const [showHidden, setShowHidden] = useState(false)
   const today = isToday(day.key, weekStart)
+  const commitments = useWeekCommitments()
+  const dayPlacements = commitments.getPlacementsForDay(day.key)
+
+  const { setNodeRef: setDayDropRef, isOver: isCommitmentOver } = useDroppable({
+    id: dayCommitmentDropId(day.key),
+    data: { type: 'day-commitment-drop', dayKey: day.key },
+  })
 
   const sortedBlocks = useMemo(
     () => [...day.blocks].sort((a, b) => a.order - b.order),
@@ -130,11 +140,12 @@ export function DayColumn({ day, weekStart, planner, items, onFocusDay }: DayCol
 
   return (
     <div
+      ref={setDayDropRef}
       className={`relative flex min-w-[168px] flex-1 flex-col overflow-visible rounded-xl border has-[[data-task-popover-open=true]]:z-40 ${
         today
           ? 'border-[#007AFF] bg-gradient-to-b from-[#007AFF]/10 via-[#007AFF]/[0.03] to-white shadow-lg shadow-[#007AFF]/20 ring-2 ring-[#007AFF]/25'
           : 'border-hairline bg-white'
-      }`}
+      } ${isCommitmentOver ? 'ring-2 ring-[#34C759]/45' : ''}`}
     >
       {today && (
         <div
@@ -215,6 +226,29 @@ export function DayColumn({ day, weekStart, planner, items, onFocusDay }: DayCol
       />
 
       <div className="flex flex-1 flex-col gap-2 p-2">
+        {dayPlacements.map((placement) => {
+          const commitment = commitments.getCommitment(placement.commitmentId)
+          if (!commitment) return null
+          return (
+            <CommitmentPlacementCard
+              key={placement.id}
+              placement={placement}
+              commitment={commitment}
+              onToggleTask={(taskId) =>
+                commitments.togglePlacementTask(placement.id, taskId)
+              }
+              onAddTask={(label) => commitments.addPlacementTask(placement.id, label)}
+              onDeleteTask={(taskId) =>
+                commitments.deletePlacementTask(placement.id, taskId)
+              }
+              onRenameTask={(taskId, label) =>
+                commitments.renamePlacementTask(placement.id, taskId, label)
+              }
+              onRemove={() => commitments.removePlacement(placement.id)}
+            />
+          )
+        })}
+
         <SortableContext items={activeBlockSortableIds} strategy={verticalListSortingStrategy}>
           {activeBlocks.map((block) => (
             <SortableBlockCard

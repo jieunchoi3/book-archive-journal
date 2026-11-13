@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useDroppable } from '@dnd-kit/core'
 import {
   SortableContext,
   horizontalListSortingStrategy,
@@ -6,12 +7,14 @@ import {
 import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronRight as ChevronRightIcon, Plus } from 'lucide-react'
 import type { Block, DayKey, DayTemplate } from '../types/planner'
 import type { PlannerActions } from '../hooks/usePlanner'
-import { blockDragId } from '../lib/taskDnd'
+import { blockDragId, dayCommitmentDropId } from '../lib/taskDnd'
 import { formatShortDateForDay, isToday } from '../lib/weekUtils'
 import { BlockCard, SortableBlockCard } from './BlockCard'
 import { BlockEditModal } from './BlockEditModal'
 import { DayItemsSection } from './DayItemsSection'
 import { TaskCheckbox } from './TaskCheckbox'
+import { CommitmentPlacementCard } from './CommitmentPlacementCard'
+import { useWeekCommitments } from '../context/WeekCommitmentContext'
 import type { ItemsActions } from '../hooks/useItems'
 
 const DAY_TYPE_COLORS: Record<string, string> = {
@@ -85,6 +88,12 @@ export function DayFocusView({
   const today = isToday(day.key, weekStart)
   const dayIndex = allDays.findIndex((d) => d.key === day.key)
   const stats = planner.dayCompletion[day.key]
+  const weekCommitments = useWeekCommitments()
+  const dayPlacements = weekCommitments.getPlacementsForDay(day.key)
+  const { setNodeRef: setDayDropRef, isOver: isCommitmentOver } = useDroppable({
+    id: dayCommitmentDropId(day.key),
+    data: { type: 'day-commitment-drop', dayKey: day.key },
+  })
 
   const sortedBlocks = useMemo(
     () => [...day.blocks].sort((a, b) => a.order - b.order),
@@ -171,7 +180,12 @@ export function DayFocusView({
   })
 
   return (
-    <div className="rounded-xl border border-hairline bg-white shadow-sm">
+    <div
+      ref={setDayDropRef}
+      className={`rounded-xl border border-hairline bg-white shadow-sm ${
+        isCommitmentOver ? 'ring-2 ring-[#34C759]/45' : ''
+      }`}
+    >
       <header
         className={`border-b px-4 py-4 ${today ? 'border-[#007AFF]/25 bg-gradient-to-r from-[#007AFF]/10 to-white' : 'border-hairline'}`}
       >
@@ -256,6 +270,36 @@ export function DayFocusView({
       </div>
 
       <div className="p-4">
+        {dayPlacements.length > 0 && (
+          <div className="mb-3 flex gap-3 overflow-x-auto pb-2">
+            {dayPlacements.map((placement) => {
+              const commitment = weekCommitments.getCommitment(placement.commitmentId)
+              if (!commitment) return null
+              return (
+                <div key={placement.id} className="w-[min(300px,85vw)] shrink-0">
+                  <CommitmentPlacementCard
+                    placement={placement}
+                    commitment={commitment}
+                    onToggleTask={(taskId) =>
+                      weekCommitments.togglePlacementTask(placement.id, taskId)
+                    }
+                    onAddTask={(label) =>
+                      weekCommitments.addPlacementTask(placement.id, label)
+                    }
+                    onDeleteTask={(taskId) =>
+                      weekCommitments.deletePlacementTask(placement.id, taskId)
+                    }
+                    onRenameTask={(taskId, label) =>
+                      weekCommitments.renamePlacementTask(placement.id, taskId, label)
+                    }
+                    onRemove={() => weekCommitments.removePlacement(placement.id)}
+                  />
+                </div>
+              )
+            })}
+          </div>
+        )}
+
         <SortableContext
           items={activeBlockSortableIds}
           strategy={horizontalListSortingStrategy}

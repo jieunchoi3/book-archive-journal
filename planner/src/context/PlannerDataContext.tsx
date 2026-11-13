@@ -68,6 +68,7 @@ import {
   weeklyLogHasContent,
 } from '../lib/plannerLocalCache'
 import { logError } from '../lib/formatError'
+import { flushWeekCommitments } from '../lib/weekCommitmentFlush'
 import {
   getHiddenBlockTasks,
   getVisibleBlockTasks,
@@ -355,6 +356,7 @@ export function PlannerDataProvider({
     saveTemplateLocal(userId, templateRef.current)
 
     await templateSyncQueue.current
+    await flushWeekCommitments()
   }, [userId, flushBlockLogWrite, enqueueTemplateSync])
 
   const lastRevalidateMs = useRef(0)

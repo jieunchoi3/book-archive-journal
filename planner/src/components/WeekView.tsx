@@ -18,8 +18,12 @@ import type { ItemsActions } from '../hooks/useItems'
 import {
   parseBlockDragId,
   type BlockDropData,
+  type CommitmentPlacementDragData,
+  type CommitmentSlotDragData,
+  type DayCommitmentDropData,
   type TaskDragData,
 } from '../lib/taskDnd'
+import { useWeekCommitments } from '../context/WeekCommitmentContext'
 import {
   formatWeekRange,
   getDayKeyFromDate,
@@ -63,7 +67,12 @@ export function WeekView({
   const isMobileLayout = useMobileLayout()
   const { collapsed: sidebarCollapsed, setCollapsed: setSidebarCollapsed } =
     usePlannerSidebarCollapsed()
+  const weekCommitments = useWeekCommitments()
   const [activeTaskDrag, setActiveTaskDrag] = useState<TaskDragData | null>(null)
+  const [activeCommitmentDrag, setActiveCommitmentDrag] = useState<{
+    title: string
+    color: string
+  } | null>(null)
   const [focusedDayKey, setFocusedDayKey] = useState<DayKey | null>(() =>
     typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches
       ? getDayKeyFromDate(new Date())
@@ -88,22 +97,66 @@ export function WeekView({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
+  const resolveDropDayKey = (overData: unknown, overId: string): DayKey | null => {
+    if (overData && typeof overData === 'object' && 'type' in overData) {
+      const typed = overData as DayCommitmentDropData | BlockDropData | CommitmentPlacementDragData
+      if (typed.type === 'day-commitment-drop') return typed.dayKey
+      if (typed.type === 'block-drop') return typed.dayKey
+      if (typed.type === 'commitment-placement') return typed.dayKey
+    }
+    const dayMatch = String(overId).match(/^cday:([a-z]+)$/)
+    if (dayMatch) return dayMatch[1] as DayKey
+    const blockMatch = parseBlockDragId(String(overId))
+    if (blockMatch) return blockMatch.dayKey
+    return null
+  }
+
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const data = event.active.data.current
     if (data?.type === 'task') {
       setActiveTaskDrag(data as TaskDragData)
+      setActiveCommitmentDrag(null)
+      return
+    }
+    if (data?.type === 'commitment-slot') {
+      const slot = data as CommitmentSlotDragData
+      setActiveCommitmentDrag({ title: slot.title, color: slot.color })
+      setActiveTaskDrag(null)
+      return
+    }
+    if (data?.type === 'commitment-placement') {
+      const placement = data as CommitmentPlacementDragData
+      setActiveCommitmentDrag({ title: placement.title, color: placement.color })
+      setActiveTaskDrag(null)
     }
   }, [])
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       setActiveTaskDrag(null)
+      setActiveCommitmentDrag(null)
       const { active, over } = event
       if (!over) return
 
       const activeData = active.data.current
       const overData = over.data.current
       if (!activeData) return
+
+      if (activeData.type === 'commitment-slot') {
+        const slot = activeData as CommitmentSlotDragData
+        const dayKey = resolveDropDayKey(overData, String(over.id))
+        if (!dayKey) return
+        weekCommitments.placeCommitment(slot.commitmentId, dayKey)
+        return
+      }
+
+      if (activeData.type === 'commitment-placement') {
+        const placement = activeData as CommitmentPlacementDragData
+        const dayKey = resolveDropDayKey(overData, String(over.id))
+        if (!dayKey || dayKey === placement.dayKey) return
+        weekCommitments.movePlacement(placement.placementId, dayKey)
+        return
+      }
 
       if (activeData.type === 'task') {
         const taskData = activeData as TaskDragData
@@ -157,7 +210,7 @@ export function WeekView({
         ])
       }
     },
-    [planner, template.days],
+    [planner, template.days, weekCommitments],
   )
 
   const goPrev = () => {
@@ -236,119 +289,119 @@ export function WeekView({
   }, [template.days, planner, items])
 
   return (
-    <div className="flex min-h-screen gap-4 p-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:gap-6 sm:p-6 sm:pb-24">
-      {!sidebarCollapsed && (
-        <aside className="hidden shrink-0 lg:block">
-          <PlannerSidebar linkedApps={linkedApps} />
-        </aside>
-      )}
-
-      <div className="min-w-0 flex-1">
-        <header className="mb-4 flex flex-wrap items-center justify-between gap-3 sm:mb-6">
-          <div className="flex min-w-0 items-start gap-2">
-            {sidebarCollapsed && (
-              <button
-                type="button"
-                onClick={() => setSidebarCollapsed(false)}
-                className="mt-0.5 hidden shrink-0 rounded-lg p-2 text-muted transition-colors hover:bg-white hover:text-[#1C1C1E] hover:shadow-sm lg:inline-flex"
-                aria-label="Show sidebar"
-                title="Show sidebar"
-              >
-                <PanelLeftOpen size={18} />
-              </button>
-            )}
-            <div className="min-w-0">
-            <h1 className="text-[20px] font-semibold tracking-tight text-[#1C1C1E] sm:text-[22px]">
-              Weekly Planner
-            </h1>
-            <MonthCalendarTrigger
-              weekStart={weekStart}
-              label={formatWeekRange(weekStart)}
-              onSelectWeek={(targetWeek) => {
-                void planner.goToWeek(targetWeek)
-              }}
-            />
-            </div>
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={goPrev}
-              className="rounded-lg p-2 text-muted hover:bg-white hover:shadow-sm"
-              aria-label="Previous week"
-            >
-              <ChevronLeft size={18} />
-            </button>
-            {!isCurrentWeek && (
-              <button
-                type="button"
-                onClick={goToday}
-                className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-[#007AFF] hover:bg-white"
-              >
-                Today
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={goNext}
-              className="rounded-lg p-2 text-muted hover:bg-white hover:shadow-sm"
-              aria-label="Next week"
-            >
-              <ChevronRight size={18} />
-            </button>
-          </div>
-        </header>
-
-        <div className="mb-4">
-          <PageSearch
-            placeholder="Search blocks, tasks, events…"
-            suggestions={searchSuggestions}
-            onSelect={(s) => {
-              const dayKey = s.id.split(':')[1] as DayKey | undefined
-              if (dayKey) setFocusedDayKey(dayKey)
-            }}
-          />
-        </div>
-
-        <OverdueEventsSection
-          items={items}
-          onSelectDate={(dateKey) => {
-            const d = parseDateKey(dateKey)
-            void planner.goToWeek(getWeekStartDate(d)).then(() => {
-              setFocusedDayKey(getDayKeyFromDate(d))
-            })
-          }}
-        />
-
-        {compass && onOpenCompassAsk && (
-          <CompassDueSection
-            compass={compass}
-            onOpenCompassAsk={onOpenCompassAsk}
-          />
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+    >
+      <div className="flex min-h-screen gap-4 p-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:gap-6 sm:p-6 sm:pb-24">
+        {!sidebarCollapsed && (
+          <aside className="hidden shrink-0 lg:block">
+            <PlannerSidebar linkedApps={linkedApps} />
+          </aside>
         )}
 
-        <div className="relative min-h-[320px]">
-          <div
-            className={`transition-all duration-200 ${
-              loadingWeek ? 'pointer-events-none opacity-50 blur-[2px]' : ''
-            }`}
-            aria-busy={loadingWeek}
-          >
-            <WeekSummary
-              dayCompletion={planner.dayCompletion}
-              weekCompletionPercent={planner.weekCompletionPercent}
-              weekStart={weekStart}
-              days={template.days.map((d) => ({ key: d.key, dayName: d.dayName }))}
-              compact={isMobileLayout}
-              onDayClick={(dayKey) => setFocusedDayKey(dayKey)}
-            />
+        <div className="min-w-0 flex-1">
+          <header className="mb-4 flex flex-wrap items-center justify-between gap-3 sm:mb-6">
+            <div className="flex min-w-0 items-start gap-2">
+              {sidebarCollapsed && (
+                <button
+                  type="button"
+                  onClick={() => setSidebarCollapsed(false)}
+                  className="mt-0.5 hidden shrink-0 rounded-lg p-2 text-muted transition-colors hover:bg-white hover:text-[#1C1C1E] hover:shadow-sm lg:inline-flex"
+                  aria-label="Show sidebar"
+                  title="Show sidebar"
+                >
+                  <PanelLeftOpen size={18} />
+                </button>
+              )}
+              <div className="min-w-0">
+              <h1 className="text-[20px] font-semibold tracking-tight text-[#1C1C1E] sm:text-[22px]">
+                Weekly Planner
+              </h1>
+              <MonthCalendarTrigger
+                weekStart={weekStart}
+                label={formatWeekRange(weekStart)}
+                onSelectWeek={(targetWeek) => {
+                  void planner.goToWeek(targetWeek)
+                }}
+              />
+              </div>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={goPrev}
+                className="rounded-lg p-2 text-muted hover:bg-white hover:shadow-sm"
+                aria-label="Previous week"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              {!isCurrentWeek && (
+                <button
+                  type="button"
+                  onClick={goToday}
+                  className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-[#007AFF] hover:bg-white"
+                >
+                  Today
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={goNext}
+                className="rounded-lg p-2 text-muted hover:bg-white hover:shadow-sm"
+                aria-label="Next week"
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
+          </header>
 
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragStart={handleDragStart}
-              onDragEnd={handleDragEnd}
+          <div className="mb-4">
+            <PageSearch
+              placeholder="Search blocks, tasks, events…"
+              suggestions={searchSuggestions}
+              onSelect={(s) => {
+                const dayKey = s.id.split(':')[1] as DayKey | undefined
+                if (dayKey) setFocusedDayKey(dayKey)
+              }}
+            />
+          </div>
+
+          <OverdueEventsSection
+            items={items}
+            onSelectDate={(dateKey) => {
+              const d = parseDateKey(dateKey)
+              void planner.goToWeek(getWeekStartDate(d)).then(() => {
+                setFocusedDayKey(getDayKeyFromDate(d))
+              })
+            }}
+          />
+
+          {compass && onOpenCompassAsk && (
+            <CompassDueSection
+              compass={compass}
+              onOpenCompassAsk={onOpenCompassAsk}
+            />
+          )}
+
+          <div className="relative min-h-[320px]">
+            <div
+              className={`transition-all duration-200 ${
+                loadingWeek ? 'pointer-events-none opacity-50 blur-[2px]' : ''
+              }`}
+              aria-busy={loadingWeek}
             >
+              <WeekSummary
+                dayCompletion={planner.dayCompletion}
+                weekCompletionPercent={planner.weekCompletionPercent}
+                weekStart={weekStart}
+                days={template.days.map((d) => ({ key: d.key, dayName: d.dayName }))}
+                compact={isMobileLayout}
+                onDayClick={(dayKey) => setFocusedDayKey(dayKey)}
+              />
+
               {focusedDay ? (
                 <DayFocusView
                   day={focusedDay}
@@ -374,31 +427,46 @@ export function WeekView({
                   ))}
                 </div>
               )}
-
-              <DragOverlay dropAnimation={null}>
-                {activeTaskDrag ? (
-                  <div className="rounded-lg bg-white px-3 py-2 text-[13px] shadow-lg ring-1 ring-[#007AFF]/30">
-                    {activeTaskDrag.label}
-                  </div>
-                ) : null}
-              </DragOverlay>
-            </DndContext>
-          </div>
-
-          {loadingWeek && (
-            <div
-              className="absolute inset-0 flex items-center justify-center"
-              aria-live="polite"
-              aria-label="주간 데이터 불러오는 중"
-            >
-              <div className="flex items-center gap-2 rounded-full bg-white/95 px-4 py-2 shadow-md ring-1 ring-black/5 backdrop-blur-sm">
-                <Loader2 size={16} className="animate-spin text-[#007AFF]" aria-hidden />
-                <span className="text-[12px] font-medium text-[#636366]">불러오는 중…</span>
-              </div>
             </div>
-          )}
+
+            {loadingWeek && (
+              <div
+                className="absolute inset-0 flex items-center justify-center"
+                aria-live="polite"
+                aria-label="주간 데이터 불러오는 중"
+              >
+                <div className="flex items-center gap-2 rounded-full bg-white/95 px-4 py-2 shadow-md ring-1 ring-black/5 backdrop-blur-sm">
+                  <Loader2 size={16} className="animate-spin text-[#007AFF]" aria-hidden />
+                  <span className="text-[12px] font-medium text-[#636366]">불러오는 중…</span>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+
+      <DragOverlay dropAnimation={null}>
+        {activeTaskDrag ? (
+          <div className="rounded-lg bg-white px-3 py-2 text-[13px] shadow-lg ring-1 ring-[#007AFF]/30">
+            {activeTaskDrag.label}
+          </div>
+        ) : activeCommitmentDrag ? (
+          <div
+            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[12px] font-medium shadow-lg"
+            style={{
+              borderColor: `${activeCommitmentDrag.color}55`,
+              backgroundColor: `${activeCommitmentDrag.color}18`,
+              color: activeCommitmentDrag.color,
+            }}
+          >
+            <span
+              className="h-2 w-2 rounded-full"
+              style={{ backgroundColor: activeCommitmentDrag.color }}
+            />
+            {activeCommitmentDrag.title}
+          </div>
+        ) : null}
+      </DragOverlay>
+    </DndContext>
   )
 }
