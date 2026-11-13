@@ -37,7 +37,6 @@ import {
   fetchTemplate,
   fetchWeeklyLog,
   importAllFromLocal,
-  seedDefaultTemplate,
   syncItemsStore,
   syncLinkedApps,
   upsertSidebarNote,
@@ -535,11 +534,32 @@ export function PlannerDataProvider({
           fetchSidebarNote(userId).catch(() => null),
         ])
         if (cancelled) return
-        let finalTemplate = tmpl ?? loadTemplateLocal(userId)
+        // Prefer cloud template. Do not fall back to a local copy that still
+        // has deleted day blocks — that was rehydrating Morning Routine etc.
+        let finalTemplate = tmpl
         if (!finalTemplate) {
-          finalTemplate = await seedDefaultTemplate(userId)
+          const local = loadTemplateLocal(userId)
+          const localEmpty =
+            local && local.days.every((d) => (d.blocks?.length ?? 0) === 0)
+          finalTemplate = localEmpty ? local : null
         }
-        if (finalTemplate) saveTemplateLocal(userId, finalTemplate)
+        if (!finalTemplate) {
+          // Seed day meta only (no seed blocks) so Weekly stays commitment-first.
+          const emptyDays = structuredClone(SEED_TEMPLATE)
+          emptyDays.days = emptyDays.days.map((d) => ({ ...d, blocks: [] }))
+          await syncTemplate(userId, emptyDays)
+          finalTemplate = emptyDays
+        }
+        if (finalTemplate) {
+          // Strip any stale blocks if cloud already cleared them.
+          if (tmpl && tmpl.days.every((d) => (d.blocks?.length ?? 0) === 0)) {
+            finalTemplate = {
+              ...tmpl,
+              days: tmpl.days.map((d) => ({ ...d, blocks: [] })),
+            }
+          }
+          saveTemplateLocal(userId, finalTemplate)
+        }
         setTemplate(finalTemplate)
         putWeekCache(log)
         setWeeklyLog(log)

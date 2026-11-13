@@ -1,15 +1,9 @@
-import { useMemo, useState } from 'react'
 import { useDroppable } from '@dnd-kit/core'
-import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
-import type { Block, DayTemplate } from '../types/planner'
+import type { DayTemplate } from '../types/planner'
 import type { PlannerActions } from '../hooks/usePlanner'
-import { blockDragId, dayCommitmentDropId } from '../lib/taskDnd'
+import { dayCommitmentDropId } from '../lib/taskDnd'
 import { formatShortDateForDay, isToday } from '../lib/weekUtils'
-import { BlockCard, SortableBlockCard } from './BlockCard'
-import { BlockEditModal } from './BlockEditModal'
 import { DayItemsSection } from './DayItemsSection'
-import { TaskCheckbox } from './TaskCheckbox'
 import { CommitmentPlacementCard } from './CommitmentPlacementCard'
 import { useWeekCommitments } from '../context/WeekCommitmentContext'
 import type { ItemsActions } from '../hooks/useItems'
@@ -28,40 +22,7 @@ const DAY_TYPE_COLORS: Record<string, string> = {
   wfh: '#5BAFA8',
 }
 
-function CollapsibleSection({
-  label,
-  count,
-  expanded,
-  onToggle,
-  children,
-}: {
-  label: string
-  count: number
-  expanded: boolean
-  onToggle: () => void
-  children: React.ReactNode
-}) {
-  if (count === 0) return null
-
-  return (
-    <div className="mt-1 border-t border-hairline pt-2">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex w-full items-center gap-1 rounded-lg px-1 py-1.5 text-left text-[11px] font-medium text-muted transition-colors hover:bg-[#F2F2F7] hover:text-[#48484A]"
-      >
-        {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        {label} ({count})
-      </button>
-      {expanded && <div className="mt-1 space-y-2">{children}</div>}
-    </div>
-  )
-}
-
-export function DayColumn({ day, weekStart, planner, items, onFocusDay }: DayColumnProps) {
-  const [editingBlockId, setEditingBlockId] = useState<string | null>(null)
-  const [showCompleted, setShowCompleted] = useState(false)
-  const [showHidden, setShowHidden] = useState(false)
+export function DayColumn({ day, weekStart, planner: _planner, items, onFocusDay }: DayColumnProps) {
   const today = isToday(day.key, weekStart)
   const commitments = useWeekCommitments()
   const dayPlacements = commitments.getPlacementsForDay(day.key)
@@ -70,73 +31,6 @@ export function DayColumn({ day, weekStart, planner, items, onFocusDay }: DayCol
     id: dayCommitmentDropId(day.key),
     data: { type: 'day-commitment-drop', dayKey: day.key },
   })
-
-  const sortedBlocks = useMemo(
-    () => [...day.blocks].sort((a, b) => a.order - b.order),
-    [day.blocks],
-  )
-
-  const { activeBlocks, completedBlocks, hiddenEntries } = useMemo(() => {
-    const active: Block[] = []
-    const completed: Block[] = []
-    const hidden: { block: Block; taskId: string; kind: 'recurring' | 'one-off'; label: string }[] =
-      []
-
-    for (const block of sortedBlocks) {
-      if (planner.isBlockCompleteForDay(day.key, block)) {
-        completed.push(block)
-      } else {
-        active.push(block)
-      }
-
-      for (const task of planner.getHiddenBlockTasks(day.key, block)) {
-        hidden.push({
-          block,
-          taskId: task.id,
-          kind: task.kind,
-          label: task.label,
-        })
-      }
-    }
-
-    return { activeBlocks: active, completedBlocks: completed, hiddenEntries: hidden }
-  }, [sortedBlocks, day.key, planner])
-
-  const activeBlockSortableIds = activeBlocks.map((b) => blockDragId(day.key, b.id))
-  const editingBlock = sortedBlocks.find((b) => b.id === editingBlockId)
-
-  const taskHandlersForBlock = (blockId: string) => ({
-    onRenameTask: (taskId: string, kind: 'recurring' | 'one-off', label: string) => {
-      if (kind === 'one-off') {
-        planner.renameOneOffTask(day.key, blockId, taskId, label)
-      } else {
-        planner.renameRecurringTask(day.key, blockId, taskId, label)
-      }
-    },
-    onDeleteTask: (taskId: string, kind: 'recurring' | 'one-off') => {
-      if (kind === 'one-off') {
-        planner.deleteOneOffTask(day.key, blockId, taskId)
-      } else {
-        planner.deleteRecurringTask(day.key, blockId, taskId, 'template')
-      }
-    },
-  })
-
-  const renderBlockCard = (block: Block) => (
-    <BlockCard
-      key={block.id}
-      block={block}
-      dayKey={day.key}
-      blockLog={planner.getBlockLog(day.key, block.id)}
-      tasks={planner.getBlockTasks(day.key, block)}
-      onEdit={() => setEditingBlockId(block.id)}
-      onToggleTask={(taskId, kind) => planner.toggleTask(day.key, block.id, taskId, kind)}
-      onHideTask={(taskId, kind) => planner.toggleHideTask(day.key, block.id, taskId, kind)}
-      onAddTask={(label, recurrence) => planner.addTask(day.key, block.id, label, recurrence)}
-      onFlexibleNoteChange={(note) => planner.setFlexibleNote(day.key, block.id, note)}
-      {...taskHandlersForBlock(block.id)}
-    />
-  )
 
   return (
     <div
@@ -148,10 +42,7 @@ export function DayColumn({ day, weekStart, planner, items, onFocusDay }: DayCol
       } ${isCommitmentOver ? 'ring-2 ring-[#34C759]/45' : ''}`}
     >
       {today && (
-        <div
-          className="absolute inset-y-0 left-0 w-1 bg-[#007AFF]"
-          aria-hidden
-        />
+        <div className="absolute inset-y-0 left-0 w-1 bg-[#007AFF]" aria-hidden />
       )}
       <header
         className={`border-b px-3 py-3 ${today ? 'border-[#007AFF]/25 bg-[#007AFF]/[0.08]' : 'border-hairline'} ${onFocusDay ? 'cursor-pointer transition-colors hover:bg-[#007AFF]/5' : ''}`}
@@ -226,126 +117,35 @@ export function DayColumn({ day, weekStart, planner, items, onFocusDay }: DayCol
       />
 
       <div className="flex flex-1 flex-col gap-2 p-2">
-        {dayPlacements.map((placement) => {
-          const commitment = commitments.getCommitment(placement.commitmentId)
-          if (!commitment) return null
-          return (
-            <CommitmentPlacementCard
-              key={placement.id}
-              placement={placement}
-              commitment={commitment}
-              onToggleTask={(taskId) =>
-                commitments.togglePlacementTask(placement.id, taskId)
-              }
-              onAddTask={(label) => commitments.addPlacementTask(placement.id, label)}
-              onDeleteTask={(taskId) =>
-                commitments.deletePlacementTask(placement.id, taskId)
-              }
-              onRenameTask={(taskId, label) =>
-                commitments.renamePlacementTask(placement.id, taskId, label)
-              }
-              onRemove={() => commitments.removePlacement(placement.id)}
-            />
-          )
-        })}
-
-        <SortableContext items={activeBlockSortableIds} strategy={verticalListSortingStrategy}>
-          {activeBlocks.map((block) => (
-            <SortableBlockCard
-              key={block.id}
-              sortableId={blockDragId(day.key, block.id)}
-              block={block}
-              dayKey={day.key}
-              blockLog={planner.getBlockLog(day.key, block.id)}
-              tasks={planner.getBlockTasks(day.key, block)}
-              onEdit={() => setEditingBlockId(block.id)}
-              onToggleTask={(taskId, kind) =>
-                planner.toggleTask(day.key, block.id, taskId, kind)
-              }
-              onHideTask={(taskId, kind) =>
-                planner.toggleHideTask(day.key, block.id, taskId, kind)
-              }
-              onAddTask={(label, recurrence) =>
-                planner.addTask(day.key, block.id, label, recurrence)
-              }
-              onFlexibleNoteChange={(note) =>
-                planner.setFlexibleNote(day.key, block.id, note)
-              }
-              {...taskHandlersForBlock(block.id)}
-            />
-          ))}
-        </SortableContext>
-
-        <CollapsibleSection
-          label="완료됨"
-          count={completedBlocks.length}
-          expanded={showCompleted}
-          onToggle={() => setShowCompleted((v) => !v)}
-        >
-          {completedBlocks.map((block) => renderBlockCard(block))}
-        </CollapsibleSection>
-
-        <CollapsibleSection
-          label="숨김"
-          count={hiddenEntries.length}
-          expanded={showHidden}
-          onToggle={() => setShowHidden((v) => !v)}
-        >
-          {hiddenEntries.map(({ block, taskId, kind, label }) => (
-            <div
-              key={`${block.id}-${taskId}`}
-              className="rounded-lg bg-[#F2F2F7]/80 px-2 py-1"
-            >
-              <p className="mb-0.5 text-[10px] font-medium text-muted">{block.title}</p>
-              <TaskCheckbox
-                label={label}
-                checked={false}
-                oneOff={kind === 'one-off'}
-                hidden
-                onChange={() => {}}
-                onHide={() => planner.toggleHideTask(day.key, block.id, taskId, kind)}
+        {dayPlacements.length === 0 ? (
+          <p className="px-1 py-3 text-center text-[11px] text-muted">
+            사이드바에서 블록을 드래그하세요
+          </p>
+        ) : (
+          dayPlacements.map((placement) => {
+            const commitment = commitments.getCommitment(placement.commitmentId)
+            if (!commitment) return null
+            return (
+              <CommitmentPlacementCard
+                key={placement.id}
+                placement={placement}
+                commitment={commitment}
+                onToggleTask={(taskId) =>
+                  commitments.togglePlacementTask(placement.id, taskId)
+                }
+                onAddTask={(label) => commitments.addPlacementTask(placement.id, label)}
+                onDeleteTask={(taskId) =>
+                  commitments.deletePlacementTask(placement.id, taskId)
+                }
+                onRenameTask={(taskId, label) =>
+                  commitments.renamePlacementTask(placement.id, taskId, label)
+                }
+                onRemove={() => commitments.removePlacement(placement.id)}
               />
-            </div>
-          ))}
-        </CollapsibleSection>
-
-        <button
-          type="button"
-          onClick={() => {
-            const id = planner.addBlock(day.key)
-            setEditingBlockId(id)
-          }}
-          className="flex items-center justify-center gap-1 rounded-xl border border-dashed border-hairline py-2 text-[12px] text-muted transition-colors hover:border-[#007AFF]/40 hover:bg-[#007AFF]/5 hover:text-[#007AFF]"
-        >
-          <Plus size={14} />
-          Add Block
-        </button>
+            )
+          })
+        )}
       </div>
-
-      {editingBlock && (
-        <BlockEditModal
-          block={editingBlock}
-          oneOffTasks={planner.getOneOffTasks(day.key, editingBlock.id)}
-          onSave={(updated) => planner.updateBlock(day.key, updated)}
-          onDelete={() => {
-            planner.deleteBlock(day.key, editingBlock.id)
-            setEditingBlockId(null)
-          }}
-          onClose={() => setEditingBlockId(null)}
-          onAddTask={(label, recurrence) =>
-            planner.addTask(day.key, editingBlock.id, label, recurrence)
-          }
-          onDeleteRecurringTask={(taskId, scope) =>
-            planner.deleteRecurringTask(day.key, editingBlock.id, taskId, scope)
-          }
-          onDeleteOneOffTask={(taskId) =>
-            planner.deleteOneOffTask(day.key, editingBlock.id, taskId)
-          }
-          onRenameOneOffTask={(taskId, label) =>
-            planner.renameOneOffTask(day.key, editingBlock.id, taskId, label)
-          }
-        />
-      )}
     </div>
   )
 }
