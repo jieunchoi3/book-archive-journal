@@ -232,6 +232,9 @@ function CommitmentEditor({
                 value={draftTask}
                 onChange={(e) => setDraftTask(e.target.value)}
                 onKeyDown={(e) => {
+                  // Korean/Japanese IME: Enter confirms composition first; ignore that keydown
+                  // so we don't submit twice (e.g. "발레" then leftover "레").
+                  if (e.nativeEvent.isComposing || e.keyCode === 229) return
                   if (e.key === 'Enter') {
                     e.preventDefault()
                     addDefaultTask(true)
@@ -287,6 +290,7 @@ function AddCommitmentForm({
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         onKeyDown={(e) => {
+          if (e.nativeEvent.isComposing || e.keyCode === 229) return
           if (e.key === 'Enter') {
             e.preventDefault()
             submit()

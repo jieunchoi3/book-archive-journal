@@ -29,11 +29,14 @@ import {
   getDayKeyFromDate,
   getWeekStartDate,
   isToday,
+  orderedDayKeys,
   parseDateKey,
   shiftWeekStart,
 } from '../lib/weekUtils'
 import { useMobileLayout } from '../hooks/useMobileLayout'
 import { usePlannerSidebarCollapsed } from '../hooks/usePlannerSidebarCollapsed'
+import { useWeekStartsOn } from '../hooks/useWeekStartsOn'
+import { DAY_KEYS } from '../types/planner'
 import { PlannerSidebar } from './PlannerSidebar'
 import { DayColumn } from './DayColumn'
 import { DayFocusView } from './DayFocusView'
@@ -67,7 +70,14 @@ export function WeekView({
   const isMobileLayout = useMobileLayout()
   const { collapsed: sidebarCollapsed, setCollapsed: setSidebarCollapsed } =
     usePlannerSidebarCollapsed()
+  const { weekStartsOn, setWeekStartsOn, labels: weekStartLabels } = useWeekStartsOn()
   const weekCommitments = useWeekCommitments()
+  const orderedDays = useMemo(() => {
+    const byKey = new Map(template.days.map((d) => [d.key, d]))
+    return orderedDayKeys(weekStartsOn)
+      .map((key) => byKey.get(key))
+      .filter((d): d is NonNullable<typeof d> => Boolean(d))
+  }, [template.days, weekStartsOn])
   const [activeTaskDrag, setActiveTaskDrag] = useState<TaskDragData | null>(null)
   const [activeCommitmentDrag, setActiveCommitmentDrag] = useState<{
     title: string
@@ -303,70 +313,94 @@ export function WeekView({
         )}
 
         <div className="min-w-0 flex-1">
-          <header className="mb-4 flex flex-wrap items-center gap-3 sm:mb-5">
-            <div className="flex min-w-0 shrink-0 items-start gap-2">
+          <header className="mb-4 space-y-2 sm:mb-5">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               {sidebarCollapsed && (
                 <button
                   type="button"
                   onClick={() => setSidebarCollapsed(false)}
-                  className="mt-0.5 hidden shrink-0 rounded-lg p-2 text-muted transition-colors hover:bg-white hover:text-[#1C1C1E] hover:shadow-sm lg:inline-flex"
+                  className="hidden shrink-0 rounded-lg p-2 text-muted transition-colors hover:bg-white hover:text-[#1C1C1E] hover:shadow-sm lg:inline-flex"
                   aria-label="Show sidebar"
                   title="Show sidebar"
                 >
                   <PanelLeftOpen size={18} />
                 </button>
               )}
-              <div className="min-w-0">
-                <h1 className="text-[20px] font-semibold tracking-tight text-[#1C1C1E] sm:text-[22px]">
-                  Weekly Planner
-                </h1>
-                <MonthCalendarTrigger
-                  weekStart={weekStart}
-                  label={formatWeekRange(weekStart)}
-                  onSelectWeek={(targetWeek) => {
-                    void planner.goToWeek(targetWeek)
+              <h1 className="shrink-0 text-[20px] font-semibold leading-none tracking-tight text-[#1C1C1E] sm:text-[22px]">
+                Weekly Planner
+              </h1>
+
+              <div className="min-w-[10rem] flex-1 self-center">
+                <PageSearch
+                  placeholder="Search blocks, tasks, events…"
+                  suggestions={searchSuggestions}
+                  onSelect={(s) => {
+                    const dayKey = s.id.split(':')[1] as DayKey | undefined
+                    if (dayKey) setFocusedDayKey(dayKey)
                   }}
                 />
               </div>
-            </div>
 
-            <div className="min-w-[12rem] flex-1">
-              <PageSearch
-                placeholder="Search blocks, tasks, events…"
-                suggestions={searchSuggestions}
-                onSelect={(s) => {
-                  const dayKey = s.id.split(':')[1] as DayKey | undefined
-                  if (dayKey) setFocusedDayKey(dayKey)
-                }}
-              />
-            </div>
-
-            <div className="flex shrink-0 items-center gap-1">
-              <button
-                type="button"
-                onClick={goPrev}
-                className="rounded-lg p-2 text-muted hover:bg-white hover:shadow-sm"
-                aria-label="Previous week"
-              >
-                <ChevronLeft size={18} />
-              </button>
-              {!isCurrentWeek && (
+              <div className="flex shrink-0 items-center gap-1">
                 <button
                   type="button"
-                  onClick={goToday}
-                  className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-[#007AFF] hover:bg-white"
+                  onClick={goPrev}
+                  className="rounded-lg p-2 text-muted hover:bg-white hover:shadow-sm"
+                  aria-label="Previous week"
                 >
-                  Today
+                  <ChevronLeft size={18} />
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={goNext}
-                className="rounded-lg p-2 text-muted hover:bg-white hover:shadow-sm"
-                aria-label="Next week"
+                {!isCurrentWeek && (
+                  <button
+                    type="button"
+                    onClick={goToday}
+                    className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-[#007AFF] hover:bg-white"
+                  >
+                    Today
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={goNext}
+                  className="rounded-lg p-2 text-muted hover:bg-white hover:shadow-sm"
+                  aria-label="Next week"
+                >
+                  <ChevronRight size={18} />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <MonthCalendarTrigger
+                weekStart={weekStart}
+                label={formatWeekRange(weekStart)}
+                onSelectWeek={(targetWeek) => {
+                  void planner.goToWeek(targetWeek)
+                }}
+              />
+              <div
+                className="flex flex-wrap items-center gap-1"
+                role="group"
+                aria-label="주 시작 요일"
               >
-                <ChevronRight size={18} />
-              </button>
+                <span className="mr-0.5 text-[11px] text-muted">주 시작</span>
+                {DAY_KEYS.map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setWeekStartsOn(key)}
+                    className={`rounded-md px-1.5 py-0.5 text-[11px] font-medium transition-colors ${
+                      weekStartsOn === key
+                        ? 'bg-[#007AFF] text-white'
+                        : 'text-muted hover:bg-[#F2F2F7] hover:text-[#1C1C1E]'
+                    }`}
+                    aria-pressed={weekStartsOn === key}
+                    title={`${weekStartLabels[key]}요일부터 한 주`}
+                  >
+                    {weekStartLabels[key]}
+                  </button>
+                ))}
+              </div>
             </div>
           </header>
 
@@ -398,7 +432,7 @@ export function WeekView({
                 dayCompletion={planner.dayCompletion}
                 weekCompletionPercent={planner.weekCompletionPercent}
                 weekStart={weekStart}
-                days={template.days.map((d) => ({ key: d.key, dayName: d.dayName }))}
+                days={orderedDays.map((d) => ({ key: d.key, dayName: d.dayName }))}
                 compact={isMobileLayout}
                 onDayClick={(dayKey) => setFocusedDayKey(dayKey)}
               />
@@ -407,7 +441,7 @@ export function WeekView({
                 <DayFocusView
                   day={focusedDay}
                   weekStart={weekStart}
-                  allDays={template.days}
+                  allDays={orderedDays}
                   planner={planner}
                   items={items}
                   showWeekOverviewBack={!isMobileLayout}
@@ -416,9 +450,9 @@ export function WeekView({
                 />
               ) : (
                 <div className="hidden gap-2 overflow-x-auto pb-4 lg:flex">
-                  {template.days.map((day) => (
+                  {orderedDays.map((day) => (
                     <DayColumn
-                      key={`${weekStart}-${day.key}`}
+                      key={`${weekStart}-${weekStartsOn}-${day.key}`}
                       day={day}
                       weekStart={weekStart}
                       planner={planner}

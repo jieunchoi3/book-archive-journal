@@ -74,6 +74,10 @@ import {
   isBlockCompleteForDay as isBlockComplete,
 } from '../lib/blockTasks'
 import { generateId, getCurrentWeekStart, getDateKeyForDay } from '../lib/weekUtils'
+import {
+  loadWeekStartsOn,
+  setWeekStartsOnRuntime,
+} from '../lib/weekStartPreference'
 import { SEED_TEMPLATE } from '../data/seedTemplate'
 
 function withDefaultEventCategories(
@@ -222,8 +226,13 @@ export function PlannerDataProvider({
   const [showImportBanner, setShowImportBanner] = useState(false)
 
   const [template, setTemplate] = useState<WeekTemplate>(structuredClone(SEED_TEMPLATE))
-  const [weekStart, setWeekStart] = useState(getCurrentWeekStart)
-  const [weeklyLog, setWeeklyLog] = useState<WeeklyLog>(() => emptyWeeklyLog(getCurrentWeekStart()))
+  const [weekStart, setWeekStart] = useState(() => {
+    setWeekStartsOnRuntime(loadWeekStartsOn(userId))
+    return getCurrentWeekStart()
+  })
+  const [weeklyLog, setWeeklyLog] = useState<WeeklyLog>(() =>
+    emptyWeeklyLog(getCurrentWeekStart()),
+  )
   const [itemsStore, setItemsStore] = useState<{ categories: Category[]; tags: Tag[]; items: Item[] }>({
     categories: [],
     tags: [],

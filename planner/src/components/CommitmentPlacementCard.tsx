@@ -130,6 +130,7 @@ export function CommitmentPlacementCard({
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return
               if (e.key === 'Enter') {
                 e.preventDefault()
                 submitAdd()
