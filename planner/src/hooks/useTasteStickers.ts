@@ -279,16 +279,30 @@ export function useTasteStickers(): TasteActions {
 
       setSyncing(true)
       try {
-        const localRow = await loadTasteStoreLocalRow(userId)
-        await publishLocalTasteIfNeeded(userId, local, localRow?.updatedAt)
+        const syncWork = async () => {
+          const localRow = await loadTasteStoreLocalRow(userId)
+          await publishLocalTasteIfNeeded(userId, local, localRow?.updatedAt)
 
-        const preferCloud = await shouldReloadTasteFromCloud(userId)
-        let loaded = preferCloud
-          ? await reloadTasteStoreFromCloud(userId)
-          : await syncTasteStoreWithCloud(userId)
+          const preferCloud = await shouldReloadTasteFromCloud(userId)
+          let loaded = preferCloud
+            ? await reloadTasteStoreFromCloud(userId)
+            : await syncTasteStoreWithCloud(userId)
 
-        const restored = await restoreTasteCategoriesIfNeeded(userId)
-        if (restored) loaded = restored
+          const restored = await restoreTasteCategoriesIfNeeded(userId)
+          if (restored) loaded = restored
+          return loaded
+        }
+
+        // Don't hang the Taste tab forever if cloud/media hydration stalls.
+        const loaded = await Promise.race([
+          syncWork(),
+          new Promise<TasteStore>((_, reject) => {
+            window.setTimeout(
+              () => reject(new Error('Taste cloud sync timed out — showing local data')),
+              20_000,
+            )
+          }),
+        ])
 
         if (cancelled) return
 

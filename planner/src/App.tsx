@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { AuthProvider } from './components/AuthProvider'
 import { useAuth } from './hooks/useAuth'
-import { PlannerDataProvider } from './context/PlannerDataContext'
+import { PlannerDataProvider, usePlannerData } from './context/PlannerDataContext'
+import { WeekCommitmentProvider } from './context/WeekCommitmentContext'
 import { usePlanner } from './hooks/usePlanner'
 import { useItems } from './hooks/useItems'
 import { useExpenses } from './hooks/useExpenses'
@@ -133,12 +134,23 @@ function AppContent() {
   )
 }
 
+function WeekCommitmentBridge({ children }: { children: ReactNode }) {
+  const { user, weekStart } = usePlannerData()
+  return (
+    <WeekCommitmentProvider userId={user.id} weekStart={weekStart}>
+      {children}
+    </WeekCommitmentProvider>
+  )
+}
+
 function PlannerRoot() {
   const { user } = useAuth()
 
   return (
     <PlannerDataProvider user={user} onSignOut={() => {}}>
-      <AppContent />
+      <WeekCommitmentBridge>
+        <AppContent />
+      </WeekCommitmentBridge>
     </PlannerDataProvider>
   )
 }
