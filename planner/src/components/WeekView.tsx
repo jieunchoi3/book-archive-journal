@@ -311,7 +311,7 @@ export function WeekView({
     >
       <div className="flex min-h-screen gap-4 p-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:gap-6 sm:p-6 sm:pb-24">
         {!sidebarCollapsed && (
-          <aside className="hidden shrink-0 lg:block">
+          <aside className="sticky top-4 hidden h-[calc(100dvh-5.5rem-env(safe-area-inset-bottom,0px))] shrink-0 self-start overflow-y-auto overscroll-y-contain lg:block">
             <PlannerSidebar linkedApps={linkedApps} />
           </aside>
         )}
@@ -465,7 +465,11 @@ export function WeekView({
             />
           )}
 
-          <div className="relative min-h-[320px]">
+          {/*
+            After overdue/My Note scroll away, this board sticks in the viewport.
+            Sidebar (above) and this board then scroll independently.
+          */}
+          <div className="relative min-h-[320px] lg:sticky lg:top-4 lg:z-10 lg:h-[calc(100dvh-5.5rem-env(safe-area-inset-bottom,0px))] lg:overflow-y-auto lg:overscroll-y-contain lg:rounded-xl lg:bg-[#fafafa]">
             <div
               className={`transition-all duration-200 ${
                 loadingWeek ? 'pointer-events-none opacity-50 blur-[2px]' : ''
