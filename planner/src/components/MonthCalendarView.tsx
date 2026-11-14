@@ -326,7 +326,7 @@ export function MonthCalendarView({
     <DndContext sensors={sensors}>
     <div className="flex min-h-screen gap-4 p-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:gap-6 sm:p-6 sm:pb-24">
       {!sidebarCollapsed && (
-        <aside className="sticky top-4 hidden h-[calc(100dvh-5.5rem-env(safe-area-inset-bottom,0px))] shrink-0 self-start overflow-y-auto overscroll-y-contain lg:block">
+        <aside className="sticky top-4 hidden max-h-[calc(100dvh-5.5rem-env(safe-area-inset-bottom,0px))] shrink-0 self-start overflow-y-auto lg:block">
           <PlannerSidebar linkedApps={linkedApps} />
         </aside>
       )}

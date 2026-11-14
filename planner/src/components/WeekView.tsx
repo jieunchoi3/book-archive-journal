@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -11,7 +11,7 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core'
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
-import { ChevronLeft, ChevronRight, Loader2, PanelLeftOpen } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronUp, Loader2, PanelLeftOpen } from 'lucide-react'
 import type { DayKey, WeekTemplate } from '../types/planner'
 import type { PlannerActions } from '../hooks/usePlanner'
 import type { ItemsActions } from '../hooks/useItems'
@@ -92,6 +92,8 @@ export function WeekView({
       ? getDayKeyFromDate(new Date())
       : null,
   )
+  const [showScrollTop, setShowScrollTop] = useState(false)
+  const topAnchorRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!isMobileLayout) return
@@ -101,6 +103,13 @@ export function WeekView({
       return isToday(todayKey, weekStart) ? todayKey : (template.days[0]?.key ?? null)
     })
   }, [isMobileLayout, weekStart, template.days])
+
+  useEffect(() => {
+    const onScroll = () => setShowScrollTop(window.scrollY > 220)
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
 
   const focusedDay = focusedDayKey
     ? template.days.find((d) => d.key === focusedDayKey)
@@ -311,12 +320,13 @@ export function WeekView({
     >
       <div className="flex min-h-screen gap-4 p-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] sm:gap-6 sm:p-6 sm:pb-24">
         {!sidebarCollapsed && (
-          <aside className="sticky top-4 hidden h-[calc(100dvh-5.5rem-env(safe-area-inset-bottom,0px))] shrink-0 self-start overflow-y-auto overscroll-y-contain lg:block">
+          <aside className="sticky top-4 hidden max-h-[calc(100dvh-5.5rem-env(safe-area-inset-bottom,0px))] shrink-0 self-start overflow-y-auto lg:block">
             <PlannerSidebar linkedApps={linkedApps} />
           </aside>
         )}
 
         <div className="min-w-0 flex-1">
+          <div ref={topAnchorRef} />
           <header className="mb-4 space-y-2 sm:mb-5">
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               {sidebarCollapsed && (
@@ -466,10 +476,10 @@ export function WeekView({
           )}
 
           {/*
-            After overdue/My Note scroll away, this board sticks in the viewport.
-            Sidebar (above) and this board then scroll independently.
+            Sidebar stays sticky + independently scrollable for DnD.
+            Week board uses normal page scroll so scrolling back up to notes stays easy.
           */}
-          <div className="relative min-h-[320px] lg:sticky lg:top-4 lg:z-10 lg:h-[calc(100dvh-5.5rem-env(safe-area-inset-bottom,0px))] lg:overflow-y-auto lg:overscroll-y-contain lg:rounded-xl lg:bg-[#fafafa]">
+          <div className="relative min-h-[320px]">
             <div
               className={`transition-all duration-200 ${
                 loadingWeek ? 'pointer-events-none opacity-50 blur-[2px]' : ''
@@ -527,6 +537,22 @@ export function WeekView({
           </div>
         </div>
       </div>
+
+      {showScrollTop && (
+        <button
+          type="button"
+          onClick={() => {
+            topAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            window.scrollTo({ top: 0, behavior: 'smooth' })
+          }}
+          className="fixed bottom-[calc(5.25rem+env(safe-area-inset-bottom,0px))] right-4 z-40 inline-flex items-center gap-1 rounded-full bg-[#1C1C1E] px-3 py-2 text-[12px] font-medium text-white shadow-lg hover:bg-black sm:right-6"
+          aria-label="맨 위로"
+          title="맨 위로"
+        >
+          <ChevronUp size={14} aria-hidden />
+          위로
+        </button>
+      )}
 
       <DragOverlay dropAnimation={null}>
         {activeTaskDrag ? (
