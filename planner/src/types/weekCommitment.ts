@@ -43,15 +43,37 @@ export interface WeekCommitmentStore {
   placements: WeekCommitmentPlacement[]
 }
 
+/** Same rich set as event categories so Weekly blocks can match Monthly colours. */
 export const COMMITMENT_COLORS = [
-  '#007AFF',
-  '#AF52DE',
+  '#FF3B30',
   '#FF2D55',
+  '#FF453A',
+  '#FF6B35',
   '#FF9500',
+  '#FFAB40',
+  '#FFCC00',
+  '#FFD60A',
+  '#FFE620',
   '#34C759',
-  '#5856D6',
+  '#30D158',
+  '#4CD964',
+  '#00C7BE',
+  '#5AC8FA',
+  '#32ADE6',
   '#64D2FF',
+  '#007AFF',
+  '#0A84FF',
+  '#5856D6',
+  '#5E5CE6',
+  '#7B61FF',
+  '#AF52DE',
+  '#BF5AF2',
+  '#FF2D92',
+  '#FF6482',
+  '#FF375F',
   '#8E8E93',
+  '#636366',
+  '#48484A',
 ] as const
 
 export function emptyCommitmentStore(): WeekCommitmentStore {

@@ -177,13 +177,13 @@ function CommitmentEditor({
             주당 횟수를 올리면 같은 카테고리 색의 블록이 더 생깁니다. 예: AI 공부 × 6
           </p>
 
-          <div className="flex flex-wrap gap-1">
+          <div className="flex max-h-[72px] flex-wrap gap-1 overflow-y-auto pr-0.5">
             {COMMITMENT_COLORS.map((color) => (
               <button
                 key={color}
                 type="button"
                 onClick={() => onUpdate({ color })}
-                className={`h-5 w-5 rounded-full border-2 ${
+                className={`h-5 w-5 shrink-0 rounded-full border-2 ${
                   commitment.color === color ? 'border-[#1C1C1E]' : 'border-transparent'
                 }`}
                 style={{ backgroundColor: color }}
@@ -324,13 +324,13 @@ function AddCommitmentForm({
           </button>
         </div>
       </label>
-      <div className="flex flex-wrap gap-1">
+      <div className="flex max-h-[72px] flex-wrap gap-1 overflow-y-auto pr-0.5">
         {COMMITMENT_COLORS.map((c) => (
           <button
             key={c}
             type="button"
             onClick={() => setColor(c)}
-            className={`h-5 w-5 rounded-full border-2 ${
+            className={`h-5 w-5 shrink-0 rounded-full border-2 ${
               color === c ? 'border-[#1C1C1E]' : 'border-transparent'
             }`}
             style={{ backgroundColor: c }}
