@@ -65,7 +65,7 @@ function MyNoteDrawer() {
           value={draft}
           onChange={(e) => handleChange(e.target.value)}
           placeholder="이번 달 목표, 메모, 생각…"
-          className="min-h-[120px] w-full resize-y rounded-xl border border-[#F0E6C8] bg-[#FFFCF0] px-3 py-2.5 text-[12px] leading-relaxed text-[#3C3C43] shadow-sm placeholder:text-[#AEAEB2] focus:border-[#E8D9A8] focus:outline-none focus:ring-2 focus:ring-[#F5E6B8]/80"
+          className="max-h-[28vh] min-h-[120px] w-full resize-y overflow-y-auto rounded-xl border border-[#F0E6C8] bg-[#FFFCF0] px-3 py-2.5 text-[12px] leading-relaxed text-[#3C3C43] shadow-sm placeholder:text-[#AEAEB2] focus:border-[#E8D9A8] focus:outline-none focus:ring-2 focus:ring-[#F5E6B8]/80"
           spellCheck
         />
       </div>
@@ -78,7 +78,7 @@ export function OverdueEventsSection({ items, onSelectDate }: OverdueEventsSecti
   const [overdueExpanded, setOverdueExpanded] = useState(false)
 
   return (
-    <div className="sticky top-0 z-20 mb-4 space-y-2">
+    <div className="mb-4 space-y-2">
       {overdue.length > 0 && (
         <section
           className="overflow-hidden rounded-xl border border-[#FF3B30]/22 bg-[#FFF5F5]/95 shadow-sm backdrop-blur-md"
