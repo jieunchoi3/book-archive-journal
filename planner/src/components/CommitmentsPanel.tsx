@@ -370,6 +370,8 @@ export function CommitmentsPanel({ renderQuickLaunch }: CommitmentsPanelProps) {
     getCommitment,
   } = useWeekCommitments()
   const [adding, setAdding] = useState(false)
+  // Folded by default — day-to-day use is mostly assigning blocks.
+  const [categoriesOpen, setCategoriesOpen] = useState(false)
 
   const poolByCommitment = useMemo(() => {
     const groups: { commitment: WeekCommitment; slots: number[] }[] = []
@@ -390,10 +392,28 @@ export function CommitmentsPanel({ renderQuickLaunch }: CommitmentsPanelProps) {
 
   return (
     <aside className="w-56 shrink-0">
-      <div className="mb-3 flex items-center justify-between px-1">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted">
-          Categories
-        </h2>
+      <div className="mb-2 flex items-center gap-1 px-1">
+        <button
+          type="button"
+          onClick={() => setCategoriesOpen((v) => !v)}
+          className="flex min-w-0 flex-1 items-center gap-1 rounded-lg py-1 text-left hover:bg-[#F2F2F7]/80"
+          aria-expanded={categoriesOpen}
+          aria-controls="commitment-categories"
+        >
+          {categoriesOpen ? (
+            <ChevronDown size={14} className="shrink-0 text-muted" aria-hidden />
+          ) : (
+            <ChevronRight size={14} className="shrink-0 text-muted" aria-hidden />
+          )}
+          <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+            Categories
+          </h2>
+          {commitments.length > 0 && (
+            <span className="rounded-full bg-[#F2F2F7] px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted">
+              {commitments.length}
+            </span>
+          )}
+        </button>
         <button
           type="button"
           onClick={() => setCollapsed(true)}
@@ -404,42 +424,47 @@ export function CommitmentsPanel({ renderQuickLaunch }: CommitmentsPanelProps) {
           <PanelLeftClose size={16} />
         </button>
       </div>
-      <p className="mb-2 px-1 text-[10px] leading-relaxed text-muted">
-        카테고리 하나 = 같은 색 블록 N개. 주당 횟수를 올리세요.
-      </p>
 
-      <ul className="space-y-2">
-        {commitments.map((c) => (
-          <CommitmentEditor
-            key={c.id}
-            commitment={c}
-            remaining={remainingSlots(c.id)}
-            onUpdate={(updates) => updateCommitment(c.id, updates)}
-            onDelete={() => deleteCommitment(c.id)}
-          />
-        ))}
-      </ul>
+      {categoriesOpen && (
+        <div id="commitment-categories" className="mb-3">
+          <p className="mb-2 px-1 text-[10px] leading-relaxed text-muted">
+            카테고리 하나 = 같은 색 블록 N개. 주당 횟수를 올리세요.
+          </p>
 
-      {adding ? (
-        <AddCommitmentForm
-          onCancel={() => setAdding(false)}
-          onAdd={(title, targetPerWeek, color) => {
-            addCommitment({ title, targetPerWeek, color })
-            setAdding(false)
-          }}
-        />
-      ) : (
-        <button
-          type="button"
-          onClick={() => setAdding(true)}
-          className="mt-2 flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-hairline py-2 text-[12px] text-muted transition-colors hover:border-[#007AFF]/40 hover:bg-[#007AFF]/5 hover:text-[#007AFF]"
-        >
-          <Plus size={14} />
-          Add category
-        </button>
+          <ul className="space-y-2">
+            {commitments.map((c) => (
+              <CommitmentEditor
+                key={c.id}
+                commitment={c}
+                remaining={remainingSlots(c.id)}
+                onUpdate={(updates) => updateCommitment(c.id, updates)}
+                onDelete={() => deleteCommitment(c.id)}
+              />
+            ))}
+          </ul>
+
+          {adding ? (
+            <AddCommitmentForm
+              onCancel={() => setAdding(false)}
+              onAdd={(title, targetPerWeek, color) => {
+                addCommitment({ title, targetPerWeek, color })
+                setAdding(false)
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setAdding(true)}
+              className="mt-2 flex w-full items-center justify-center gap-1 rounded-xl border border-dashed border-hairline py-2 text-[12px] text-muted transition-colors hover:border-[#007AFF]/40 hover:bg-[#007AFF]/5 hover:text-[#007AFF]"
+            >
+              <Plus size={14} />
+              Add category
+            </button>
+          )}
+        </div>
       )}
 
-      <div className="mt-4 border-t border-hairline pt-3">
+      <div className={`${categoriesOpen ? 'mt-1 border-t border-hairline pt-3' : ''}`}>
         <h3 className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-muted">
           Blocks to distribute
         </h3>
