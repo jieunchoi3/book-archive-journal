@@ -84,7 +84,12 @@ import {
   getVisibleBlockTasks,
   isBlockCompleteForDay as isBlockComplete,
 } from '../lib/blockTasks'
-import { generateId, getCurrentWeekStart, getDateKeyForDay } from '../lib/weekUtils'
+import {
+  generateId,
+  getCurrentWeekStart,
+  getDateKeyForDay,
+  shiftWeekStart,
+} from '../lib/weekUtils'
 import { flushWeekCommitments } from '../lib/weekCommitmentFlush'
 import {
   loadWeekStartsOn,
@@ -861,62 +866,58 @@ export function PlannerDataProvider({
       if (newWeekStart === weekStartRef.current) return
 
       const loadId = ++weekLoadGeneration.current
-
-      await flushAllPending()
-
       const leavingWeek = weekStartRef.current
-      putWeekCache({ ...weeklyLogRef.current, weekStart: leavingWeek })
+      const leavingLog: WeeklyLog = {
+        ...weeklyLogRef.current,
+        weekStart: leavingWeek,
+      }
+
+      // Persist the week we're leaving locally first (block logs still target leavingWeek).
+      flushBlockLogWrite()
+      saveWeeklyLogLocal(userId, leavingLog)
+      putWeekCache(leavingLog)
+      // Cloud flush in background — never block week navigation on Supabase.
+      void syncWeeklyLog(userId, leavingLog).catch((e) => logError('syncWeeklyLog leave', e))
+      void flushWeekCommitments().catch((e) => logError('flushWeekCommitments leave', e))
 
       weekStartRef.current = newWeekStart
       setWeekStart(newWeekStart)
+      // Instant UI from memory/disk; cloud revalidate happens after.
+      setLoadingWeek(false)
 
-      const cached = weekCacheRef.current.get(newWeekStart)
-      if (cached) {
-        weeklyLogRef.current = cached
-        setWeeklyLog(cached)
+      const instant =
+        weekCacheRef.current.get(newWeekStart) ??
+        loadWeeklyLogLocal(userId, newWeekStart) ??
+        emptyWeeklyLog(newWeekStart)
+      weeklyLogRef.current = instant
+      setWeeklyLog(instant)
+      putWeekCache(instant)
 
-        void (async () => {
-          try {
-            console.log(`[planner] revalidate week=${newWeekStart}`)
-            const fresh = await loadWeeklyLog(newWeekStart)
-            putWeekCache(fresh)
-            if (weekStartRef.current !== newWeekStart || loadId !== weekLoadGeneration.current) {
-              return
-            }
-            weeklyLogRef.current = fresh
-            setWeeklyLog(fresh)
-          } catch (e) {
-            logError('goToWeek revalidate', e)
+      void (async () => {
+        try {
+          console.log(`[planner] revalidate week=${newWeekStart}`)
+          const fresh = await loadWeeklyLog(newWeekStart)
+          putWeekCache(fresh)
+          if (weekStartRef.current !== newWeekStart || loadId !== weekLoadGeneration.current) {
+            return
           }
-        })()
-        return
-      }
+          weeklyLogRef.current = fresh
+          setWeeklyLog(fresh)
+        } catch (e) {
+          logError('goToWeek revalidate', e)
+        }
+      })()
 
-      setLoadingWeek(true)
-      const placeholder = emptyWeeklyLog(newWeekStart)
-      weeklyLogRef.current = placeholder
-      setWeeklyLog(placeholder)
-
-      try {
-        const log = await loadWeeklyLog(newWeekStart)
-        if (weekStartRef.current !== newWeekStart || loadId !== weekLoadGeneration.current) {
-          return
-        }
-        putWeekCache(log)
-        weeklyLogRef.current = log
-        setWeeklyLog(log)
-      } catch (e) {
-        logError('goToWeek', e)
-        if (weekStartRef.current === newWeekStart) {
-          setWeeklyLog(emptyWeeklyLog(newWeekStart))
-        }
-      } finally {
-        if (loadId === weekLoadGeneration.current) {
-          setLoadingWeek(false)
-        }
+      // Warm adjacent weeks so next/prev feel instant.
+      for (const offset of [-1, 1] as const) {
+        const neighbor = shiftWeekStart(newWeekStart, offset)
+        if (weekCacheRef.current.has(neighbor)) continue
+        void loadWeeklyLog(neighbor)
+          .then((log) => putWeekCache(log))
+          .catch((e) => logError('prefetch week', e))
       }
     },
-    [flushAllPending, loadWeeklyLog, putWeekCache],
+    [userId, flushBlockLogWrite, loadWeeklyLog, putWeekCache],
   )
 
   const getBlockLog = useCallback(
