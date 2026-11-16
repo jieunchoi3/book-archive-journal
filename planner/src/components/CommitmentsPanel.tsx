@@ -484,7 +484,7 @@ export function CommitmentsPanel({ renderQuickLaunch }: CommitmentsPanelProps) {
                     style={{ backgroundColor: commitment.color }}
                   />
                   <span
-                    className="truncate text-[11px] font-semibold"
+                    className="min-w-0 break-words text-[11px] font-semibold leading-snug"
                     style={{ color: commitment.color }}
                   >
                     {commitment.title}

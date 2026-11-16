@@ -76,13 +76,13 @@ export function CommitmentPlacementCard({
           <GripVertical size={14} />
         </button>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-start gap-1.5">
             <span
-              className="h-2 w-2 shrink-0 rounded-full"
+              className="mt-1 h-2 w-2 shrink-0 rounded-full"
               style={{ backgroundColor: commitment.color }}
             />
             <h3
-              className="truncate text-[13px] font-semibold leading-tight"
+              className="min-w-0 break-words text-[13px] font-semibold leading-snug"
               style={{ color: commitment.color }}
             >
               {commitment.title}
