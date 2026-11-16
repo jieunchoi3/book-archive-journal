@@ -82,7 +82,7 @@ export function PageSearch({
 
   return (
     <div ref={rootRef} className="relative z-30 w-full">
-      <div className="flex items-center gap-2 rounded-xl border border-hairline bg-white px-3 shadow-sm focus-within:border-[#007AFF]/40 focus-within:ring-2 focus-within:ring-[#007AFF]/15">
+      <div className="flex h-10 items-center gap-2 rounded-xl border border-hairline bg-white px-3 shadow-sm focus-within:border-[#007AFF]/40 focus-within:ring-2 focus-within:ring-[#007AFF]/15">
         <Search size={16} className={`shrink-0 ${accentClassName}`} aria-hidden />
         <input
           ref={inputRef}
@@ -91,7 +91,7 @@ export function PageSearch({
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => setFocused(true)}
           placeholder={placeholder}
-          className="min-w-0 flex-1 bg-transparent py-2.5 text-[14px] text-[#1C1C1E] outline-none placeholder:text-muted"
+          className="min-w-0 flex-1 bg-transparent py-0 text-[14px] leading-none text-[#1C1C1E] outline-none placeholder:text-muted"
           role="combobox"
           aria-expanded={showDropdown}
           aria-controls={listId}

@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { AuthProvider } from './components/AuthProvider'
 import { useAuth } from './hooks/useAuth'
-import { PlannerDataProvider } from './context/PlannerDataContext'
+import { PlannerDataProvider, usePlannerData } from './context/PlannerDataContext'
+import { WeekCommitmentProvider } from './context/WeekCommitmentContext'
 import { usePlanner } from './hooks/usePlanner'
 import { useItems } from './hooks/useItems'
 import { useExpenses } from './hooks/useExpenses'
@@ -11,13 +12,12 @@ import { useCompass } from './hooks/useCompass'
 import { ImportLocalDataBanner } from './components/ImportLocalDataBanner'
 import { WeekView } from './components/WeekView'
 import { MonthCalendarView } from './components/MonthCalendarView'
-import { DiaryView } from './components/DiaryView'
+import { CloudDiaryView, DiaryView } from './components/DiaryView'
 import { ExpenseView } from './components/ExpenseView'
 import { SnapView } from './components/SnapView'
 import { TasteStickerView } from './components/TasteStickerView'
 import { CompassView } from './components/CompassView'
 import { MailboxView } from './components/MailboxView'
-import { RelationTrackerView } from './components/relation-tracker/RelationTrackerView'
 import { useMailbox } from './hooks/useMailbox'
 import { BottomNav, type AppView } from './components/BottomNav'
 import type { CompassRoute } from './types/compass'
@@ -82,6 +82,8 @@ function AppContent() {
       <ImportLocalDataBanner />
       {view === 'diary' ? (
         <DiaryView expenses={expenses} />
+      ) : view === 'cloud-diary' ? (
+        <CloudDiaryView expenses={expenses} />
       ) : view === 'mailbox' ? (
         <MailboxView mailbox={mailbox} />
       ) : view === 'expenses' ? (
@@ -90,8 +92,6 @@ function AppContent() {
         <SnapView snap={snap} />
       ) : view === 'taste' ? (
         <TasteStickerView />
-      ) : view === 'relations' ? (
-        <RelationTrackerView />
       ) : view === 'compass' ? (
         <CompassView
           compass={compass}
@@ -134,12 +134,23 @@ function AppContent() {
   )
 }
 
+function WeekCommitmentBridge({ children }: { children: ReactNode }) {
+  const { user, weekStart } = usePlannerData()
+  return (
+    <WeekCommitmentProvider userId={user.id} weekStart={weekStart}>
+      {children}
+    </WeekCommitmentProvider>
+  )
+}
+
 function PlannerRoot() {
   const { user } = useAuth()
 
   return (
     <PlannerDataProvider user={user} onSignOut={() => {}}>
-      <AppContent />
+      <WeekCommitmentBridge>
+        <AppContent />
+      </WeekCommitmentBridge>
     </PlannerDataProvider>
   )
 }

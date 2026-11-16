@@ -67,6 +67,29 @@ export function loadItemsStoreLocal(userId: string): ItemsStore | null {
   }
 }
 
+/** All scoped weekly logs cached on this browser (for device → cloud upload). */
+export function loadAllWeeklyLogsLocal(userId: string): WeeklyLog[] {
+  const prefix = `planner:weekLog:${userId}:`
+  const logs: WeeklyLog[] = []
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (!key?.startsWith(prefix)) continue
+      try {
+        const raw = localStorage.getItem(key)
+        if (!raw) continue
+        const parsed = JSON.parse(raw) as WeeklyLog
+        if (parsed?.weekStart) logs.push(parsed)
+      } catch {
+        /* skip bad row */
+      }
+    }
+  } catch {
+    /* private mode */
+  }
+  return logs
+}
+
 export function weeklyLogHasContent(log: WeeklyLog): boolean {
   const hasDayLogs = Object.values(log.days).some((day) =>
     Object.values(day).some(

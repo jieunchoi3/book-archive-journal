@@ -1,5 +1,15 @@
 import type { ItemsStore } from './itemStorageLegacy'
-import type { Item } from '../types/item'
+import type { Category, Item, Tag } from '../types/item'
+
+function mergeById<T extends { id: string }>(cloud: T[], local: T[]): T[] {
+  const map = new Map<string, T>()
+  for (const row of cloud) map.set(row.id, row)
+  for (const row of local) {
+    const existing = map.get(row.id)
+    map.set(row.id, existing ? { ...existing, ...row, id: row.id } : row)
+  }
+  return [...map.values()]
+}
 
 /** Prefer local item rows (same id) so recent check-offs survive before cloud sync. */
 export function mergeItemsStores(cloud: ItemsStore, local: ItemsStore): ItemsStore {
@@ -18,8 +28,8 @@ export function mergeItemsStores(cloud: ItemsStore, local: ItemsStore): ItemsSto
   }
 
   return {
-    categories: cloud.categories.length > 0 ? cloud.categories : local.categories,
-    tags: cloud.tags.length > 0 ? cloud.tags : local.tags,
+    categories: mergeById<Category>(cloud.categories, local.categories),
+    tags: mergeById<Tag>(cloud.tags, local.tags),
     items,
   }
 }

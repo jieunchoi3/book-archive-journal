@@ -1,10 +1,26 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { BookHeart, BookOpen, ChevronLeft, ChevronRight, Hash, LayoutGrid, Wallet, X } from 'lucide-react'
-import { useDiary } from '../hooks/useDiary'
+import {
+  BookHeart,
+  BookOpen,
+  ChevronLeft,
+  ChevronRight,
+  Hash,
+  LayoutGrid,
+  MessageCircle,
+  Wallet,
+  X,
+} from 'lucide-react'
+import { useDiary, type DiaryActions } from '../hooks/useDiary'
+import { useDiaryV2 } from '../hooks/useDiaryV2'
 import type { ExpenseActions } from '../hooks/useExpenses'
 import { useAuth } from '../hooks/useAuth'
 import { loadAllDiaryEntriesLocal, clearDiaryTagsForFolder } from '../lib/diaryStorage'
 import { deleteDiaryTagFolder, loadDiaryTagFolders, saveDiaryTagFolder } from '../lib/diaryTagStorage'
+import {
+  deleteDiaryV2TagFolder,
+  loadDiaryV2TagFolders,
+  saveDiaryV2TagFolder,
+} from '../lib/diaryV2TagStorage'
 import {
   buildDiaryTagTree,
   entryHasDiaryContent,
@@ -38,6 +54,7 @@ import {
   PLANNER_ORIGIN_HINT_DISMISS_KEY,
 } from '../lib/plannerOrigin'
 import { PageSearch, type SearchSuggestion } from './PageSearch'
+import { CloudDiaryCoachPanel } from './CloudDiaryCoachPanel'
 
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const SPEND_TOGGLE_KEY = 'planner:diaryShowSpending'
@@ -49,8 +66,19 @@ interface DiaryViewProps {
   expenses: ExpenseActions
 }
 
-export function DiaryView({ expenses }: DiaryViewProps) {
-  const diary = useDiary()
+interface DiaryViewContentProps extends DiaryViewProps {
+  diary: DiaryActions
+  cloudFirst: boolean
+  /** Uses planner.diary_v2_entries + diary-v2-media (separate from legacy diary). */
+  freshCloudTable?: boolean
+}
+
+function DiaryViewContent({
+  expenses,
+  diary,
+  cloudFirst,
+  freshCloudTable = false,
+}: DiaryViewContentProps) {
   const {
     year,
     month,
@@ -69,8 +97,10 @@ export function DiaryView({ expenses }: DiaryViewProps) {
     refreshMonth,
     uploadLocalDiaryToCloud,
     repairGridImage,
+    flushPendingSave,
   } = diary
   const [recoverMessage, setRecoverMessage] = useState<string | null>(null)
+  const [coachOpen, setCoachOpen] = useState(false)
   const { user } = useAuth()
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null)
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null)
@@ -109,16 +139,21 @@ export function DiaryView({ expenses }: DiaryViewProps) {
 
   useEffect(() => {
     let cancelled = false
-    void loadAllDiaryEntriesLocal(user.id).then((all) => {
-      if (!cancelled) setSearchIndex(all)
-    })
-    void loadDiaryTagFolders(user.id).then((folders) => {
+    if (!cloudFirst) {
+      void loadAllDiaryEntriesLocal(user.id).then((all) => {
+        if (!cancelled) setSearchIndex(all)
+      })
+    }
+    const loadTags = freshCloudTable
+      ? loadDiaryV2TagFolders(user.id)
+      : loadDiaryTagFolders(user.id)
+    void loadTags.then((folders) => {
       if (!cancelled) setTagFolders(folders)
     })
     return () => {
       cancelled = true
     }
-  }, [user.id, entriesByDate])
+  }, [cloudFirst, freshCloudTable, user.id])
 
   const allEntries = useMemo(() => {
     const byId = new Map<string, DiaryEntry>()
@@ -161,7 +196,8 @@ export function DiaryView({ expenses }: DiaryViewProps) {
   )
 
   const handleCreateFolder = (folder: DiaryTagFolder) => {
-    void saveDiaryTagFolder(user.id, folder).then(setTagFolders)
+    const save = freshCloudTable ? saveDiaryV2TagFolder : saveDiaryTagFolder
+    void save(user.id, folder).then(setTagFolders)
   }
 
   const handleDeleteFolder = (mainTag: string, subTag?: string, entryCount = 0) => {
@@ -181,11 +217,29 @@ export function DiaryView({ expenses }: DiaryViewProps) {
     if (!window.confirm(message)) return
 
     void (async () => {
-      await clearDiaryTagsForFolder(user.id, mainTag, subTag)
-      const folders = await deleteDiaryTagFolder(user.id, mainTag, subTag)
+      if (cloudFirst) {
+        for (const entry of allEntries) {
+          const folders = getEntryTagFolders(entry)
+          let next = folders
+          if (subTag !== undefined) {
+            next = folders.filter(
+              (f) => !(f.mainTag === mainTag && f.subTag === subTag),
+            )
+          } else {
+            next = folders.filter((f) => f.mainTag !== mainTag)
+          }
+          if (next.length === folders.length) continue
+          await upsertEntry(entry.id, { tagFolders: next })
+        }
+      } else {
+        await clearDiaryTagsForFolder(user.id, mainTag, subTag)
+        const all = await loadAllDiaryEntriesLocal(user.id)
+        setSearchIndex(all)
+      }
+      const folders = freshCloudTable
+        ? await deleteDiaryV2TagFolder(user.id, mainTag, subTag)
+        : await deleteDiaryTagFolder(user.id, mainTag, subTag)
       setTagFolders(folders)
-      const all = await loadAllDiaryEntriesLocal(user.id)
-      setSearchIndex(all)
       await refreshMonth()
       setTagFilter((current) => {
         if (current.type === 'all') return current
@@ -206,7 +260,8 @@ export function DiaryView({ expenses }: DiaryViewProps) {
     void (async () => {
       let folders = tagFolders
       for (const folder of entryFolders) {
-        folders = await saveDiaryTagFolder(user.id, {
+        const saveTag = freshCloudTable ? saveDiaryV2TagFolder : saveDiaryTagFolder
+        folders = await saveTag(user.id, {
           mainTag: folder.mainTag,
           subTag: folder.subTag,
         })
@@ -314,15 +369,31 @@ export function DiaryView({ expenses }: DiaryViewProps) {
               <BookHeart size={20} />
             </div>
             <div>
-              <h1 className="text-[22px] font-semibold tracking-tight text-[#1C1C1E]">Diary</h1>
+              <h1 className="text-[22px] font-semibold tracking-tight text-[#1C1C1E]">
+                {freshCloudTable ? 'Cloud diary' : cloudFirst ? 'Diary (Cloud)' : 'Diary'}
+              </h1>
               <p className="text-[13px] text-muted">
-                {viewMode === 'flip'
-                  ? 'Flip through your photo diary like an open book'
-                  : 'Your photo diary — one square for each day'}
+                {freshCloudTable
+                  ? 'New Supabase table (diary_v2) — multi-device sync, separate from old diary'
+                  : cloudFirst
+                  ? 'Saved in Supabase — same notes on every device when you sign in'
+                  : viewMode === 'flip'
+                    ? 'Flip through your photo diary like an open book'
+                    : 'Your photo diary — one square for each day'}
               </p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {freshCloudTable && (
+              <button
+                type="button"
+                onClick={() => setCoachOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-full bg-[#007AFF] px-3 py-1.5 text-[12px] font-medium text-white shadow-sm hover:bg-[#0066DD]"
+              >
+                <MessageCircle size={14} />
+                AI coach
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setViewMode((m) => (m === 'flip' ? 'grid' : 'flip'))}
@@ -679,7 +750,7 @@ export function DiaryView({ expenses }: DiaryViewProps) {
             </div>
           </div>
         )}
-        {(syncError || recoverMessage) && (
+        {(syncError || (!cloudFirst && recoverMessage)) && (
           <div
             className={`mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl px-3 py-2 text-[12px] ${
               syncError ? 'bg-[#FF3B30]/10 text-[#FF3B30]' : 'bg-[#007AFF]/10 text-[#007AFF]'
@@ -694,28 +765,30 @@ export function DiaryView({ expenses }: DiaryViewProps) {
               >
                 Retry
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setRecoverMessage(null)
-                  void uploadLocalDiaryToCloud()
-                    .then(({ pushed }) => {
-                      setRecoverMessage(
-                        pushed > 0
-                          ? `이 기기에서 ${pushed}개 일기를 Supabase에 올렸어요.`
-                          : '올릴 로컬 일기가 없거나 이미 동기화된 상태예요.',
-                      )
-                    })
-                    .catch(() => {})
-                }}
-                className="font-medium underline"
-              >
-                이 기기 → Supabase 업로드
-              </button>
+              {!cloudFirst && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRecoverMessage(null)
+                    void uploadLocalDiaryToCloud()
+                      .then(({ pushed }) => {
+                        setRecoverMessage(
+                          pushed > 0
+                            ? `이 기기에서 ${pushed}개 일기를 Supabase에 올렸어요.`
+                            : '올릴 로컬 일기가 없거나 이미 동기화된 상태예요.',
+                        )
+                      })
+                      .catch(() => {})
+                  }}
+                  className="font-medium underline"
+                >
+                  이 기기 → Supabase 업로드
+                </button>
+              )}
             </div>
           </div>
         )}
-        {!syncError && !recoverMessage && !loading && (
+        {!cloudFirst && !syncError && !recoverMessage && !loading && (
           <div className="mt-2 flex justify-end">
             <button
               type="button"
@@ -738,6 +811,14 @@ export function DiaryView({ expenses }: DiaryViewProps) {
         )}
         </div>
       </div>
+
+      {freshCloudTable && (
+        <CloudDiaryCoachPanel
+          userId={user.id}
+          open={coachOpen}
+          onClose={() => setCoachOpen(false)}
+        />
+      )}
 
       {selectedDateKey && selectedEntry && selectedEntryId && (
         <DiaryDayEditor
@@ -772,6 +853,9 @@ export function DiaryView({ expenses }: DiaryViewProps) {
             void openDay(nextKey)
           }}
           onClose={() => {
+            if (selectedEntryId) {
+              flushPendingSave(selectedEntryId)
+            }
             setSelectedDateKey(null)
             setSelectedEntryId(null)
           }}
@@ -780,3 +864,26 @@ export function DiaryView({ expenses }: DiaryViewProps) {
     </div>
   )
 }
+
+export function DiaryView(props: DiaryViewProps) {
+  const diary = useDiary()
+  return (
+    <DiaryViewContent {...props} diary={diary} cloudFirst={false} freshCloudTable={false} />
+  )
+}
+
+/** Fresh cloud diary on planner.diary_v2_entries (legacy Diary tab unchanged). */
+export function CloudDiaryView(props: DiaryViewProps) {
+  const diary = useDiaryV2()
+  return (
+    <DiaryViewContent
+      {...props}
+      diary={diary}
+      cloudFirst={true}
+      freshCloudTable={true}
+    />
+  )
+}
+
+/** @deprecated Use CloudDiaryView — kept for imports */
+export const DiaryV2View = CloudDiaryView

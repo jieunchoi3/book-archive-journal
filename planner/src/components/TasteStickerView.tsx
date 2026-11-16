@@ -306,11 +306,15 @@ export function TasteStickerView() {
           </p>
         ) : null}
 
-        {taste.loading || taste.syncing ? (
-          <p className="py-24 text-center text-sm text-[#fffac0]/80">
-            {taste.syncing ? 'Syncing from Supabase…' : 'Loading…'}
-          </p>
+        {taste.loading ? (
+          <p className="py-24 text-center text-sm text-[#fffac0]/80">Loading…</p>
         ) : (
+          <>
+          {taste.syncing ? (
+            <p className="mb-3 text-center text-[12px] text-[#fffac0]/70">
+              Syncing from Supabase…
+            </p>
+          ) : null}
           <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
             {!selectMode && (
               <AddPolaroidCard
@@ -333,6 +337,7 @@ export function TasteStickerView() {
               />
             ))}
           </div>
+          </>
         )}
       </div>
 

@@ -129,8 +129,6 @@ export function DiaryDayEditor({
   const [bodyImages, setBodyImages] = useState<DiaryBodyImage[]>(entry.bodyImages ?? [])
   const [editingPhotos, setEditingPhotos] = useState(false)
   const [addingBodyImage, setAddingBodyImage] = useState(false)
-  const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const bodyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const bodyFileInputRef = useRef<HTMLInputElement>(null)
   const scrollerRef = useRef<HTMLDivElement>(null)
   const navigatingRef = useRef(false)
@@ -148,14 +146,6 @@ export function DiaryDayEditor({
   const nextEntry = getEntry(nextKey)
 
   const flushPending = useCallback(() => {
-    if (titleTimer.current) {
-      clearTimeout(titleTimer.current)
-      titleTimer.current = null
-    }
-    if (bodyTimer.current) {
-      clearTimeout(bodyTimer.current)
-      bodyTimer.current = null
-    }
     const patch: Partial<Pick<DiaryEntry, 'title' | 'body'>> = {}
     if (pendingTitle.current !== entry.title) patch.title = pendingTitle.current
     if (pendingBody.current !== entry.body) patch.body = pendingBody.current
@@ -181,13 +171,6 @@ export function DiaryDayEditor({
       navigatingRef.current = false
     })
   }, [dateKey])
-
-  useEffect(() => {
-    return () => {
-      if (titleTimer.current) clearTimeout(titleTimer.current)
-      if (bodyTimer.current) clearTimeout(bodyTimer.current)
-    }
-  }, [])
 
   // Keep scroll locked on the middle panel after layout/resize.
   useEffect(() => {
@@ -235,15 +218,14 @@ export function DiaryDayEditor({
   const queueTitle = (value: string) => {
     setTitle(value)
     pendingTitle.current = value
-    if (titleTimer.current) clearTimeout(titleTimer.current)
-    titleTimer.current = setTimeout(() => onChange({ title: value }), 300)
+    // Keep note tab + month grid in sync with the input (cloud save is debounced in the hook).
+    onChange({ title: value })
   }
 
   const queueBody = (value: string) => {
     setBody(value)
     pendingBody.current = value
-    if (bodyTimer.current) clearTimeout(bodyTimer.current)
-    bodyTimer.current = setTimeout(() => onChange({ body: value }), 300)
+    onChange({ body: value })
   }
 
   const addBodyImage = useCallback(
@@ -287,19 +269,22 @@ export function DiaryDayEditor({
     frameColor: string
     canvasStrokes: DiaryStroke[]
   }) => {
+    setEditingPhotos(false)
     onChange({
       layers: result.layers,
       frameColor: result.frameColor,
       canvasStrokes: result.canvasStrokes,
     })
-    setEditingPhotos(false)
   }
 
   return (
     <>
       <div
         className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-3 sm:p-4"
-        onClick={onClose}
+        onClick={() => {
+          flushPending()
+          onClose()
+        }}
       >
         <div
           className="flex h-[80vh] w-[80vw] max-w-none flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
@@ -345,7 +330,10 @@ export function DiaryDayEditor({
                             : 'bg-[#F2F2F7] text-[#636366] hover:bg-[#E8E8ED]'
                         }`}
                       >
-                        {noteTabLabel(dayEntry, index)}
+                        {noteTabLabel(
+                          active ? { ...dayEntry, title } : dayEntry,
+                          index,
+                        )}
                       </button>
                     )
                   })}
@@ -439,6 +427,29 @@ export function DiaryDayEditor({
                         alt=""
                         className="aspect-square w-full object-cover"
                       />
+                    </button>
+                  ) : entry.layers.some((l) => l.src) ||
+                    (entry.canvasStrokes?.length ?? 0) > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => setEditingPhotos(true)}
+                      className="relative block w-full overflow-hidden rounded-2xl ring-1 ring-hairline"
+                    >
+                      {entry.layers.find((l) => l.src)?.src ? (
+                        <img
+                          src={entry.layers.find((l) => l.src)!.src}
+                          alt=""
+                          className="aspect-square w-full object-cover"
+                        />
+                      ) : (
+                        <div
+                          className="aspect-square w-full"
+                          style={{ backgroundColor: entry.frameColor }}
+                        />
+                      )}
+                      <span className="absolute inset-x-0 bottom-0 bg-black/45 py-1.5 text-center text-[11px] font-medium text-white">
+                        Saving preview…
+                      </span>
                     </button>
                   ) : (
                     <button

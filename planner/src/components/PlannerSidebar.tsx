@@ -1,6 +1,5 @@
-import { CategoryLegend } from './CategoryLegend'
+import { CommitmentsPanel } from './CommitmentsPanel'
 import { QuickLaunchPanel } from './QuickLaunchPanel'
-import { SidebarNotepad } from './SidebarNotepad'
 import type { LinkedAppsActions } from '../hooks/useLinkedApps'
 
 interface PlannerSidebarProps {
@@ -10,12 +9,9 @@ interface PlannerSidebarProps {
 export function PlannerSidebar({ linkedApps }: PlannerSidebarProps) {
   return (
     <div className="flex shrink-0 flex-col">
-      <CategoryLegend
+      <CommitmentsPanel
         renderQuickLaunch={(collapsed) => (
-          <>
-            <QuickLaunchPanel linkedApps={linkedApps} collapsed={collapsed} />
-            {!collapsed && <SidebarNotepad />}
-          </>
+          <QuickLaunchPanel linkedApps={linkedApps} collapsed={collapsed} />
         )}
       />
     </div>

@@ -310,19 +310,18 @@ export async function handleWishlistEnrichRequest(req: Request): Promise<Respons
     }
 
     const userText = buildUserPrompt(body, extracted, htmlSnippet)
-    let model = 'gemini-2.5-flash'
+    const models = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3-flash-preview'] as const
+    let model = models[0]
     let raw = ''
     let llmError: string | null = null
-    try {
-      raw = await callLlm(model, userText, llmAuth)
-    } catch (e) {
-      llmError = String(e)
+    for (const candidate of models) {
       try {
-        model = 'gemini-2.5-pro'
-        raw = await callLlm(model, userText, llmAuth)
+        model = candidate
+        raw = await callLlm(candidate, userText, llmAuth)
         llmError = null
-      } catch (e2) {
-        llmError = String(e2)
+        break
+      } catch (e) {
+        llmError = String(e)
       }
     }
 

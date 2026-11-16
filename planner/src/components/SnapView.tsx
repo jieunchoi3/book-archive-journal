@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Camera, Download, Pencil } from 'lucide-react'
+import { Camera, CloudDownload, Download, Pencil } from 'lucide-react'
 import type { SnapActions } from '../hooks/useSnapBookings'
 import type { SnapBooking, SnapPeriod } from '../types/snap'
 import { formatGbp, paymentMethodLabel } from '../types/snap'
@@ -202,6 +202,7 @@ export function SnapView({ snap }: SnapViewProps) {
     totalFxDelta,
     repeatCustomers,
     bookings,
+    reloadFromCloud,
   } = snap
 
   const [panel, setPanel] = useState<SnapPanel>('log')
@@ -278,7 +279,17 @@ export function SnapView({ snap }: SnapViewProps) {
           </div>
           <p className="mt-0.5 text-[12px] text-muted">코지캡쳐 · 촬영 & 수익</p>
         </div>
-        <div className="relative">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => void reloadFromCloud()}
+            className="flex items-center gap-1.5 rounded-xl bg-white px-3 py-2 text-[12px] font-medium text-[#48484A] ring-1 ring-hairline hover:bg-[#F2F2F7]"
+            title="Supabase에 저장된 Snap 기록을 이 기기로 다시 불러옵니다"
+          >
+            <CloudDownload size={14} />
+            클라우드 동기화
+          </button>
+          <div className="relative">
           <button
             type="button"
             onClick={() => setExportOpen((o) => !o)}
@@ -315,6 +326,7 @@ export function SnapView({ snap }: SnapViewProps) {
               </div>
             </>
           )}
+          </div>
         </div>
       </header>
 
