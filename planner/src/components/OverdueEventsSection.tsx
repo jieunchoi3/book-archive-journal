@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, ChevronDown, ChevronRight, Lock } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { AlertCircle, ChevronDown, ChevronRight } from 'lucide-react'
 import type { ItemsActions } from '../hooks/useItems'
 import { getOverdueOccurrences } from '../lib/itemRecurrence'
 import { formatDueDateLong } from '../types/item'
 import { parseDateKey } from '../lib/weekUtils'
 import { ItemChip } from './ItemChip'
-import { usePlannerData } from '../context/PlannerDataContext'
+import { MyNoteColumns } from './MyNoteColumns'
 
 interface OverdueEventsSectionProps {
   items: ItemsActions
@@ -23,54 +23,6 @@ function formatOverdueLabel(dateKey: string): string {
   if (days === 1) return '어제'
   if (days < 14) return `${days}일 전`
   return formatDueDateLong(dateKey)
-}
-
-function MyNoteDrawer() {
-  const { sidebarNote, setSidebarNote } = usePlannerData()
-  const [draft, setDraft] = useState(sidebarNote)
-  const [savedVisible, setSavedVisible] = useState(false)
-
-  useEffect(() => {
-    setDraft(sidebarNote)
-  }, [sidebarNote])
-
-  useEffect(() => {
-    if (!savedVisible) return
-    const timer = setTimeout(() => setSavedVisible(false), 1500)
-    return () => clearTimeout(timer)
-  }, [savedVisible])
-
-  const handleChange = (value: string) => {
-    setDraft(value)
-    setSidebarNote(value)
-    setSavedVisible(true)
-  }
-
-  return (
-    <section
-      className="overflow-hidden rounded-xl border border-hairline bg-white/90 shadow-sm backdrop-blur-md"
-      aria-label="My Note"
-    >
-      <div className="flex items-center gap-2 border-b border-hairline px-4 py-2.5">
-        <Lock size={12} className="shrink-0 text-muted/70" aria-hidden />
-        <h2 className="text-[12px] font-semibold tracking-wide text-[#3C3C43]">My Note</h2>
-        {savedVisible && (
-          <span className="ml-auto text-[10px] text-[#007AFF]/80" aria-live="polite">
-            Saved
-          </span>
-        )}
-      </div>
-      <div className="px-3 pb-3 pt-2">
-        <textarea
-          value={draft}
-          onChange={(e) => handleChange(e.target.value)}
-          placeholder="이번 달 목표, 메모, 생각…"
-          className="max-h-[28vh] min-h-[120px] w-full resize-y overflow-y-auto rounded-xl border border-[#F0E6C8] bg-[#FFFCF0] px-3 py-2.5 text-[12px] leading-relaxed text-[#3C3C43] shadow-sm placeholder:text-[#AEAEB2] focus:border-[#E8D9A8] focus:outline-none focus:ring-2 focus:ring-[#F5E6B8]/80"
-          spellCheck
-        />
-      </div>
-    </section>
-  )
 }
 
 export function OverdueEventsSection({ items, onSelectDate }: OverdueEventsSectionProps) {
@@ -144,7 +96,7 @@ export function OverdueEventsSection({ items, onSelectDate }: OverdueEventsSecti
         </section>
       )}
 
-      <MyNoteDrawer />
+      <MyNoteColumns variant="card" />
     </div>
   )
 }
